@@ -1,0 +1,12 @@
+#!/bin/sh
+# NetworkManager dispatcher hook: runs on network changes with
+#   $1 = interface, $2 = action (up, down, ...).
+# Like udev, the dispatcher expects hooks to finish fast, so this only asks
+# systemd to redraw the screen's Wi-Fi indicator (musicdock-wifi-refresh).
+# install.sh copies it to /etc/NetworkManager/dispatcher.d/ (root, 755).
+
+[ "$1" = "wlan0" ] || exit 0
+case "$2" in
+  up|down) systemctl start --no-block musicdock-wifi-refresh.service ;;
+esac
+exit 0

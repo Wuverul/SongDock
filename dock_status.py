@@ -68,6 +68,12 @@ FULL_REFRESH_EVERY = 10             # fast refreshes before a full anti-ghost re
 
 PROGRESS_SCREENS = {"syncing", "preparing"}   # rate-limited when repeated
 PREPARE_SCREENS = {"idle", "preparing"}       # drawn by the prepare job
+# Resting screens --refresh may redraw when Wi-Fi connects or drops. Active
+# screens (syncing, preparing, boot) redraw often enough on their own.
+REFRESHABLE = {"idle", "safe", "failed"}
+# Options that control drawing rather than what's drawn; not saved for --refresh.
+CONTROL_OPTIONS = {"--force": 0, "--only-over": 1, "--preview": 1, "--at": 1,
+                   "--wifi": 1, "--ip": 1}
 
 WIFI_IFACE = "wlan0"
 # Signal strength (dBm) needed for each bar: 4 bars at -55 or better, etc.
@@ -172,7 +178,9 @@ def render(screen, args):
     title_f, has_glyphs = load_font(FONT_BOLD, 20)
     body_f, _ = load_font(FONT_REG, 13)
     small_f, _ = load_font(FONT_REG, 11)
-    now = datetime.now().strftime("%-I:%M %p")
+    # --at keeps a redrawn screen's original time (see refresh_main).
+    when = datetime.fromtimestamp(args.at) if args.at else datetime.now()
+    now = when.strftime("%-I:%M %p")
 
     def header(text, inverted):
         if inverted:
@@ -413,6 +421,8 @@ def build_parser():
     p.add_argument("--wifi", type=lambda v: "off" if v == "off" else int(v),
                    help="preview only: fake Wi-Fi reading, e.g. -56 or off")
     p.add_argument("--ip", help="preview only: fake IP address")
+    p.add_argument("--at", type=float, metavar="EPOCH",
+                   help="show this time instead of now (used by --refresh)")
     p.add_argument("--force", action="store_true", help="ignore rate limiting")
     p.add_argument("--uptime", type=int, help="starting: seconds since power-on")
     p.add_argument("--clock-synced", action="store_true",
@@ -426,9 +436,29 @@ def build_parser():
     return p
 
 
+def content_args(argv):
+    """argv minus the drawing-control options, to redraw the same screen later."""
+    out, skip = [], 0
+    for a in argv:
+        if skip:
+            skip -= 1
+        elif a in CONTROL_OPTIONS:
+            skip = CONTROL_OPTIONS[a]
+        else:
+            out.append(a)
+    return out
+
+
+def wifi_connected(reading):
+    return isinstance(reading, int)          # dBm when connected; "off"/None otherwise
+
+
 def main(argv=None):
     """Entry point. dock_sync.py and dock_boot.py call this with an argv list."""
-    args = build_parser().parse_args(argv)
+    raw = list(argv) if argv is not None else sys.argv[1:]
+    args = build_parser().parse_args(raw)
+    if args.wifi is None:
+        args.wifi = read_wifi()              # read once: drawn and recorded
 
     img = render(args.screen, args)
 
@@ -465,7 +495,44 @@ def main(argv=None):
         full = count >= FULL_REFRESH_EVERY or not same_screen
         draw_on_panel(img, full_refresh=full)
         save_state({"screen": args.screen, "last_draw": now,
-                    "fast_count": 0 if full else count})
+                    "fast_count": 0 if full else count,
+                    # For --refresh: what was drawn, when, and the Wi-Fi state.
+                    "argv": content_args(raw), "drawn_at": args.at or now,
+                    "wifi_on": wifi_connected(args.wifi)})
+
+
+def refresh_main(argv=None, attempts=3, settle=3):
+    """Redraw the resting screen if Wi-Fi connected or dropped since it was drawn.
+
+    Started by musicdock-wifi-refresh.service, which NetworkManager's
+    dispatcher triggers on wlan0 up/down. Keeps the screen's text and
+    original time; only the Wi-Fi indicator (and idle's IP) change. Checks
+    again after drawing in case the connection changed meanwhile.
+    """
+    for _ in range(attempts):
+        with panel_lock():
+            state = load_state()
+            screen = state.get("screen")
+            if screen not in REFRESHABLE or not state.get("argv"):
+                print(f"Not refreshing the {screen} screen")
+                return
+            wifi = read_wifi()
+            if wifi is None:
+                print("Can't read Wi-Fi here")
+                return
+            if state.get("wifi_on") == wifi_connected(wifi):
+                print("Wi-Fi indicator already current")
+                return
+            args = build_parser().parse_args(
+                state["argv"] + ["--wifi", str(wifi), "--at", str(state["drawn_at"])])
+            count = state.get("fast_count", 0) + 1
+            full = count >= FULL_REFRESH_EVERY
+            draw_on_panel(render(args.screen, args), full_refresh=full)
+            save_state({**state, "last_draw": time.time(),
+                        "fast_count": 0 if full else count,
+                        "wifi_on": wifi_connected(wifi)})
+            print(f"Redrew {screen}: Wi-Fi {'connected' if wifi_connected(wifi) else 'off'}")
+        time.sleep(settle)
 
 
 def stream_main(argv=None):
@@ -494,5 +561,7 @@ def stream_main(argv=None):
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--partial-stream"]:
         stream_main(sys.argv[2:])
+    elif sys.argv[1:2] == ["--refresh"]:
+        refresh_main(sys.argv[2:])
     else:
         main()

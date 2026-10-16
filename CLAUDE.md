@@ -170,6 +170,15 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   staged plan (no network).
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
+- **Wi-Fi indicator refresh:** NetworkManager dispatcher hook
+  `pi/90-musicdock-wifi` (wlan0 up/down) starts `musicdock-wifi-refresh.service`
+  (5s settle) → `dock_status.py --refresh`, which redraws a resting screen
+  (`idle`, `safe`, `failed`) only if connectivity changed, keeping its original
+  time (`--at`). Every draw saves its content args, `drawn_at`, and `wifi_on`
+  in the state file for this.
+- **pygpod on the Pi** lives in a venv: `~/musicdock/venv` (created with
+  `--system-site-packages` to use apt's Pillow/gpiozero; `pip install
+  pygpod==0.0.6 mutagen==1.47.0`). Raspberry Pi OS blocks system-wide pip.
 - Panel access is serialized by `dock_status.panel_lock()` (flock next to the
   state file); the screen-state check and draw happen under it.
 - `tests/`: `python3 -m unittest discover -s tests -v`.
