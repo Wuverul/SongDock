@@ -195,8 +195,9 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   decoding a 4000x4000 cover; no throttling. Big embedded covers dominate:
   4000px 87 s, 3000px 32-52 s per track (resized again for every track). The
   Nano's largest thumbnail is 240x240. Covers are now shrunk to 600px in the
-  prepare job (60 of 82 shrunk; cache 773 -> 624 MB). USB write speed to the
-  real iPod not yet measured.
+  prepare job (60 of 82 shrunk; cache 773 -> 624 MB). Re-run with shrunk
+  covers: 82 tracks in 7.8 min (5.7 s/track, slowest 6.5 s), peak memory
+  28 MB. USB write speed to the real iPod not yet measured.
 - Panel access is serialized by `dock_status.panel_lock()` (flock next to the
   state file); the screen-state check and draw happen under it.
 - `tests/`: `python3 -m unittest discover -s tests -v`.
