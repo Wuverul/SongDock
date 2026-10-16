@@ -7,6 +7,7 @@ MUSICDOCK_CONFIG overrides the path (e.g. for a root-run service).
 
 import logging
 import os
+import re
 import tomllib
 
 log = logging.getLogger("dock_config")
@@ -16,7 +17,8 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
     "sync": {"target": "starred", "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
-    "device": {"type": "stock_ipod", "convert_to": "mp3", "aac_bitrate": "256k"},
+    "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
+               "aac_bitrate": "256k"},
 }
 
 
@@ -54,6 +56,10 @@ def load(path=None):
         raise ConfigError(f"{path}: device type must be stock_ipod or rockbox")
     if cfg["device"]["convert_to"] not in ("mp3", "alac", "aac"):
         raise ConfigError(f"{path}: convert_to must be mp3, alac, or aac")
+    if not re.fullmatch(r"v[0-9]|(128|160|192|224|256|320)k",
+                        str(cfg["device"]["mp3_quality"]).lower()):
+        raise ConfigError(f"{path}: mp3_quality must be v0-v9 (variable) or a "
+                          "constant rate: 128k, 160k, 192k, 224k, 256k, 320k")
     if cfg["device"]["convert_to"] == "aac":
         log.warning("convert_to = \"aac\" uses ffmpeg's built-in AAC encoder, which "
                     "adds audible artifacts; \"mp3\" is recommended")

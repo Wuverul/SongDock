@@ -53,14 +53,16 @@ class FakeServer:
             f.write(b"audio-" + song_id.encode())
 
 
-def fake_convert(src, dst, target, bitrate, duration=None):
+def fake_convert(src, dst, options, duration=None):
+    """Writes "<options>:<source bytes>" so tests can see how it was made."""
     with open(src, "rb") as f, open(dst, "wb") as g:
-        g.write(target.encode() + b":" + f.read())
+        g.write(" ".join(options).encode() + b":" + f.read())
 
 
-def config(device="stock_ipod", max_gb=20, convert_to="mp3"):
+def config(device="stock_ipod", max_gb=20, convert_to="mp3", mp3_quality="v0"):
     return {"sync": {"target": "starred", "max_cache_gb": max_gb},
-            "device": {"type": device, "convert_to": convert_to, "aac_bitrate": "256k"}}
+            "device": {"type": device, "convert_to": convert_to,
+                       "mp3_quality": mp3_quality, "aac_bitrate": "256k"}}
 
 
 class PrepareTests(unittest.TestCase):
@@ -98,7 +100,41 @@ class PrepareTests(unittest.TestCase):
         with open(os.path.join(self.cache, "tracks", "a.m4a"), "rb") as f:
             self.assertEqual(f.read(), b"audio-a")          # AAC/ALAC kept as-is
         with open(os.path.join(self.cache, "tracks", "f.mp3"), "rb") as f:
-            self.assertTrue(f.read().startswith(b"mp3:"))   # converted
+            self.assertTrue(f.read().startswith(b"-c:a libmp3lame -q:a 0"))   # converted
+
+    def read(self, name):
+        with open(os.path.join(self.cache, "tracks", name), "rb") as f:
+            return f.read()
+
+    def test_quality_change_reconverts_only_converted_tracks(self):
+        server = FakeServer(songs=[song("f", "flac"), song("m", "mp3")])
+        self.run_prepare(server, config(mp3_quality="v0"))
+        summary = self.run_prepare(server, config(mp3_quality="320k"))
+        self.assertEqual(summary["added"], 1)                 # only the FLAC
+        self.assertTrue(self.read("f.mp3").startswith(b"-c:a libmp3lame -b:a 320k"))
+        self.assertEqual(self.read("m.mp3"), b"audio-m")       # original untouched
+        encodings = {t["id"]: t["encoding"] for t in self.manifest()["tracks"]}
+        self.assertEqual(encodings, {"f": "mp3 320k", "m": "original"})
+        server.downloads.clear()
+        self.assertEqual(self.run_prepare(server, config(mp3_quality="320k"))["added"], 0)
+
+    def test_old_manifest_without_encoding_is_not_reconverted(self):
+        server = FakeServer(songs=[song("f", "flac")])
+        self.run_prepare(server)
+        m = self.manifest()
+        for t in m["tracks"]:
+            del t["encoding"]                                  # as written before
+        dock_prepare.write_json_atomic(os.path.join(self.cache, "manifest.json"), m)
+        server.downloads.clear()
+        self.run_prepare(server)
+        self.assertEqual(server.downloads, [])
+
+    def test_audio_options(self):
+        opts = dock_prepare.audio_options
+        self.assertEqual(opts(config()["device"])[:4], ["-c:a", "libmp3lame", "-q:a", "0"])
+        self.assertEqual(opts(config(mp3_quality="320K")["device"])[:4],
+                         ["-c:a", "libmp3lame", "-b:a", "320k"])
+        self.assertIn("-id3v2_version", opts(config()["device"]))
 
     def test_alac_target(self):
         self.run_prepare(FakeServer(songs=[song("f", "flac")]), config(convert_to="alac"))
@@ -152,7 +188,7 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(FakeServer(songs=[song("a")]))
         self.assertFalse(os.path.exists(os.path.join(self.cache, "tmp")))
         with open(os.path.join(self.cache, "tracks", "a.mp3"), "rb") as f:
-            self.assertEqual(f.read(), b"mp3:audio-a")
+            self.assertTrue(f.read().endswith(b":audio-a"))
 
     def test_stops_when_sd_card_would_pass_80_percent(self):
         nearly_full = lambda path: Usage(100e9, 79.9999e9, 20e9)   # noqa: E731
@@ -201,6 +237,14 @@ class ConfigTests(unittest.TestCase):
                           '[device]\nconvert_to="ogg"\n')
         with self.assertRaisesRegex(dock_config.ConfigError, "convert_to"):
             dock_config.load(path)
+
+    def test_mp3_quality_validated(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[device]\n'
+        self.assertEqual(dock_config.load(self.write(base + 'mp3_quality="320K"\n'))
+                         ["device"]["mp3_quality"], "320K")
+        for bad in ("v10", "300k", "high"):
+            with self.assertRaisesRegex(dock_config.ConfigError, "mp3_quality"):
+                dock_config.load(self.write(base + f'mp3_quality="{bad}"\n'))
 
     def test_placeholder_password_rejected(self):
         path = self.write('[server]\nurl="https://x"\nusername="u"\n'

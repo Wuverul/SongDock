@@ -54,17 +54,38 @@ log = logging.getLogger("dock_prepare")
 
 NATIVE_FORMATS = {"stock_ipod": {"mp3", "m4a", "aac"}}   # play without conversion
 
-# convert_to target -> (file extension, ffmpeg audio options, log label).
-# MP3 is the default: ffmpeg's built-in AAC encoder adds audible
-# high-frequency artifacts (measured; see CLAUDE.md), and the Pi has no
-# better AAC encoder. LAME V0 measured clean and is ~4x faster on the Pi Zero.
-TARGETS = {
-    "mp3": ("mp3", ["-c:a", "libmp3lame", "-q:a", "0",
-                    "-id3v2_version", "3"],        # ID3v2.3: what old iPods read
-            "MP3 (LAME V0)"),
-    "alac": ("m4a", ["-c:a", "alac"], "ALAC (lossless)"),
-    "aac": ("m4a", ["-c:a", "aac", "-b:a", "{bitrate}"], "AAC {bitrate} (ffmpeg)"),
-}
+# convert_to target -> file extension. MP3 is the default: ffmpeg's built-in
+# AAC encoder adds audible high-frequency artifacts (measured; see CLAUDE.md),
+# and the Pi has no better AAC encoder. LAME measured clean and is ~4x faster
+# on the Pi Zero.
+EXTENSIONS = {"mp3": "mp3", "alac": "m4a", "aac": "m4a"}
+
+
+def encoding(device_cfg):
+    """Short description of the current conversion settings, e.g. "mp3 v0".
+
+    Stored per track in the manifest, so changing a setting (like
+    mp3_quality) re-converts tracks made with the old one.
+    """
+    target = device_cfg["convert_to"]
+    if target == "mp3":
+        return f"mp3 {device_cfg['mp3_quality'].lower()}"
+    if target == "aac":
+        return f"aac {device_cfg['aac_bitrate']}"
+    return target
+
+
+def audio_options(device_cfg):
+    """ffmpeg audio options for the current conversion settings."""
+    target = device_cfg["convert_to"]
+    if target == "mp3":
+        q = device_cfg["mp3_quality"].lower()
+        rate = ["-q:a", q[1:]] if q.startswith("v") else ["-b:a", q]   # VBR or CBR
+        return ["-c:a", "libmp3lame", *rate,
+                "-id3v2_version", "3"]          # ID3v2.3: what old iPods read
+    if target == "alac":
+        return ["-c:a", "alac"]
+    return ["-c:a", "aac", "-b:a", device_cfg["aac_bitrate"]]
 MAX_DISK_FRACTION = 0.80     # keep the SD card under 80% full (CLAUDE.md)
 DRAW_OVER = "none,idle,preparing"     # never over syncing/safe/failed/boot
 
@@ -101,7 +122,7 @@ def needs_conversion(suffix, device_type):
 
 def output_name(track, device_type, target="mp3"):
     suffix = (track.get("suffix") or "bin").lower()
-    ext = TARGETS[target][0] if needs_conversion(suffix, device_type) else suffix
+    ext = EXTENSIONS[target] if needs_conversion(suffix, device_type) else suffix
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", track["id"])
     return f"{safe_id}.{ext}"
 
@@ -120,15 +141,15 @@ def fsync_file(path):
         os.close(fd)
 
 
-def convert(src, dst, target="mp3", bitrate="256k", duration=None):
-    """FLAC (or other) -> the target format, keeping tags and cover art.
+def convert(src, dst, options, duration=None):
+    """FLAC (or other) -> another format (ffmpeg audio `options`), keeping
+    tags and cover art.
 
     If the cover art can't be carried over, retries without it rather than
     failing the track.
     """
-    audio = [a.replace("{bitrate}", bitrate) for a in TARGETS[target][1]]
     base = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", src, *audio, "-map_metadata", "0"]
+            "-i", src, *options, "-map_metadata", "0"]
     attempts = [(["-c:v", "copy", "-disposition:v", "attached_pic"], "with cover art"),
                 (["-vn"], "without cover art")]
     timeout = max(600, int(duration or 0) * 10)    # the Pi Zero is slow
@@ -190,8 +211,9 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     show(screen, *args) draws a progress screen (optional).
     """
     device = cfg["device"]["type"]
-    bitrate = cfg["device"]["aac_bitrate"]
     target = cfg["device"]["convert_to"]
+    current = encoding(cfg["device"])
+    options = audio_options(cfg["device"])
     max_bytes = int(float(cfg["sync"]["max_cache_gb"]) * 1e9)
     tracks_dir = os.path.join(cache_dir, "tracks")
     tmp_dir = os.path.join(cache_dir, "tmp")
@@ -200,10 +222,20 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     wanted = {output_name(t, device, target): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
     to_remove = sorted(existing - wanted.keys())
-    missing = [(name, t) for name, t in wanted.items() if name not in existing]
 
-    log.info("Target: %d tracks; %d cached, %d to get, %d to remove",
-             len(wanted), len(wanted) - len(missing), len(missing), len(to_remove))
+    # Cached conversions made with different settings get re-done. Entries
+    # from before encodings were recorded are assumed current.
+    made_with = {t["id"]: t.get("encoding")
+                 for t in read_manifest(cache_dir).get("tracks", [])}
+    stale = {name for name, t in wanted.items()
+             if name in existing and needs_conversion(t.get("suffix"), device)
+             and made_with.get(t["id"]) not in (None, current)}
+    missing = [(name, t) for name, t in wanted.items()
+               if name not in existing or name in stale]
+
+    log.info("Target: %d tracks; %d cached, %d to get (%d to re-convert as %s), "
+             "%d to remove", len(wanted), len(wanted) - len(missing), len(missing),
+             len(stale), current, len(to_remove))
     if dry_run:
         for name, t in missing:
             how = "convert" if needs_conversion(t.get("suffix"), device) else "copy"
@@ -240,8 +272,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             client.download(t["id"], src)
             if conv:
                 out = os.path.join(tmp_dir, name)
-                log.info("Converting to %s", TARGETS[target][2].format(bitrate=bitrate))
-                convert_fn(src, out, target, bitrate, t.get("duration"))
+                log.info("Converting (%s)", current)
+                convert_fn(src, out, options, t.get("duration"))
                 os.remove(src)
             else:
                 out = src
@@ -267,6 +299,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 "duration": t.get("duration"), "size": os.path.getsize(path),
                 "source_suffix": t.get("suffix"),
                 "converted": needs_conversion(t.get("suffix"), device),
+                "encoding": (current if needs_conversion(t.get("suffix"), device)
+                             else "original"),
             })
     write_json_atomic(os.path.join(cache_dir, "manifest.json"), {
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),

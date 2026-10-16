@@ -53,7 +53,7 @@ the "write tracks / read plays" step differs:
 |---|---|---|
 | Library | `iTunesDB` (signed), via **pygpod** | Plain files + `.m3u8` playlists |
 | Play data | Play-count changes since last sync | `.scrobbler.log`, timestamped |
-| Formats | FLAC → MP3 LAME V0 (`convert_to`; `alac` and `aac` also supported) | FLAC copied as-is |
+| Formats | FLAC → MP3 LAME V0 (`convert_to`, `mp3_quality`: `v0`–`v9` or constant `128k`–`320k`; `alac`/`aac` also supported). The manifest records each track's `encoding`; changing settings re-converts on the next run | FLAC copied as-is |
 | Keep signal | TBD (on-device rating?) | `Keep.m3u8` playlist |
 | Album art | Thumbnails in `iPod_Control/Artwork/` (ArtworkDB), made from the embedded cover when each track is added. Ignores art inside the file. | `cover.jpg` (baseline, not progressive JPEG) in the album folder |
 
@@ -194,6 +194,9 @@ expand to their tracks. Discovery playlists come later.
   (`pygpod.db.playcounts.parse_play_counts`) and upload them before letting
   pygpod open the DB. Play times are Mac-epoch seconds in the iPod's local
   time, with no time zone.
+- **pygpod's `remove_track()` leaves the audio file on the iPod by default.**
+  Pass `delete_file=True`, or removed tracks pile up as orphans (seen
+  2026-10-16). Artwork is removed either way.
 - **ffmpeg's built-in AAC encoder produces audible high-frequency artifacts**
   (user heard them on the Nano; measured 8-15 noise bursts per 28s vs 1 for
   Apple's encoder, and decoded peaks up to +3 dBFS on loud masters). The Pi
