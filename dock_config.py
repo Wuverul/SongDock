@@ -16,7 +16,7 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
     "sync": {"target": "starred", "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
-    "device": {"type": "stock_ipod", "convert_to": "aac", "aac_bitrate": "256k"},
+    "device": {"type": "stock_ipod", "convert_to": "mp3", "aac_bitrate": "256k"},
 }
 
 
@@ -52,4 +52,9 @@ def load(path=None):
     cfg["sync"]["cache_dir"] = os.path.expanduser(cfg["sync"]["cache_dir"])
     if cfg["device"]["type"] not in ("stock_ipod", "rockbox"):
         raise ConfigError(f"{path}: device type must be stock_ipod or rockbox")
+    if cfg["device"]["convert_to"] not in ("mp3", "alac", "aac"):
+        raise ConfigError(f"{path}: convert_to must be mp3, alac, or aac")
+    if cfg["device"]["convert_to"] == "aac":
+        log.warning("convert_to = \"aac\" uses ffmpeg's built-in AAC encoder, which "
+                    "adds audible artifacts; \"mp3\" is recommended")
     return cfg

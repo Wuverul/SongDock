@@ -10,7 +10,7 @@ Never touches the player. Steps:
   3. Download each missing track, convert it if the player needs that, and
      move it into the cache:
        stock_ipod: MP3/AAC/ALAC kept as-is (no lossy-to-lossy re-encode);
-                   FLAC and anything else -> AAC .m4a
+                   FLAC and anything else -> convert_to (default MP3 V0)
        rockbox:    everything kept as-is
   4. Write manifest.json: the queue the sync job copies to the player.
 
@@ -53,6 +53,18 @@ from subsonic import Client, SubsonicError  # noqa: E402
 log = logging.getLogger("dock_prepare")
 
 NATIVE_FORMATS = {"stock_ipod": {"mp3", "m4a", "aac"}}   # play without conversion
+
+# convert_to target -> (file extension, ffmpeg audio options, log label).
+# MP3 is the default: ffmpeg's built-in AAC encoder adds audible
+# high-frequency artifacts (measured; see CLAUDE.md), and the Pi has no
+# better AAC encoder. LAME V0 measured clean and is ~4x faster on the Pi Zero.
+TARGETS = {
+    "mp3": ("mp3", ["-c:a", "libmp3lame", "-q:a", "0",
+                    "-id3v2_version", "3"],        # ID3v2.3: what old iPods read
+            "MP3 (LAME V0)"),
+    "alac": ("m4a", ["-c:a", "alac"], "ALAC (lossless)"),
+    "aac": ("m4a", ["-c:a", "aac", "-b:a", "{bitrate}"], "AAC {bitrate} (ffmpeg)"),
+}
 MAX_DISK_FRACTION = 0.80     # keep the SD card under 80% full (CLAUDE.md)
 DRAW_OVER = "none,idle,preparing"     # never over syncing/safe/failed/boot
 
@@ -87,9 +99,9 @@ def needs_conversion(suffix, device_type):
     return (suffix or "").lower() not in NATIVE_FORMATS["stock_ipod"]
 
 
-def output_name(track, device_type):
+def output_name(track, device_type, target="mp3"):
     suffix = (track.get("suffix") or "bin").lower()
-    ext = "m4a" if needs_conversion(suffix, device_type) else suffix
+    ext = TARGETS[target][0] if needs_conversion(suffix, device_type) else suffix
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", track["id"])
     return f"{safe_id}.{ext}"
 
@@ -108,14 +120,15 @@ def fsync_file(path):
         os.close(fd)
 
 
-def convert(src, dst, bitrate, duration=None):
-    """FLAC (or other) -> AAC .m4a with tags and cover art (CLAUDE.md command).
+def convert(src, dst, target="mp3", bitrate="256k", duration=None):
+    """FLAC (or other) -> the target format, keeping tags and cover art.
 
     If the cover art can't be carried over, retries without it rather than
     failing the track.
     """
+    audio = [a.replace("{bitrate}", bitrate) for a in TARGETS[target][1]]
     base = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", src, "-c:a", "aac", "-b:a", bitrate, "-map_metadata", "0"]
+            "-i", src, *audio, "-map_metadata", "0"]
     attempts = [(["-c:v", "copy", "-disposition:v", "attached_pic"], "with cover art"),
                 (["-vn"], "without cover art")]
     timeout = max(600, int(duration or 0) * 10)    # the Pi Zero is slow
@@ -178,12 +191,13 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     """
     device = cfg["device"]["type"]
     bitrate = cfg["device"]["aac_bitrate"]
+    target = cfg["device"]["convert_to"]
     max_bytes = int(float(cfg["sync"]["max_cache_gb"]) * 1e9)
     tracks_dir = os.path.join(cache_dir, "tracks")
     tmp_dir = os.path.join(cache_dir, "tmp")
 
     targets = target_tracks(client, cfg["sync"]["target"])
-    wanted = {output_name(t, device): t for t in targets}
+    wanted = {output_name(t, device, target): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
     to_remove = sorted(existing - wanted.keys())
     missing = [(name, t) for name, t in wanted.items() if name not in existing]
@@ -226,8 +240,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             client.download(t["id"], src)
             if conv:
                 out = os.path.join(tmp_dir, name)
-                log.info("Converting to AAC %s", bitrate)
-                convert_fn(src, out, bitrate, t.get("duration"))
+                log.info("Converting to %s", TARGETS[target][2].format(bitrate=bitrate))
+                convert_fn(src, out, target, bitrate, t.get("duration"))
                 os.remove(src)
             else:
                 out = src

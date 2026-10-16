@@ -23,7 +23,8 @@ player overnight. An e-ink screen shows whether it's safe to unplug.
   enabled.
 - **Network:** the Pi has a fixed IP. It needs SSH from the development machine and a route to the Navidrome server.
 - **Player now:** iPod Nano 4th gen, **stock firmware** (Rockbox doesn't
-  support it). 16GB. Plays AAC/MP3/ALAC, **not FLAC**.
+  support it). 16GB. Plays AAC/MP3/ALAC, **not FLAC**. The dock converts to
+  **MP3 (LAME V0)** for it (decided 2026-10-16; see Notes).
 - **Player later:** modded iPod Video running **Rockbox**, plays FLAC natively.
 - **Connection:** Pi "USB" port → micro-USB OTG adapter → USB-A to 30-pin
   cable. The Pi powers and charges the iPod.
@@ -52,7 +53,7 @@ the "write tracks / read plays" step differs:
 |---|---|---|
 | Library | `iTunesDB` (signed), via **pygpod** | Plain files + `.m3u8` playlists |
 | Play data | Play-count changes since last sync | `.scrobbler.log`, timestamped |
-| Formats | FLAC → AAC 256k `.m4a` | FLAC copied as-is |
+| Formats | FLAC → MP3 LAME V0 (`convert_to`; `alac` and `aac` also supported) | FLAC copied as-is |
 | Keep signal | TBD (on-device rating?) | `Keep.m3u8` playlist |
 | Album art | Thumbnails in `iPod_Control/Artwork/` (ArtworkDB), made from the embedded cover when each track is added. Ignores art inside the file. | `cover.jpg` (baseline, not progressive JPEG) in the album folder |
 
@@ -63,9 +64,10 @@ on it. libgpod is the fallback.
 
 **Conversion runs on the Pi** in the prepare job, at low priority (`nice`):
 ```
-ffmpeg -i in.flac -c:a aac -b:a 256k -map_metadata 0 \
-  -c:v copy -disposition:v attached_pic out.m4a
+ffmpeg -i in.flac -c:a libmp3lame -q:a 0 -id3v2_version 3 -map_metadata 0 \
+  -c:v copy -disposition:v attached_pic out.mp3
 ```
+Not `-c:a aac`: ffmpeg's built-in AAC encoder adds audible artifacts (Notes).
 The cache holds only the **weekly rotation**, not the whole library. The static
 core library is loaded once from the Mac. Keep the SD card (64GB; 57G root filesystem) under ~80% full.
 
@@ -178,6 +180,27 @@ expand to their tracks. Discovery playlists come later.
   `ID_SERIAL_SHORT` rather than hard-coding). `iPod_Control/Device/SysInfo` is
   empty and there's no `SysInfoExtended` or `Artwork/` yet; libgpod
   conventionally expects `FirewireGuid` in SysInfo.
+- **pygpod manual test (2026-10-16, on the Mac): passed.** pygpod 0.0.6
+  (PyPI, pure Python) identified the Nano as Nano 4G / hash58 once `SysInfo`
+  had `ModelNumStr: xB903` and `FirewireGuid: 0x000A2700000000AB`, reproduced
+  iTunes' own signature exactly, added a track with artwork (6 thumbnail
+  sizes), and the iPod played it and recorded 1 play in `Play Counts`. Without
+  a model in SysInfo, pygpod assumes no signature and writes an unsigned
+  (rejected) DB - always check `requires_hash` before saving.
+- **pygpod deletes `Play Counts` (and `iTunesStats`, `PlayCounts.plist`)
+  every time `Database()` opens**, after merging them into memory, even if
+  nothing is saved. That violates "never clear play data until the server
+  confirms". The handler must copy and parse those files itself
+  (`pygpod.db.playcounts.parse_play_counts`) and upload them before letting
+  pygpod open the DB. Play times are Mac-epoch seconds in the iPod's local
+  time, with no time zone.
+- **ffmpeg's built-in AAC encoder produces audible high-frequency artifacts**
+  (user heard them on the Nano; measured 8-15 noise bursts per 28s vs 1 for
+  Apple's encoder, and decoded peaks up to +3 dBFS on loud masters). The Pi
+  has no fdkaac. LAME MP3 V0 via ffmpeg `libmp3lame` measured clean (0 bursts,
+  no overs) and ~4x faster on the Pi Zero; ALAC is lossless and ~9x faster but
+  ~3.3x larger. Test material and the pre-test iPod backup are in `tmp/`
+  (git-ignored).
 - Don't draw on the panel inside a long-running process: the Waveshare driver
   holds the GPIO pins (and a busy-looping thread) until the process exits,
   which blocks other jobs ("GPIO busy") and slows conversion. `Screen` and

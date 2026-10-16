@@ -53,14 +53,14 @@ class FakeServer:
             f.write(b"audio-" + song_id.encode())
 
 
-def fake_convert(src, dst, bitrate, duration=None):
+def fake_convert(src, dst, target, bitrate, duration=None):
     with open(src, "rb") as f, open(dst, "wb") as g:
-        g.write(b"aac:" + f.read())
+        g.write(target.encode() + b":" + f.read())
 
 
-def config(device="stock_ipod", max_gb=20):
+def config(device="stock_ipod", max_gb=20, convert_to="mp3"):
     return {"sync": {"target": "starred", "max_cache_gb": max_gb},
-            "device": {"type": device, "aac_bitrate": "256k"}}
+            "device": {"type": device, "convert_to": convert_to, "aac_bitrate": "256k"}}
 
 
 class PrepareTests(unittest.TestCase):
@@ -86,17 +86,32 @@ class PrepareTests(unittest.TestCase):
                             albums={"alb": [song("a1"), song("a2")]})
         summary = self.run_prepare(server)
         self.assertEqual(summary["total"], 2)
-        self.assertEqual(self.files(), ["a1.m4a", "a2.m4a"])
+        self.assertEqual(self.files(), ["a1.mp3", "a2.mp3"])
 
     def test_formats_for_stock_ipod(self):
         server = FakeServer(songs=[song("f", "flac"), song("m", "mp3"),
                                    song("a", "m4a"), song("o", "opus")])
         self.run_prepare(server)
-        self.assertEqual(self.files(), ["a.m4a", "f.m4a", "m.mp3", "o.m4a"])
+        self.assertEqual(self.files(), ["a.m4a", "f.mp3", "m.mp3", "o.mp3"])
         with open(os.path.join(self.cache, "tracks", "m.mp3"), "rb") as f:
             self.assertEqual(f.read(), b"audio-m")          # copied, not re-encoded
-        with open(os.path.join(self.cache, "tracks", "f.m4a"), "rb") as f:
-            self.assertTrue(f.read().startswith(b"aac:"))   # converted
+        with open(os.path.join(self.cache, "tracks", "a.m4a"), "rb") as f:
+            self.assertEqual(f.read(), b"audio-a")          # AAC/ALAC kept as-is
+        with open(os.path.join(self.cache, "tracks", "f.mp3"), "rb") as f:
+            self.assertTrue(f.read().startswith(b"mp3:"))   # converted
+
+    def test_alac_target(self):
+        self.run_prepare(FakeServer(songs=[song("f", "flac")]), config(convert_to="alac"))
+        self.assertEqual(self.files(), ["f.m4a"])
+
+    def test_changing_format_reconverts_old_files(self):
+        # Switching from AAC to MP3: old .m4a conversions are replaced.
+        server = FakeServer(songs=[song("f", "flac")])
+        self.run_prepare(server, config(convert_to="aac"))
+        self.assertEqual(self.files(), ["f.m4a"])
+        summary = self.run_prepare(server, config(convert_to="mp3"))
+        self.assertEqual(self.files(), ["f.mp3"])
+        self.assertEqual((summary["added"], summary["removed"]), (1, 1))
 
     def test_rockbox_keeps_flac(self):
         self.assertFalse(needs_conversion("flac", "rockbox"))
@@ -116,7 +131,7 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(server)
         server.songs = [song("a")]
         summary = self.run_prepare(server)
-        self.assertEqual(self.files(), ["a.m4a"])
+        self.assertEqual(self.files(), ["a.mp3"])
         self.assertEqual(summary["removed"], 1)
         self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a"])
 
@@ -124,7 +139,7 @@ class PrepareTests(unittest.TestCase):
         server = FakeServer(songs=[song("a"), song("bad"), song("c")],
                             fail_download={"bad"})
         summary = self.run_prepare(server)
-        self.assertEqual(self.files(), ["a.m4a", "c.m4a"])
+        self.assertEqual(self.files(), ["a.mp3", "c.mp3"])
         self.assertEqual([s["id"] for s in summary["skipped"]], ["bad"])
         self.assertTrue(summary["skipped"][0]["error"])
         self.assertNotIn("bad", [t["id"] for t in self.manifest()["tracks"]])
@@ -132,12 +147,12 @@ class PrepareTests(unittest.TestCase):
     def test_leftover_partial_files_are_never_queued(self):
         # Simulate a run cut off mid-conversion.
         os.makedirs(os.path.join(self.cache, "tmp"))
-        with open(os.path.join(self.cache, "tmp", "a.m4a"), "wb") as f:
+        with open(os.path.join(self.cache, "tmp", "a.mp3"), "wb") as f:
             f.write(b"half")
         self.run_prepare(FakeServer(songs=[song("a")]))
         self.assertFalse(os.path.exists(os.path.join(self.cache, "tmp")))
-        with open(os.path.join(self.cache, "tracks", "a.m4a"), "rb") as f:
-            self.assertEqual(f.read(), b"aac:audio-a")
+        with open(os.path.join(self.cache, "tracks", "a.mp3"), "rb") as f:
+            self.assertEqual(f.read(), b"mp3:audio-a")
 
     def test_stops_when_sd_card_would_pass_80_percent(self):
         nearly_full = lambda path: Usage(100e9, 79.9999e9, 20e9)   # noqa: E731
@@ -180,6 +195,12 @@ class ConfigTests(unittest.TestCase):
             '[server]\nurl="https://x"\nusername="u"\npassword="p"\n'))
         self.assertEqual(cfg["device"]["aac_bitrate"], "256k")
         self.assertFalse(cfg["sync"]["cache_dir"].startswith("~"))
+
+    def test_unknown_format_rejected(self):
+        path = self.write('[server]\nurl="https://x"\nusername="u"\npassword="p"\n'
+                          '[device]\nconvert_to="ogg"\n')
+        with self.assertRaisesRegex(dock_config.ConfigError, "convert_to"):
+            dock_config.load(path)
 
     def test_placeholder_password_rejected(self):
         path = self.write('[server]\nurl="https://x"\nusername="u"\n'

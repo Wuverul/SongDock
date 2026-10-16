@@ -14,5 +14,6 @@ max_cache_gb = 20                  # stay well under the 32GB card's capacity
 
 [device]
 type = "stock_ipod"                # or "rockbox" once the modded iPod exists
-convert_to = "aac"                 # stock iPod can't play FLAC
-aac_bitrate = "256k"
+convert_to = "mp3"                 # stock iPod can't play FLAC. mp3 = LAME V0 (recommended);
+                                   # alac = lossless, ~3x larger; aac = ffmpeg's encoder (artifacts)
+aac_bitrate = "256k"               # only used by convert_to = "aac"
