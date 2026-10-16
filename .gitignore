@@ -14,3 +14,13 @@ tmp/
 
 # macOS
 .DS_Store
+
+# Screen previews from fake-device runs
+previews/
+
+# SSH keys - never commit or deploy
+DockKey
+DockKey.pub
+id_*
+*.pem
+*.key

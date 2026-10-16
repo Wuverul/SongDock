@@ -1,0 +1,185 @@
+"""Tests for the sync job's ordering and safety rules.
+
+Run from the project folder:  python3 -m unittest discover -s tests -v
+"""
+
+import logging
+import os
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import dock_sync  # noqa: E402
+from dock_sync import FakeDevice, SyncError, run_sync  # noqa: E402
+
+# The failure tests log tracebacks on purpose; keep test output readable.
+logging.disable(logging.CRITICAL)
+
+
+class RecordingDevice(FakeDevice):
+    """FakeDevice that records mount/unmount into a shared event list."""
+
+    def __init__(self, folder, events, fail=None):
+        super().__init__(folder, fail=fail)
+        self.events = events
+
+    def mount(self):
+        self.events.append("mount")
+        super().mount()
+
+    def unmount(self):
+        self.events.append("unmount")
+        super().unmount()
+
+
+class SyncOrderTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.folder = self.tmp.name
+        with open(os.path.join(self.folder, "song.m4a"), "wb") as f:
+            f.write(b"x" * 10)
+        self.events = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def show(self, screen, *args, force=False):
+        self.events.append(screen)
+
+    def screens(self):
+        return [e for e in self.events if e not in ("mount", "unmount")]
+
+    def test_happy_path(self):
+        dev = RecordingDevice(self.folder, self.events)
+        self.assertTrue(run_sync(dev, self.show))
+        self.assertEqual(self.events[0], "syncing")
+        self.assertLess(self.events.index("syncing"), self.events.index("mount"))
+        self.assertLess(self.events.index("unmount"), self.events.index("safe"))
+        self.assertEqual(self.events[-1], "safe")
+        self.assertFalse(dev.mounted)
+
+    def test_no_mount_if_syncing_screen_fails(self):
+        def broken_show(screen, *args, force=False):
+            raise OSError("SPI error")
+        dev = RecordingDevice(self.folder, self.events)
+        self.assertFalse(run_sync(dev, broken_show))
+        self.assertNotIn("mount", self.events)
+
+    def test_mount_failure_shows_failed(self):
+        dev = RecordingDevice(self.folder, self.events, fail="mount")
+        self.assertFalse(run_sync(dev, self.show))
+        self.assertNotIn("unmount", self.events)   # never mounted
+        self.assertEqual(self.events[-1], "failed")
+
+    def test_read_failure_still_unmounts(self):
+        dev = RecordingDevice(self.folder, self.events)
+        with mock.patch.object(dock_sync, "list_contents",
+                               side_effect=OSError("I/O error")):
+            self.assertFalse(run_sync(dev, self.show))
+        self.assertIn("unmount", self.events)
+        self.assertLess(self.events.index("unmount"), self.events.index("failed"))
+        self.assertFalse(dev.mounted)
+
+    def test_unmount_failure_never_says_safe(self):
+        dev = RecordingDevice(self.folder, self.events, fail="unmount")
+        self.assertFalse(run_sync(dev, self.show))
+        self.assertNotIn("safe", self.screens())
+        self.assertNotIn("failed", self.screens())   # also says "safe to remove"
+        self.assertEqual(self.screens()[-1], "syncing")
+
+    def test_progress_redraw_failure_does_not_abort(self):
+        calls = []
+
+        def flaky_show(screen, *args, force=False):
+            calls.append(screen)
+            if len(calls) == 2:          # first progress redraw fails
+                raise OSError("SPI hiccup")
+        dev = FakeDevice(self.folder)
+        self.assertTrue(run_sync(dev, flaky_show))
+        self.assertEqual(calls[-1], "safe")
+
+
+class ListingTests(unittest.TestCase):
+    def test_counts_files_and_bytes(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "iPod_Control", "Music", "F00"))
+            for name, size in [("a.m4a", 100), ("b.m4a", 50)]:
+                with open(os.path.join(d, "iPod_Control", "Music", "F00", name), "wb") as f:
+                    f.write(b"x" * size)
+            self.assertEqual(dock_sync.list_contents(d, limit=1), (2, 150))
+
+
+class DetectionTests(unittest.TestCase):
+    # Trimmed `lsblk --json --paths -o NAME,TRAN,FSTYPE,MOUNTPOINT` from a Pi
+    # with its SD card plus a USB player. Partitions have no "tran" of their
+    # own, so they must inherit it from the disk.
+    LSBLK = {"blockdevices": [
+        {"name": "/dev/sda", "tran": "usb", "fstype": None, "mountpoint": None,
+         "children": [
+             {"name": "/dev/sda1", "tran": None, "fstype": "vfat", "mountpoint": None},
+         ]},
+        {"name": "/dev/mmcblk0", "tran": None, "fstype": None, "mountpoint": None,
+         "children": [
+             {"name": "/dev/mmcblk0p1", "tran": None, "fstype": "vfat",
+              "mountpoint": "/boot/firmware"},
+             {"name": "/dev/mmcblk0p2", "tran": None, "fstype": "ext4",
+              "mountpoint": "/"},
+         ]},
+    ]}
+
+    def test_finds_only_usb_partition(self):
+        found = dock_sync.find_usb_filesystems(self.LSBLK)
+        self.assertEqual([d["path"] for d in found], ["/dev/sda1"])
+
+    def test_detect_one_errors_when_nothing_plugged_in(self):
+        with mock.patch.object(dock_sync, "find_usb_filesystems", return_value=[]):
+            with self.assertRaises(SyncError):
+                dock_sync.detect_one()
+
+
+try:
+    import PIL  # noqa: F401
+    HAVE_PIL = True
+except ImportError:
+    HAVE_PIL = False
+
+
+@unittest.skipUnless(HAVE_PIL, "Pillow not installed (pip install pillow)")
+class StatusGuardTests(unittest.TestCase):
+    """dock_status.py: the prepare job must never draw over SYNCING."""
+
+    def setUp(self):
+        import dock_status
+        self.ds = dock_status
+        self.tmp = tempfile.TemporaryDirectory()
+        self.drawn = []
+        patches = [
+            mock.patch.object(dock_status, "STATE_FILE",
+                              os.path.join(self.tmp.name, "state.json")),
+            mock.patch.object(dock_status, "draw_on_panel",
+                              lambda img, full_refresh: self.drawn.append(img)),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(self.tmp.cleanup)
+        dock_status.main(["syncing", "--wifi", "off"])
+        self.drawn.clear()
+
+    def test_idle_cannot_cover_syncing(self):
+        self.ds.main(["idle", "--wifi", "off", "--ip", "10.0.0.2"])
+        self.ds.main(["preparing", "--wifi", "off"])
+        self.assertEqual(self.drawn, [])
+
+    def test_force_and_sync_screens_can_replace_syncing(self):
+        self.ds.main(["idle", "--force", "--wifi", "off", "--ip", "10.0.0.2"])
+        self.assertEqual(len(self.drawn), 1)
+        self.ds.main(["syncing", "--force", "--wifi", "off"])
+        self.ds.main(["safe", "--wifi", "off"])
+        self.assertEqual(len(self.drawn), 3)
+
+
+if __name__ == "__main__":
+    unittest.main()

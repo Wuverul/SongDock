@@ -49,7 +49,12 @@ EPD_LIB = os.environ.get(
     "EPD_LIB",
     os.path.expanduser("~/e-Paper/RaspberryPi_JetsonNano/python/lib"),
 )
-STATE_FILE = os.path.expanduser("~/.cache/dock_status.json")
+# The sync job (root, via systemd) and the prepare job must share one state
+# file, or the "never draw over SYNCING" check can't see the other job's screen.
+STATE_FILE = os.environ.get(
+    "DOCK_STATE_FILE",
+    os.path.expanduser("~/.cache/dock_status.json"),
+)
 MIN_PROGRESS_INTERVAL = 30          # seconds between progress-only redraws
 FULL_REFRESH_EVERY = 10             # fast refreshes before a full anti-ghost refresh
 
@@ -262,7 +267,8 @@ def draw_on_panel(img, full_refresh):
 
 
 # ------------------------------------------------------------------ main ----
-def main():
+def main(argv=None):
+    """Entry point. dock_sync.py calls this directly with an argv list."""
     p = argparse.ArgumentParser(description="Dock e-ink status screen")
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe", "failed"])
     p.add_argument("--step", type=int, help="syncing: current step")
@@ -279,7 +285,7 @@ def main():
                    help="preview only: fake Wi-Fi reading, e.g. -56 or off")
     p.add_argument("--ip", help="preview only: fake IP address")
     p.add_argument("--force", action="store_true", help="ignore rate limiting")
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     img = render(args.screen, args)
 

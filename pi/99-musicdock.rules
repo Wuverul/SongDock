@@ -1,0 +1,10 @@
+# Start the dock sync when a USB device with a filesystem appears.
+#
+# udev only *triggers* the job: it asks systemd to start
+# musicdock-sync@<kernel name>.service (e.g. musicdock-sync@sda1.service).
+# Never do the work here - udev kills long-running commands, and mounts made
+# from udev aren't visible to the rest of the system.
+#
+# ID_FS_USAGE=filesystem matches partitions (sda1) and also "superfloppy"
+# USB sticks that have a filesystem on the whole disk (sda).
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="musicdock-sync@%k.service"

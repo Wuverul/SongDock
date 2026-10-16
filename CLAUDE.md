@@ -98,7 +98,15 @@ expand to their tracks. Discovery playlists come later.
 - `dock_status.py`: e-ink status screens (`idle`, `preparing`, `syncing`,
   `safe`, `failed`), with a Wi-Fi indicator and IP address. `--preview out.png`
   renders without hardware; `--wifi -56|off` and `--ip` fake readings for
-  previews.
+  previews. `DOCK_STATE_FILE` overrides where screen state is kept.
+- `dock_sync.py`: sync job. Detects/mounts (read-only for now) the player,
+  lists it, unmounts, shows `safe`/`failed`. `--fake-device DIR` uses a folder
+  and writes screen PNGs to `previews/`; `--fake-fail mount|unmount` tests
+  error paths.
+- `pi/`: udev rule, `musicdock-sync@.service` template, `install.sh`.
+- `deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
+  on the Pi (cache stays in `~/musicdock/cache`).
+- `tests/`: `python3 -m unittest discover -s tests -v`.
 
 ## Development workflow
 
