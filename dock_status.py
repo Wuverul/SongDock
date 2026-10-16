@@ -194,12 +194,13 @@ def render(screen, args):
     now = when.strftime("%-I:%M %p")
 
     def header(text, inverted):
+        x = max(4, (WIDTH - d.textlength(text, font=title_f)) // 2)   # centered
         if inverted:
             d.rectangle((0, 0, WIDTH, 32), fill=0)
-            d.text((8, 5), text, font=title_f, fill=255)
+            d.text((x, 5), text, font=title_f, fill=255)
         else:
             d.rectangle((0, 0, WIDTH - 1, 32), outline=0, width=2)
-            d.text((8, 5), text, font=title_f, fill=0)
+            d.text((x, 5), text, font=title_f, fill=0)
 
     def lines(rows, top=42):
         y = top
@@ -257,20 +258,21 @@ def render(screen, args):
 
     elif screen == "safe":
         header(f"{check}SAFE TO REMOVE", inverted=False)
-        stats = f"+{args.added}  \u2212{args.removed} tracks \u00b7 {args.plays} plays sent" \
-            if has_glyphs else f"+{args.added} -{args.removed} tracks, {args.plays} plays sent"
-        rows = [(stats, body_f), (f"Synced {now}", body_f)]
+        minus = "\u2212" if has_glyphs else "-"
+        plays = f"{args.plays} plays sent"
         if args.queued:
-            rows.append((f"{args.queued} plays queued (server offline)", small_f))
-        lines(rows)
+            plays += f", {args.queued} queued"          # server was unreachable
+        lines([(f"+{args.added}  {minus}{args.removed} tracks", body_f),
+               (fit(plays, body_f), body_f),
+               (f"Synced {now}", body_f)])
 
     elif screen == "failed":
         header(f"{warn}SYNC FAILED", inverted=True)
         lines([
             ("Safe to remove", body_f),
             (fit(args.reason or "Unknown error", body_f), body_f),
-            (f"Plays kept on device \u00b7 {now}" if has_glyphs
-             else f"Plays kept on device - {now}", small_f),
+            (f"No plays lost \u00b7 {now}" if has_glyphs     # on the player or
+             else f"No plays lost - {now}", small_f),       # queued on the Pi
         ])
 
     elif screen == "starting":
@@ -326,12 +328,16 @@ def render(screen, args):
 
     else:  # idle
         header("DOCK READY", inverted=False)
+        # A multi-line detail (the last-sync summary, see rest_main) takes
+        # the place of "Waiting for player", leaving room for the IP line.
+        detail = args.detail.split("\n") if args.detail else []
         if args.total:
             rows = [(f"Next sync: {args.ready or 0}/{args.total} tracks ready", body_f)]
-        else:
+        elif len(detail) < 2:
             rows = [("Waiting for player", body_f)]
-        if args.detail:
-            rows.append((fit(args.detail, body_f), body_f))
+        else:
+            rows = []
+        rows += [(fit(line, body_f), body_f) for line in detail]
         rows.append((f"Powered on {now}" if args.boot else f"Since {now}", small_f))
         lines(rows)
         ip = args.ip if args.ip is not None else read_ip()
@@ -586,7 +592,8 @@ def rest_main(argv=None, sleep=time.sleep):
     prev = build_parser().parse_args(state.get("argv") or [screen])
     when = datetime.fromtimestamp(drawn_at).strftime("%-I:%M %p")
     if screen == "safe":
-        detail = f"Last synced {when} (+{prev.added} \u2212{prev.removed}, {prev.plays} plays)"
+        detail = (f"Last synced {when}\n"
+                  f"+{prev.added}  \u2212{prev.removed} tracks \u00b7 {prev.plays} plays")
     else:
         detail = f"Last sync failed {when}"
     main(["idle", "--detail", detail, "--only-over", allowed])

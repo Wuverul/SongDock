@@ -115,9 +115,10 @@ class RestScreenTests(WifiRefreshTests):
         self.rest("timer")
         args = self.rendered[-1]
         self.assertEqual(args.screen, "idle")
-        self.assertIn("Last synced", args.detail)
-        self.assertIn("+79", args.detail)
-        self.assertIn("5 plays", args.detail)
+        first, second = args.detail.split("\n")             # two lines: nothing cut off
+        self.assertIn("Last synced", first)
+        self.assertIn("+79", second)
+        self.assertIn("5 plays", second)
         self.assertEqual(dock_status.load_state()["screen"], "idle")
 
     def test_timer_leaves_failed_up(self):
