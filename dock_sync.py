@@ -27,6 +27,7 @@ Safety rules (from CLAUDE.md):
 import argparse
 import fcntl
 import glob
+import importlib.util
 import json
 import logging
 import os
@@ -229,8 +230,18 @@ def list_contents(root, limit=LIST_LIMIT):
 
 
 # ---------------------------------------------------------------- screen ----
+DOCK_STATUS = os.path.join(HERE, "dock_status.py")
+
+
 class Screen:
-    """Draws via dock_status.py: on the panel, or as PNGs in preview_dir."""
+    """Draws via dock_status.py: on the panel, or as PNGs in preview_dir.
+
+    Every draw runs in its own short-lived dock_status.py process. The
+    Waveshare driver keeps the panel's GPIO pins (and a busy-looping
+    pin-monitor thread) until the process that drew exits. Drawing inside a
+    long-running job would block every other job from the panel ("GPIO
+    busy") and waste CPU for as long as the job runs.
+    """
 
     def __init__(self, preview_dir=None):
         self.preview_dir = preview_dir
@@ -247,15 +258,12 @@ class Screen:
             argv += ["--preview",
                      os.path.join(self.preview_dir, f"{self.count:02d}-{screen}.png")]
         log.info("Screen: %s %s", screen.upper(), " ".join(args))
-        try:
-            sys.path.insert(0, HERE)
-            import dock_status
-        except ImportError:
-            if self.preview_dir:   # e.g. Pillow not installed on the Mac
-                log.warning("Pillow not installed: screen logged, not rendered")
-                return
-            raise                  # on the panel this is a real failure
-        dock_status.main(argv)
+        if self.preview_dir and importlib.util.find_spec("PIL") is None:
+            log.warning("Pillow not installed: screen logged, not rendered")
+            return                 # e.g. on the Mac; on the panel it's an error
+        r = subprocess.run([sys.executable, DOCK_STATUS, *argv])
+        if r.returncode != 0:
+            raise SyncError(f"Screen {screen} failed (dock_status.py exit {r.returncode})")
 
 
 # ------------------------------------------------------------------ sync ----

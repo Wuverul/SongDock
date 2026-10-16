@@ -468,5 +468,31 @@ def main(argv=None):
                     "fast_count": 0 if full else count})
 
 
+def stream_main(argv=None):
+    """Child-process side of a partial-update burst (used by dock_boot.py).
+
+    Reads one JSON list of screen arguments per line from stdin, e.g.
+    ["starting", "--uptime", "90"], and draws each as a partial update.
+    At end of input the panel sleeps and the process exits, which releases
+    the GPIO pins (see dock_sync.Screen for why that matters).
+    """
+    p = argparse.ArgumentParser(description="Partial-update burst from stdin")
+    p.add_argument("--preview-dir", help="save frames as PNGs instead of drawing")
+    args = p.parse_args(argv)
+    parser = build_parser()
+    with PartialUpdates(args.preview_dir) as panel:
+        if not args.preview_dir:
+            # So the next normal draw knows the screen changed and does a
+            # full refresh (clearing any partial-update ghosting).
+            save_state({"screen": "starting", "last_draw": time.time(),
+                        "fast_count": 0})
+        for line in sys.stdin:
+            frame = parser.parse_args(json.loads(line))
+            panel.show(render(frame.screen, frame), frame.screen)
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:2] == ["--partial-stream"]:
+        stream_main(sys.argv[2:])
+    else:
+        main()

@@ -54,9 +54,11 @@ the "write tracks / read plays" step differs:
 | Play data | Play-count changes since last sync | `.scrobbler.log`, timestamped |
 | Formats | FLAC → AAC 256k `.m4a` | FLAC copied as-is |
 | Keep signal | TBD (on-device rating?) | `Keep.m3u8` playlist |
+| Album art | Thumbnails in `iPod_Control/Artwork/` (ArtworkDB), made from the embedded cover when each track is added. Ignores art inside the file. | `cover.jpg` (baseline, not progressive JPEG) in the album folder |
 
 pygpod is **pre-alpha** and untested on the Nano 4G, so prove it with a manual
-test (read DB, add one track, play, read the play count back) before building
+test (read DB, add one track **with album art**, play it, check the art shows,
+read the play count back) before building
 on it. libgpod is the fallback.
 
 **Conversion runs on the Pi** in the prepare job, at low priority (`nice`):
@@ -160,3 +162,23 @@ expand to their tracks. Discovery playlists come later.
 4. Stock iPod handler via pygpod (after the manual test passes)
 5. Modded iPod Video + Rockbox handler
 6. 3D-printed dock enclosure
+
+## Notes
+
+- The user wants album art on the player. Prepared tracks already embed the
+  cover (1200x1200 JPEG). The stock-iPod handler must also write the iPod's
+  artwork database; libgpod may need `iPod_Control/Device/SysInfoExtended` to
+  know the Nano's thumbnail sizes (unverified on the Nano 4G).
+- The user's Nano (inspected on the Mac 2026-10-15, after a factory restore on
+  Windows): USB product ID 0x1263 (Nano 4G), **FAT32** on an MBR partition
+  (`disk6s1`, label `MY IPOD`, 16.2 GB), so Linux can write it. `iTunesDB`
+  is version 0x75 and **signed (hash58)** - any DB writer must re-sign it, or
+  the iPod shows no music. hash58 needs the FireWire GUID, which is the USB
+  serial number (`000A2700000000AB`; read it at dock time from udev
+  `ID_SERIAL_SHORT` rather than hard-coding). `iPod_Control/Device/SysInfo` is
+  empty and there's no `SysInfoExtended` or `Artwork/` yet; libgpod
+  conventionally expects `FirewireGuid` in SysInfo.
+- Don't draw on the panel inside a long-running process: the Waveshare driver
+  holds the GPIO pins (and a busy-looping thread) until the process exits,
+  which blocks other jobs ("GPIO busy") and slows conversion. `Screen` and
+  `dock_boot` draw via short-lived `dock_status.py` child processes.

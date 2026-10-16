@@ -32,7 +32,7 @@ Usage:
 """
 
 import argparse
-import glob
+import json
 import logging
 import os
 import shutil
@@ -154,11 +154,11 @@ def main(argv=None):
 
     sys.path.insert(0, HERE)
     import dock_status
+    from dock_sync import DOCK_STATUS, Screen
 
-    if args.preview_dir:
-        os.makedirs(args.preview_dir, exist_ok=True)
-        for old in glob.glob(os.path.join(args.preview_dir, "[0-9][0-9]-*.png")):
-            os.remove(old)
+    # Screen draws all happen in separate dock_status.py processes, so the
+    # panel's GPIO pins are released between them (see dock_sync.Screen).
+    screen = Screen(args.preview_dir)     # also clears old preview frames
 
     # Read this before anything overwrites it.
     last = dock_status.load_state().get("screen")
@@ -168,45 +168,50 @@ def main(argv=None):
         return {"ip": dock_status.read_ip(), "wifi": dock_status.read_wifi(),
                 "clock": clock_synced()}
 
-    frames = 0
-
     def draw(screen_argv):
-        """Full-refresh draw via dock_status (panel, or the next preview PNG)."""
-        nonlocal frames
-        frames += 1
-        if args.preview_dir:
-            screen_argv = screen_argv + ["--preview", os.path.join(
-                args.preview_dir, f"{frames:02d}-{screen_argv[0]}.png")]
         log.info("Drawing: %s", " ".join(screen_argv))
-        dock_status.main(screen_argv)
+        try:
+            screen.show(*screen_argv)
+        except Exception:
+            log.exception("Screen update failed (continuing)")
 
     readings, gave_up = None, True
+    cmd = [sys.executable, DOCK_STATUS, "--partial-stream"]
+    if args.preview_dir:
+        cmd += ["--preview-dir", args.preview_dir]
+    burst = subprocess.Popen(cmd, stdin=subprocess.PIPE, text=True)
     try:
-        with dock_status.PartialUpdates(args.preview_dir) as panel:
-            if not args.preview_dir:
-                # So the next normal draw knows the screen changed and does
-                # a full refresh (clearing any partial-update ghosting).
-                dock_status.save_state({"screen": "starting",
-                                        "last_draw": time.time(), "fast_count": 0})
+        def show(r):
+            a = ["starting", "--ip", r["ip"] or ""]
+            if r["wifi"] is not None:
+                a += ["--wifi", str(r["wifi"])]
+            if r["clock"]:
+                a.append("--clock-synced")
+            up = uptime()
+            if up is not None:
+                a += ["--uptime", str(up)]
+            log.info("Starting: ip=%s wifi=%s clock=%s up=%ss",
+                     r["ip"], r["wifi"], "set" if r["clock"] else "waiting", up)
+            try:
+                burst.stdin.write(json.dumps(a) + "\n")
+                burst.stdin.flush()
+                screen.count += 1         # keep preview numbering in step
+            except (BrokenPipeError, ValueError):
+                # The drawing process died (it logged why). Keep checking
+                # the network; only the screen updates are lost.
+                pass
 
-            def show(r):
-                a = ["starting", "--ip", r["ip"] or ""]
-                if r["wifi"] is not None:
-                    a += ["--wifi", str(r["wifi"])]
-                if r["clock"]:
-                    a.append("--clock-synced")
-                up = uptime()
-                if up is not None:
-                    a += ["--uptime", str(up)]
-                log.info("Starting: ip=%s wifi=%s clock=%s up=%ss",
-                         r["ip"], r["wifi"], "set" if r["clock"] else "waiting", up)
-                img = dock_status.render("starting", dock_status.build_parser().parse_args(a))
-                panel.show(img, "starting")
-
-            readings, gave_up = starting_phase(show, read)
-            frames = panel.frames
+        readings, gave_up = starting_phase(show, read)
     except Exception:
         log.exception("STARTING UP screen failed; checking the network without it")
+    finally:
+        try:
+            burst.stdin.close()           # end of input: panel sleeps, child exits
+            burst.wait(timeout=120)
+        except Exception:
+            burst.kill()
+        if burst.returncode:
+            log.warning("STARTING UP drawing process exited %s", burst.returncode)
 
     if gave_up:
         ssid = wifi_ssid()

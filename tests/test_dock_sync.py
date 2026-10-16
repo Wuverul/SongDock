@@ -101,6 +101,23 @@ class SyncOrderTests(unittest.TestCase):
         self.assertEqual(calls[-1], "safe")
 
 
+class ScreenProcessTests(unittest.TestCase):
+    """Screen must draw in a separate process (GPIO is released on exit)."""
+
+    def test_draws_in_a_child_process(self):
+        with mock.patch.object(dock_sync.subprocess, "run",
+                               return_value=mock.Mock(returncode=0)) as run:
+            dock_sync.Screen().show("syncing", "--step", "1")
+        cmd = run.call_args[0][0]
+        self.assertEqual(cmd[1:], [dock_sync.DOCK_STATUS, "syncing", "--step", "1"])
+
+    def test_failed_draw_raises_so_sync_wont_mount(self):
+        with mock.patch.object(dock_sync.subprocess, "run",
+                               return_value=mock.Mock(returncode=1)):
+            with self.assertRaises(SyncError):
+                dock_sync.Screen().show("syncing", force=True)
+
+
 class ListingTests(unittest.TestCase):
     def test_counts_files_and_bytes(self):
         with tempfile.TemporaryDirectory() as d:
@@ -172,6 +189,15 @@ class StatusGuardTests(unittest.TestCase):
         self.ds.main(["idle", "--wifi", "off", "--ip", "10.0.0.2"])
         self.ds.main(["preparing", "--wifi", "off"])
         self.assertEqual(self.drawn, [])
+
+    def test_partial_stream_draws_each_line(self):
+        import io
+        lines = io.StringIO('["starting", "--uptime", "70", "--ip", "", "--wifi", "off"]\n'
+                            '["starting", "--uptime", "80", "--ip", "10.0.0.2", "--wifi", "-50"]\n')
+        with mock.patch.object(sys, "stdin", lines):
+            self.ds.stream_main(["--preview-dir", self.tmp.name])
+        frames = sorted(f for f in os.listdir(self.tmp.name) if f.endswith(".png"))
+        self.assertEqual(frames, ["01-starting.png", "02-starting.png"])
 
     def test_force_and_sync_screens_can_replace_syncing(self):
         self.ds.main(["idle", "--force", "--wifi", "off", "--ip", "10.0.0.2"])
