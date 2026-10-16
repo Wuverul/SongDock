@@ -5,11 +5,13 @@ dock_status.py - e-ink status screen for the music player dock.
 Target: Waveshare 2.13" e-Paper HAT V4 (250x122) on a Raspberry Pi Zero W.
 
 Usage:
-  dock_status.py idle [--ready 38 --total 40]
+  dock_status.py idle [--ready 38 --total 40] [--boot] [--detail "..."]
   dock_status.py preparing --done 12 --total 40 --detail "Converting: Artist - Song"
   dock_status.py syncing --step 3 --total 6 --detail "Copying tracks 12/40"
   dock_status.py safe --added 14 --removed 9 --plays 38
   dock_status.py failed --reason "Server unreachable"
+  dock_status.py starting --uptime 75 [--clock-synced]   # boot progress
+  dock_status.py offline --problem wifi --ssid "Home" --uptime 300
 
 Two jobs drive the screen:
   * prepare job (scheduled, never touches the player): idle, preparing
@@ -38,6 +40,7 @@ import json
 import os
 import socket
 import sys
+import tempfile
 import time
 from datetime import datetime
 
@@ -49,12 +52,15 @@ EPD_LIB = os.environ.get(
     "EPD_LIB",
     os.path.expanduser("~/e-Paper/RaspberryPi_JetsonNano/python/lib"),
 )
-# The sync job (root, via systemd) and the prepare job must share one state
-# file, or the "never draw over SYNCING" check can't see the other job's screen.
-STATE_FILE = os.environ.get(
-    "DOCK_STATE_FILE",
-    os.path.expanduser("~/.cache/dock_status.json"),
-)
+# Every job (sync and boot run as root; manual runs and the prepare job as the
+# login user) must share one state file, or the "never draw over SYNCING"
+# check can't see another job's screen. pi/install.sh creates the shared
+# folder; elsewhere (e.g. the Mac) we fall back to ~/.cache.
+SHARED_STATE_DIR = "/var/lib/musicdock"
+STATE_FILE = os.environ.get("DOCK_STATE_FILE") or (
+    os.path.join(SHARED_STATE_DIR, "dock_status.json")
+    if os.path.isdir(SHARED_STATE_DIR)
+    else os.path.expanduser("~/.cache/dock_status.json"))
 MIN_PROGRESS_INTERVAL = 30          # seconds between progress-only redraws
 FULL_REFRESH_EVERY = 10             # fast refreshes before a full anti-ghost refresh
 
@@ -86,9 +92,16 @@ def load_state():
 
 
 def save_state(state):
-    os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
-    with open(STATE_FILE, "w") as f:
+    folder = os.path.dirname(STATE_FILE)
+    os.makedirs(folder, exist_ok=True)
+    # Write a temp file, then rename it over the old one. A power cut can't
+    # leave half a file, and it works even when the old file was written by
+    # another user (root's sync job vs. the login user).
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".dock_status.")
+    with os.fdopen(fd, "w") as f:
         json.dump(state, f)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, STATE_FILE)
 
 
 # --------------------------------------------------------------- network ----
@@ -217,6 +230,46 @@ def render(screen, args):
              else f"Plays kept on device - {now}", small_f),
         ])
 
+    elif screen == "starting":
+        # Boot progress (dock_boot.py). Until the clock is set from the
+        # network, uptime stands in for the time so the screen visibly moves.
+        dots = "…" if has_glyphs else "..."
+        header(f"STARTING UP{dots}", inverted=False)
+        ip = args.ip if args.ip is not None else read_ip()
+        rows = [
+            ("Wi-Fi connected" if ip else f"Connecting to Wi-Fi{dots}", body_f),
+            (f"Clock set: {now}" if args.clock_synced else f"Setting clock{dots}", body_f),
+        ]
+        if args.uptime is not None:
+            mins, secs = divmod(args.uptime, 60)
+            rows.append((f"Up {mins}m {secs:02d}s" if mins else f"Up {secs}s", small_f))
+        lines(rows)
+        d.text((8, 106), f"IP {ip}" if ip else "No IP yet", font=small_f, fill=0)
+
+    elif screen == "offline":
+        # Boot gave up waiting for the network (dock_boot.py keeps retrying).
+        # No network time either way, so uptime stands in for the time.
+        up = ""
+        if args.uptime is not None:
+            mins, secs = divmod(args.uptime, 60)
+            up = f"Up {mins}m {secs:02d}s"
+        ip = args.ip if args.ip is not None else read_ip()
+        if args.problem == "clock":
+            header(f"{warn}CLOCK NOT SET", inverted=True)
+            rows = [("Can't reach a time server", body_f),
+                    ("Is NTP (UDP port 123) blocked?", small_f),
+                    (f"Still trying · {up}" if up else "Still trying", small_f)]
+        else:
+            ssid = f"“{args.ssid}”" if args.ssid else "Wi-Fi"
+            header(f"{warn}NO WI-FI", inverted=True)
+            rows = [(fit(f"Can't join {ssid}", body_f), body_f),
+                    (fit("Still trying. To troubleshoot, use", small_f), small_f),
+                    ("the serial console (115200 baud).", small_f)]
+        lines(rows)
+        # Bottom-left: IP when there is one (uptime is already above), else uptime.
+        bottom = f"IP {ip}" if ip and args.problem == "clock" else up
+        d.text((8, 106), bottom, font=small_f, fill=0)
+
     elif screen == "preparing":
         count = f"  {args.done}/{args.total}" if args.total else ""
         header(f"PREPARING{count}", inverted=False)
@@ -234,7 +287,9 @@ def render(screen, args):
             rows = [(f"Next sync: {args.ready or 0}/{args.total} tracks ready", body_f)]
         else:
             rows = [("Waiting for player", body_f)]
-        rows.append((f"Since {now}", small_f))
+        if args.detail:
+            rows.append((fit(args.detail, body_f), body_f))
+        rows.append((f"Powered on {now}" if args.boot else f"Since {now}", small_f))
         lines(rows)
         ip = args.ip if args.ip is not None else read_ip()
         if ip:
@@ -245,14 +300,60 @@ def render(screen, args):
 
 
 # --------------------------------------------------------------- display ----
-def draw_on_panel(img, full_refresh):
+def open_panel():
     sys.path.insert(0, EPD_LIB)
     from waveshare_epd import epd2in13_V4  # noqa: E402
+    return epd2in13_V4.EPD()
 
-    epd = epd2in13_V4.EPD()
+
+def panel_buffer(epd, img):
     # Panel is natively portrait (122x250); rotate our landscape image.
     # 270 (not 90) matches how the HAT sits on this Pi - confirmed on hardware.
-    buf = epd.getbuffer(img.rotate(270, expand=True))
+    return epd.getbuffer(img.rotate(270, expand=True))
+
+
+class PartialUpdates:
+    """A short burst of in-place updates, used by the boot screen.
+
+    The first frame is a full refresh that becomes the base image; later
+    frames change only the pixels that differ (no black/white flash). The
+    driver's sleep() also closes SPI, so the panel can't sleep between
+    partial frames: it stays awake for the burst and always sleeps on exit,
+    even after an error. Keep bursts short (the boot screen's is <= 5 min).
+
+    With preview_dir set, frames are saved as numbered PNGs instead.
+    """
+
+    def __init__(self, preview_dir=None):
+        self.preview_dir = preview_dir
+        self.epd = None
+        self.frames = 0
+
+    def __enter__(self):
+        if not self.preview_dir:
+            self.epd = open_panel()
+            self.epd.init()
+        return self
+
+    def show(self, img, name="frame"):
+        self.frames += 1
+        if self.preview_dir:
+            img.save(os.path.join(self.preview_dir, f"{self.frames:02d}-{name}.png"))
+            return
+        buf = panel_buffer(self.epd, img)
+        if self.frames == 1:
+            self.epd.displayPartBaseImage(buf)
+        else:
+            self.epd.displayPartial(buf)
+
+    def __exit__(self, *exc):
+        if self.epd:
+            self.epd.sleep()  # never leave the panel powered
+
+
+def draw_on_panel(img, full_refresh):
+    epd = open_panel()
+    buf = panel_buffer(epd, img)
 
     fast = not full_refresh and hasattr(epd, "init_fast") and hasattr(epd, "display_fast")
     try:
@@ -267,10 +368,10 @@ def draw_on_panel(img, full_refresh):
 
 
 # ------------------------------------------------------------------ main ----
-def main(argv=None):
-    """Entry point. dock_sync.py calls this directly with an argv list."""
+def build_parser():
     p = argparse.ArgumentParser(description="Dock e-ink status screen")
-    p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe", "failed"])
+    p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
+                                      "failed", "starting", "offline"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--done", type=int, help="preparing: tracks converted so far")
     p.add_argument("--ready", type=int, help="idle: tracks ready for next sync")
@@ -280,12 +381,25 @@ def main(argv=None):
     p.add_argument("--removed", type=int, default=0)
     p.add_argument("--plays", type=int, default=0)
     p.add_argument("--reason")
+    p.add_argument("--boot", action="store_true",
+                   help="idle: say the dock just powered on (dock_boot.py)")
     p.add_argument("--preview", metavar="PNG", help="save a PNG instead of drawing")
     p.add_argument("--wifi", type=lambda v: "off" if v == "off" else int(v),
                    help="preview only: fake Wi-Fi reading, e.g. -56 or off")
     p.add_argument("--ip", help="preview only: fake IP address")
     p.add_argument("--force", action="store_true", help="ignore rate limiting")
-    args = p.parse_args(argv)
+    p.add_argument("--uptime", type=int, help="starting: seconds since power-on")
+    p.add_argument("--clock-synced", action="store_true",
+                   help="starting: the clock has been set from the network")
+    p.add_argument("--problem", choices=["wifi", "clock"], default="wifi",
+                   help="offline: what's missing")
+    p.add_argument("--ssid", help="offline: the Wi-Fi network being joined")
+    return p
+
+
+def main(argv=None):
+    """Entry point. dock_sync.py and dock_boot.py call this with an argv list."""
+    args = build_parser().parse_args(argv)
 
     img = render(args.screen, args)
 

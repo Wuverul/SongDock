@@ -17,12 +17,20 @@ for cmd in python3 lsblk mount umount; do
   command -v "$cmd" >/dev/null || { echo "Missing $cmd" >&2; exit 1; }
 done
 
-sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@HOME@|$USER_HOME|g" \
-  "$APP_DIR/pi/musicdock-sync@.service" > /etc/systemd/system/musicdock-sync@.service
+# Shared screen state for every job. Owned by the login user so manual runs
+# and the prepare job can write it; root (sync, boot) can write it anyway.
+install -d -o "$LOGIN_USER" -g "$(id -gn "$LOGIN_USER")" -m 755 /var/lib/musicdock
+
+for unit in musicdock-sync@.service musicdock-boot.service; do
+  sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@HOME@|$USER_HOME|g" \
+    "$APP_DIR/pi/$unit" > "/etc/systemd/system/$unit"
+done
 install -m 644 "$APP_DIR/pi/99-musicdock.rules" /etc/udev/rules.d/99-musicdock.rules
 
 systemctl daemon-reload
+systemctl enable musicdock-boot.service
 udevadm control --reload
 
-echo "Installed. Plug in the player, then watch the log with:"
+echo "Installed. The boot screen appears on the next power-on."
+echo "Plug in the player, then watch the log with:"
 echo "  journalctl -u 'musicdock-sync@*' -f"

@@ -6,6 +6,8 @@
 
 [Unit]
 Description=Music Dock sync (/dev/%I)
+# If the player is docked at power-on, let the boot screen draw first.
+After=musicdock-boot.service
 
 [Service]
 Type=oneshot

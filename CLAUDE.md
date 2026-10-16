@@ -78,12 +78,23 @@ expand to their tracks. Discovery playlists come later.
   screen, which is the safe failure.
 - **The prepare job never draws over `syncing`.** Only the sync job (or
   `--force`) can replace it. This is enforced and tested in `dock_status.py`.
+  One exception: at power-on, `dock_boot.py` replaces a leftover `syncing`
+  with `failed` ("Sync interrupted by restart"), because after a reboot no
+  sync is running and nothing is mounted. It reports the interruption rather
+  than hiding it.
+- **All jobs share one screen-state file** (`/var/lib/musicdock/dock_status.json`
+  on the Pi), or the check above can't see another job's screen.
 - **Stock iPod: back up `iPod_Control/iTunes/` before every database write.**
   On failure, restore the backup and show `failed`.
 - **Never delete from the player before its play data has been uploaded.**
 - **Every e-ink screen shows the time**, so a stale screen can't pass as
-  current.
+  current. Exception: `starting` and `offline` (boot) show uptime until the
+  clock is set from the network, because the Pi Zero has no clock battery.
 - **Rate-limit e-ink redraws** and always put the panel to sleep after drawing.
+  Exception: the boot screen's partial-update burst (`PartialUpdates`, every
+  10s for at most 5 min) keeps the panel awake between frames, because the
+  driver's `sleep()` closes SPI. It always sleeps when the burst ends, even on
+  error.
 
 ## Credentials
 
@@ -103,7 +114,16 @@ expand to their tracks. Discovery playlists come later.
   lists it, unmounts, shows `safe`/`failed`. `--fake-device DIR` uses a folder
   and writes screen PNGs to `previews/`; `--fake-fail mount|unmount` tests
   error paths.
-- `pi/`: udev rule, `musicdock-sync@.service` template, `install.sh`.
+- `dock_boot.py`: boot screens, run once per power-on by
+  `musicdock-boot.service` (not ordered after the network, so it starts
+  early). Shows `starting`, updated in place every 10s as Wi-Fi, IP, and
+  network time arrive, then `idle --boot` ("Powered on <time>") once all are
+  ready. After 5 min without them it shows `offline` (names the SSID or the
+  time server, and points to the serial console at 115200 baud) and keeps
+  waiting with no time limit. Syncs are ordered after this service, so they
+  wait for the network too. `--preview-dir` saves every frame as a PNG.
+- `pi/`: udev rule, `musicdock-sync@.service` template (ordered after the boot
+  service), `musicdock-boot.service`, `install.sh`.
 - `deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
   on the Pi (cache stays in `~/musicdock/cache`).
 - `tests/`: `python3 -m unittest discover -s tests -v`.

@@ -1,0 +1,20 @@
+# Draws the boot screen once per power-on. install.sh fills in @APP_DIR@ and
+# @HOME@, copies this to /etc/systemd/system/, and enables it.
+#   journalctl -u musicdock-boot -b     # this boot's log
+
+[Unit]
+Description=Music Dock boot screen
+# Deliberately NOT ordered after the network: STARTING UP should appear as
+# early as possible and show Wi-Fi coming up. dock_boot.py waits for it.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 @APP_DIR@/dock_boot.py
+Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
+Environment=PYTHONUNBUFFERED=1
+# Without Wi-Fi this keeps waiting (OFFLINE screen) until the network works,
+# so no time limit. Syncs are ordered after it and wait too.
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target
