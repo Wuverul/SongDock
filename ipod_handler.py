@@ -102,3 +102,305 @@ def plays_from_snapshot(workdir, record, guid, now=None):
                 "artist": track.artist, "album": track.album, "title": track.title,
             })
     return plays
+
+
+# ================================================================== setup ====
+class HandlerError(Exception):
+    pass
+
+
+# USB product ID -> a model number pygpod knows, for players whose SysInfo is
+# empty (fresh restore) and that the record hasn't seen yet. Any model of the
+# same generation gives the same signature type and artwork sizes.
+REPRESENTATIVE_MODELS = {
+    0x1263: "xB903",       # iPod nano 4th generation
+}
+NAVIDROME_TAG = "navidrome:"   # prefix in a track's comment field (mapping backup)
+FREE_SPACE_MARGIN = 200 * 1024 * 1024
+ARTWORK_FIRST_ID = 100     # pygpod starts at 1, which clashed with game icons
+
+
+def sysinfo_path(mount):
+    return os.path.join(mount, "iPod_Control", "Device", "SysInfo")
+
+
+def read_sysinfo(mount):
+    values, lines = {}, []
+    try:
+        with open(sysinfo_path(mount)) as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        pass
+    for line in lines:
+        key, sep, val = line.partition(":")
+        if sep:
+            values[key.strip()] = val.strip()
+    return values, lines
+
+
+def ensure_sysinfo(mount, guid, record, usb_product=None):
+    """Make sure SysInfo has the model number and FireWire GUID.
+
+    Without them pygpod can't tell the player needs a signed database and
+    writes one the iPod rejects. A factory restore empties SysInfo, so the
+    model is remembered in the record per GUID. Returns the model used.
+    """
+    values, lines = read_sysinfo(mount)
+    known = record.player(guid) or {}
+    model = (values.get("ModelNumStr") or known.get("model")
+             or REPRESENTATIVE_MODELS.get(usb_product))
+    if not model:
+        raise HandlerError(
+            "unknown iPod model: SysInfo is empty and this player hasn't been seen "
+            f"before. Add a line 'ModelNumStr: x<model>' to {sysinfo_path(mount)} "
+            "(model from Settings > About, e.g. MB903 -> xB903).")
+    add = []
+    if "ModelNumStr" not in values:
+        add.append(f"ModelNumStr: {model}")
+    if "FirewireGuid" not in values:
+        add.append(f"FirewireGuid: 0x{guid}")
+    if add:
+        os.makedirs(os.path.dirname(sysinfo_path(mount)), exist_ok=True)
+        with open(sysinfo_path(mount), "w") as f:
+            f.write("\n".join(lines + add) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+    record.upsert_player(guid, model=model)
+    return model
+
+
+# ================================================================= backup ====
+BACKED_UP = (("iPod_Control", "iTunes"), ("iPod_Control", "Artwork", "ArtworkDB"))
+
+
+def backup_player(mount, dest_root, keep=3):
+    """Copy iTunes/ (iTunesDB, play files) and ArtworkDB off the player before
+    a write. Keeps the newest `keep` backups. Returns the backup folder.
+    (.ithmb thumbnail files are large and not backed up.)"""
+    dest = os.path.join(dest_root, datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
+    for parts in BACKED_UP:
+        src = os.path.join(mount, *parts)
+        out = os.path.join(dest, *parts)
+        if os.path.isdir(src):
+            shutil.copytree(src, out)
+        elif os.path.isfile(src):
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            shutil.copy2(src, out)
+    old = sorted(d for d in os.listdir(dest_root) if os.path.isdir(os.path.join(dest_root, d)))
+    for d in old[:-keep]:
+        shutil.rmtree(os.path.join(dest_root, d), ignore_errors=True)
+    return dest
+
+
+def restore_backup(mount, backup):
+    """Put a backup's iTunesDB/ArtworkDB back (after a failed write)."""
+    for parts in BACKED_UP:
+        src = os.path.join(backup, *parts)
+        out = os.path.join(mount, *parts)
+        if os.path.isdir(src):
+            for name in os.listdir(src):
+                shutil.copy2(os.path.join(src, name), os.path.join(out, name))
+        elif os.path.isfile(src):
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            shutil.copy2(src, out)
+
+
+# ============================================================== reconcile ====
+def music_files(mount):
+    root = os.path.join(mount, "iPod_Control", "Music")
+    out = set()
+    for dirpath, _, files in os.walk(root):
+        for name in files:
+            if not name.startswith("._"):
+                out.add(os.path.relpath(os.path.join(dirpath, name), mount))
+    return out
+
+
+def ipod_path_to_rel(ipod_path):
+    return ipod_path.lstrip(":").replace(":", os.sep)
+
+
+def navidrome_id_from(track):
+    comment = track.comment or ""
+    return comment[len(NAVIDROME_TAG):] if comment.startswith(NAVIDROME_TAG) else None
+
+
+def reconcile(db, record, guid, mount, delete_orphans=True):
+    """Compare the live player with the record before changing anything.
+
+    - Tracks the record has but the player doesn't: marked removed (all of
+      them at once = the player was reset; logged as such).
+    - Tracks on the player the record doesn't have: adopted if their comment
+      carries a Navidrome ID (e.g. a sync that saved the DB but crashed
+      before updating the record); otherwise "foreign" and left alone.
+    - Files in Music/ that no track points to (orphans): deleted.
+    Returns a report dict.
+    """
+    on_player = {t.dbid: t for t in db.tracks}
+    known = {int(r["dbid"]): r for r in record.tracks(guid)}
+    missing = [r for d, r in known.items() if d not in on_player]
+    reset = bool(known) and len(missing) == len(known)
+    for r in missing:
+        record.mark_removed(guid, r["dbid"], "player appears to have been reset"
+                            if reset else "missing from player")
+    adopted, foreign = 0, 0
+    for dbid, t in on_player.items():
+        if dbid in known:
+            continue
+        nid = navidrome_id_from(t)
+        if nid:
+            record.add_track(guid, dbid, ipod_path=t.ipod_path, navidrome_id=nid,
+                             artist=t.artist, album=t.album, title=t.title)
+            adopted += 1
+        else:
+            foreign += 1
+    referenced = {ipod_path_to_rel(t.ipod_path) for t in db.tracks if t.ipod_path}
+    orphans = sorted(music_files(mount) - referenced)
+    if delete_orphans:
+        for rel in orphans:
+            os.remove(os.path.join(mount, rel))
+    return {"missing": len(missing), "reset": reset, "adopted": adopted,
+            "foreign": foreign, "orphans": len(orphans)}
+
+
+# ================================================================== apply ====
+def checked_save(db, guid):
+    """Save only if pygpod will sign the DB the way this player needs."""
+    d = db._device
+    if not d or not d.requires_hash or d.checksum_type.name != "HASH58":
+        raise HandlerError(f"refusing to save: player not identified as needing a "
+                           f"hash58-signed database ({d.model if d else 'no device'})")
+    if (d.firewire_guid or "").upper() != guid.upper():
+        raise HandlerError("refusing to save: SysInfo FireWire GUID doesn't match the player")
+    db.save()
+
+
+def start_artwork_ids_at(db, first=ARTWORK_FIRST_ID):
+    """New artwork gets image IDs from `first` up (pygpod 0.0.6 internals)."""
+    mgr = db._get_artwork_manager()
+    if mgr._next_image_id < first:
+        mgr._next_image_id = first
+
+
+def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
+               progress=None, save=checked_save):
+    """Make the player match the staged plan (prepare job's manifest).
+
+    Order: remove tracks that left every target (with their files), add
+    missing ones in batches - saving the DB after each batch and only then
+    recording them as present - and rebuild the dock's playlists. A crash
+    loses at most the current batch; the next sync carries on.
+    Returns a summary dict.
+    """
+    wanted = {t["id"]: t for t in manifest.get("tracks", [])}
+    on_player = {t.dbid: t for t in db.tracks}
+    present = {}
+    for r in record.tracks(guid):
+        if int(r["dbid"]) in on_player:
+            present.setdefault(r["navidrome_id"], r)
+
+    # Tracks whose cached file changed encoding (e.g. mp3_quality) are replaced.
+    changed = {nid for nid, r in present.items()
+               if nid in wanted and r.get("encoding")
+               and wanted[nid].get("encoding") and r["encoding"] != wanted[nid]["encoding"]}
+    removals = [r for nid, r in present.items() if nid not in wanted or nid in changed]
+    additions = [t for nid, t in wanted.items() if nid not in present or nid in changed]
+
+    # Remove from the DB, save, and only then delete the files: if the save
+    # fails, restoring the backup finds every file still there. (pygpod's
+    # delete_file=True would delete before the save.) A crash after the save
+    # leaves orphan files, which the next reconcile removes.
+    removed, doomed = 0, []
+    for r in removals:
+        track = on_player[int(r["dbid"])]
+        doomed.append(os.path.join(mount, ipod_path_to_rel(track.ipod_path)))
+        db.remove_track(track, delete_file=False)
+    if removals:
+        save(db, guid)
+        for r in removals:
+            reason = ("re-encoded" if r["navidrome_id"] in changed
+                      else "no longer in any synced playlist")
+            record.mark_removed(guid, r["dbid"], reason)
+            log_info(f"Removed {r['artist']} - {r['title']} ({reason})")
+            removed += 1
+        for path in doomed:
+            if os.path.exists(path):
+                os.remove(path)
+
+    start_artwork_ids_at(db)
+    added, skipped_full = 0, 0
+    for i in range(0, len(additions), batch_size):
+        batch = []
+        for t in additions[i:i + batch_size]:
+            path = os.path.join(cache_dir, t["file"])
+            if shutil.disk_usage(mount).free - os.path.getsize(path) < FREE_SPACE_MARGIN:
+                skipped_full = len(additions) - (i + len(batch))
+                break
+            if progress:
+                progress(added + len(batch), len(additions), t)
+            track = db.add_track(path)
+            track.comment = NAVIDROME_TAG + t["id"]
+            batch.append((track, t))
+        if batch:
+            save(db, guid)                          # DB first ...
+            with record.transaction():              # ... then the record
+                for track, t in batch:
+                    record.add_track(guid, track.dbid, ipod_path=track.ipod_path,
+                                     navidrome_id=t["id"], artist=t.get("artist"),
+                                     album=t.get("album"), title=t.get("title"),
+                                     track_no=t.get("track"), duration=t.get("duration"),
+                                     encoding=t.get("encoding"))
+            added += len(batch)
+        if skipped_full:
+            log_info(f"Player is full: {skipped_full} track(s) not added")
+            break
+
+    playlists_changed = sync_playlists(db, record, guid, manifest)
+    if playlists_changed:
+        save(db, guid)
+    return {"added": added, "removed": removed, "replaced": len(changed),
+            "not_added_full": skipped_full, "playlists_changed": playlists_changed}
+
+
+def sync_playlists(db, record, guid, manifest):
+    """Create/update the dock's playlists (Favorites, tagged, configured) and
+    delete ones it made that are no longer wanted. Playlists the dock didn't
+    make are never touched. Returns how many changed."""
+    by_nid = {}
+    for r in record.tracks(guid):
+        by_nid.setdefault(r["navidrome_id"], int(r["dbid"]))
+    tracks = {t.dbid: t for t in db.tracks}
+    managed = record.managed_playlists(guid)
+    existing = {p.name: p for p in db.playlists if not p.is_master}
+    changed, now_managed = 0, {}
+    for pl in manifest.get("playlists", []):
+        name, target = pl["name"], pl["target"]
+        want = [tracks[by_nid[i]] for i in pl["song_ids"]
+                if i in by_nid and by_nid[i] in tracks]
+        old_name = managed.get(target)
+        current = existing.get(old_name) if old_name else None
+        if current is None and name in existing and name not in managed.values():
+            log_info(f"Not touching the player's own playlist {name!r}")
+            continue
+        if current is not None and current.name == name and \
+                [t.dbid for t in current.tracks] == [t.dbid for t in want]:
+            now_managed[target] = name
+            continue
+        if current is not None:
+            db.delete_playlist(current)
+        new = db.create_playlist(name)
+        for t in want:
+            db.add_track_to_playlist(new, t)
+        now_managed[target] = name
+        changed += 1
+    for target, name in managed.items():
+        if target not in now_managed and name in existing:
+            db.delete_playlist(existing[name])
+            changed += 1
+    record.set_managed_playlists(guid, now_managed)
+    return changed
+
+
+def log_info(message):
+    import logging
+    logging.getLogger("ipod_handler").info(message)
