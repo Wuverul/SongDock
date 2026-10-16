@@ -19,7 +19,14 @@ CLIENT_NAME = "musicdock"
 
 
 class SubsonicError(Exception):
-    pass
+    """A failed request. `network` is True when the server couldn't be
+    reached (try again later); `code` is the Subsonic error code when the
+    server answered with an error (e.g. 70 = not found)."""
+
+    def __init__(self, message, code=None, network=False):
+        super().__init__(message)
+        self.code = code
+        self.network = network
 
 
 class Client:
@@ -39,17 +46,20 @@ class Client:
             "t": hashlib.md5((self._password + salt).encode()).hexdigest(),
             "v": API_VERSION, "c": CLIENT_NAME, "f": "json", **params,
         }
-        return f"{self.base}{endpoint}.view?{urllib.parse.urlencode(query)}"
+        # doseq: list values repeat the parameter (e.g. several id= for scrobble).
+        return f"{self.base}{endpoint}.view?{urllib.parse.urlencode(query, doseq=True)}"
 
     def _open(self, endpoint, **params):
         try:
             return urllib.request.urlopen(self._url(endpoint, **params),
                                           timeout=self.timeout)
         except urllib.error.HTTPError as e:
-            raise SubsonicError(f"{endpoint}: HTTP {e.code} {e.reason}") from None
+            raise SubsonicError(f"{endpoint}: HTTP {e.code} {e.reason}",
+                                network=e.code >= 500) from None
         except (urllib.error.URLError, OSError) as e:
             reason = getattr(e, "reason", e)
-            raise SubsonicError(f"{endpoint}: can't reach server ({reason})") from None
+            raise SubsonicError(f"{endpoint}: can't reach server ({reason})",
+                                network=True) from None
 
     @staticmethod
     def _check(endpoint, body):
@@ -57,7 +67,7 @@ class Client:
         if resp.get("status") != "ok":
             err = resp.get("error", {})
             raise SubsonicError(f"{endpoint}: {err.get('message', 'request failed')} "
-                                f"(code {err.get('code')})")
+                                f"(code {err.get('code')})", code=err.get("code"))
         return resp
 
     def call(self, endpoint, **params):

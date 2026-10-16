@@ -767,6 +767,19 @@ def main(argv=None):
     previous = read_manifest(cache_dir)
     client = Client(cfg["server"]["url"], cfg["server"]["username"],
                     cfg["server"]["password"])
+    if not args.dry_run:
+        # Plays queued by a sync while the server was down go out from here
+        # too, so they don't wait for the next dock.
+        try:
+            import dock_plays
+            from dock_record import Record
+            record = Record()
+            if record.unsent_count()[0]:
+                dock_plays.upload_plays(client, record)
+            record.close()
+        except Exception:
+            log.exception("Couldn't send queued plays (they stay queued)")
+
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run)
     except (SubsonicError, PrepareError) as e:
