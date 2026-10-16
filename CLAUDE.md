@@ -309,8 +309,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 - **Back up the record:** copy the SQLite DB (small) onto the player at each
   sync, and keep the Navidrome ID in each track record (see Phase 4 plan), so
   either side can rebuild the other if one is lost.
-- **Throughput (estimates; measure on hardware):** Wi-Fi ~2-4 MB/s (200 GB
-  ~15-30 h); USB to player ~10 MB/s; FLAC->MP3 conversion is the bottleneck
+- **Throughput:** Wi-Fi ~2-4 MB/s (estimate; 200 GB ~15-30 h); **USB to the
+  Nano measured ~1.3-1.5 MB/s effective** (first full sync; the Nano reports
+  its write cache disabled, and the vfat mount uses `flush` - try without
+  `flush` on a later sync and compare), so 200 GB of copying ~40+ h; FLAC->MP3 conversion is the bottleneck
   (~song length per track on the Zero W, so 200 GB of FLAC ~20 days; run
   conversions in parallel on a Zero 2 W, ~2 days). Plays recorded since the
   last sync are lost in a wipe; server-purged discovery tracks can't return.
@@ -328,11 +330,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    disabled)
 3. ✅ Server side: play upload, starred/playlist fetch, prepare job with
    conversion (real play upload verified 2026-10-16)
-4. Stock iPod handler via pygpod: built and rehearsed; read-only dock mode is
-   the default (`[device] write = false`). Read-only dock on the real Nano
-   (2026-10-16): identified via udev, adopted the 3 hand-copied MP3s, queued
-   and sent 4 plays (BLOOM x2: one exact, one estimated), ~30 s. First real
-   full sync (write = true) pending
+4. ✅ Stock iPod handler via pygpod. Read-only dock on the real Nano
+   (2026-10-16): adopted the 3 hand-copied MP3s, sent 4 plays, ~30 s. **First
+   full sync (write = true), 2026-10-16:** 79 tracks + Favorites + Mel Test
+   in 15.4 min (copy step 14.8 min, ~11 s/track vs 5.7 s SD-to-SD), played
+   back fine. The user's Pi config now has `write = true`.
 5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
    (see "Resilience without a mirror"). Rockbox handler deprioritized.
 6. 3D-printed dock enclosure
