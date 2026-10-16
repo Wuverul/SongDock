@@ -354,6 +354,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   The final screen says how many plays are still queued. Mapping an iPod
   track to its Navidrome ID needs a record kept when the dock adds the track
   (design in Phase 4).
+- **Play upload verified end to end (2026-10-16):** the real BLOOM play from
+  the Nano's Play Counts (00:14:46, read via `ipod_handler`) went through the
+  record's queue and `dock_plays.upload_plays`; Navidrome's playCount went 1
+  -> 2 and `played` = 2026-10-16T00:14:46-07:00. The Pi's timezone
+  (America/Los_Angeles) must match the iPod's clock for times to be right.
 - **pygpod's `remove_track()` leaves the audio file on the iPod by default.**
   Pass `delete_file=True`, or removed tracks pile up as orphans (seen
   2026-10-16). Artwork is removed either way.
