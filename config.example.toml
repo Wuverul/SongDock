@@ -1,0 +1,18 @@
+# Copy to ~/.config/musicdock/config.toml on the Pi and run:
+#   chmod 600 ~/.config/musicdock/config.toml
+# Never commit the real file.
+
+[server]
+url = "http://192.168.1.50:4533"   # Navidrome address, reachable from the dock
+username = "your-navidrome-username"
+password = "your-navidrome-password"  # used only to compute Subsonic auth tokens
+
+[sync]
+target = "starred"                 # later: playlist names from the discovery service
+cache_dir = "~/musicdock/cache"
+max_cache_gb = 20                  # stay well under the 32GB card's capacity
+
+[device]
+type = "stock_ipod"                # or "rockbox" once the modded iPod exists
+convert_to = "aac"                 # stock iPod can't play FLAC
+aac_bitrate = "256k"

@@ -1,0 +1,16 @@
+# Credentials and local config - never commit
+config.toml
+*.local.toml
+.env
+
+# Previews, caches, scratch
+*.png
+!docs/*.png
+__pycache__/
+*.pyc
+.cache/
+cache/
+tmp/
+
+# macOS
+.DS_Store
