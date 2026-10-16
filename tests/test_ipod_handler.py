@@ -55,8 +55,9 @@ class HandlerTests(unittest.TestCase):
 
     def apply(self, manifest, **kw):
         db = self.db()
-        h.reconcile(db, self.rec, G, self.mount)
-        return h.apply_plan(db, self.rec, G, self.mount, manifest, self.cache, **kw)
+        report = h.reconcile(db, self.rec, G, self.mount, manifest=manifest)
+        return h.apply_plan(db, self.rec, G, self.mount, manifest, self.cache,
+                            dirty=report["dirty"], **kw)
 
     def files(self):
         return h.music_files(self.mount)
@@ -137,6 +138,60 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(report["foreign"], 1)
         self.apply(self.manifest([self.song("n1", "One")]))
         self.assertIn("Not the dock's", [t.title for t in pygpod.Database(self.mount).tracks])
+
+    def add_by_hand(self, title, artist="Artist", seconds=2, album="Album"):
+        db = self.db()
+        db.add_track(fx.make_mp3(os.path.join(self.tmp, f"{title}.mp3"), title,
+                                 artist=artist, album=album, seconds=seconds))
+        db.save()
+
+    def test_hand_copied_matching_track_adopted_not_duplicated(self):
+        self.add_by_hand("BLOOM", album="CURRENTS")              # like the Mac test
+        a = self.song("n1", "BLOOM")
+        self.apply(self.manifest([a], [("starred", "Favorites", ["n1"])]))
+        db = self.db()
+        self.assertEqual([t.title for t in db.tracks], ["BLOOM"])     # no duplicate
+        self.assertEqual(h.navidrome_id_from(db.tracks[0]), "n1")     # saved
+        favs = [p for p in db.playlists if p.name == "Favorites"][0]
+        self.assertEqual([t.title for t in favs.tracks], ["BLOOM"])
+
+    def test_hand_copied_old_format_is_replaced(self):
+        # An old AAC-era copy (here: a different file type) of a track now
+        # cached as MP3 is adopted, then replaced by the current file.
+        db = self.db()
+        src = fx.make_mp3(os.path.join(self.tmp, "old.mp3"), "BLOOM", seconds=2)
+        m4a = os.path.join(self.tmp, "old.m4a")
+        os.rename(src, m4a)
+        try:
+            db.add_track(m4a)
+        except Exception:
+            self.skipTest("pygpod won't add a fake .m4a")
+        db.save()
+        a = self.song("n1", "BLOOM")
+        summary = self.apply(self.manifest([a]))
+        self.assertEqual((summary["replaced"], summary["added"]), (1, 1))
+        tracks = self.db().tracks
+        self.assertEqual(len(tracks), 1)
+        self.assertTrue(tracks[0].ipod_path.endswith(".mp3"))
+
+    def test_ambiguous_match_not_adopted(self):
+        self.add_by_hand("Intro")
+        a, b = self.song("n1", "Intro", album="A"), self.song("n2", "Intro", album="B")
+        report = h.reconcile(self.db(), self.rec, G, self.mount,
+                             manifest=self.manifest([a, b]))
+        self.assertEqual((report["adopted"], report["foreign"]), (0, 1))
+
+    def test_length_mismatch_not_adopted(self):
+        self.add_by_hand("BLOOM", seconds=9)
+        report = h.reconcile(self.db(), self.rec, G, self.mount,
+                             manifest=self.manifest([self.song("n1", "BLOOM")]))
+        self.assertEqual(report["foreign"], 1)
+
+    def test_navidrome_album_name_used(self):
+        a = dict(self.song("n1", "Salt in the Wounds", album="Inertia"),
+                 album="Inertia (deluxe digital)")              # file tag differs
+        self.apply(self.manifest([a]))
+        self.assertEqual(self.db().tracks[0].album, "Inertia (deluxe digital)")
 
     def test_orphan_files_removed(self):
         stray = os.path.join(self.mount, "iPod_Control", "Music", "F01", "old.m4a")

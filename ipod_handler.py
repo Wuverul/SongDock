@@ -225,14 +225,22 @@ def navidrome_id_from(track):
     return comment[len(NAVIDROME_TAG):] if comment.startswith(NAVIDROME_TAG) else None
 
 
-def reconcile(db, record, guid, mount, delete_orphans=True):
+def _key(title, artist):
+    return ((title or "").strip().casefold(), (artist or "").strip().casefold())
+
+
+def reconcile(db, record, guid, mount, delete_orphans=True, manifest=None):
     """Compare the live player with the record before changing anything.
 
     - Tracks the record has but the player doesn't: marked removed (all of
       them at once = the player was reset; logged as such).
     - Tracks on the player the record doesn't have: adopted if their comment
       carries a Navidrome ID (e.g. a sync that saved the DB but crashed
-      before updating the record); otherwise "foreign" and left alone.
+      before updating the record), or if they match exactly one staged track
+      by title, artist and length (+-2 s) - e.g. tracks copied by hand before
+      the dock managed this player. Adopting by match writes the Navidrome
+      ID into the track's comment (report["dirty"]: the DB needs a save).
+      Anything else is "foreign" and left alone.
     - Files in Music/ that no track points to (orphans): deleted.
     Returns a report dict.
     """
@@ -243,14 +251,37 @@ def reconcile(db, record, guid, mount, delete_orphans=True):
     for r in missing:
         record.mark_removed(guid, r["dbid"], "player appears to have been reset"
                             if reset else "missing from player")
-    adopted, foreign = 0, 0
+    candidates = {}
+    for m in (manifest or {}).get("tracks", []):
+        candidates.setdefault(_key(m.get("title"), m.get("artist")), []).append(m)
+    taken = {r["navidrome_id"] for r in record.tracks(guid)}
+    adopted, foreign, dirty = 0, 0, False
     for dbid, t in on_player.items():
         if dbid in known:
             continue
-        nid = navidrome_id_from(t)
+        nid, entry = navidrome_id_from(t), None
+        if not nid:
+            matches = [m for m in candidates.get(_key(t.title, t.artist), [])
+                       if abs((m.get("duration") or 0) - (t.duration or 0)) <= 2
+                       and m["id"] not in taken]
+            if len(matches) == 1:
+                entry = matches[0]
+                nid = entry["id"]
+                t.comment = NAVIDROME_TAG + nid
+                dirty = True
         if nid:
+            encoding = None
+            if entry:
+                # Same format as the cached file: adopt as is. Different (e.g.
+                # an old AAC copy of a track now cached as MP3): adopt, but
+                # mark it so apply_plan replaces it with the current file.
+                same = (os.path.splitext(t.ipod_path)[1].lower()
+                        == os.path.splitext(entry["file"])[1].lower())
+                encoding = entry.get("encoding") if same else "unknown (replace)"
             record.add_track(guid, dbid, ipod_path=t.ipod_path, navidrome_id=nid,
-                             artist=t.artist, album=t.album, title=t.title)
+                             artist=t.artist, album=t.album, title=t.title,
+                             encoding=encoding)
+            taken.add(nid)
             adopted += 1
         else:
             foreign += 1
@@ -260,7 +291,7 @@ def reconcile(db, record, guid, mount, delete_orphans=True):
         for rel in orphans:
             os.remove(os.path.join(mount, rel))
     return {"missing": len(missing), "reset": reset, "adopted": adopted,
-            "foreign": foreign, "orphans": len(orphans)}
+            "foreign": foreign, "orphans": len(orphans), "dirty": dirty}
 
 
 # ================================================================== apply ====
@@ -283,16 +314,19 @@ def start_artwork_ids_at(db, first=ARTWORK_FIRST_ID):
 
 
 def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
-               progress=None, save=checked_save):
+               progress=None, save=checked_save, dirty=False):
     """Make the player match the staged plan (prepare job's manifest).
 
     Order: remove tracks that left every target (with their files), add
     missing ones in batches - saving the DB after each batch and only then
     recording them as present - and rebuild the dock's playlists. A crash
     loses at most the current batch; the next sync carries on.
+    `dirty`: the DB was changed before this call (e.g. reconcile adopted
+    tracks) and must be saved even if the plan changes nothing.
     Returns a summary dict.
     """
     wanted = {t["id"]: t for t in manifest.get("tracks", [])}
+    saved = False
     on_player = {t.dbid: t for t in db.tracks}
     present = {}
     for r in record.tracks(guid):
@@ -317,6 +351,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
         db.remove_track(track, delete_file=False)
     if removals:
         save(db, guid)
+        saved = True
         for r in removals:
             reason = ("re-encoded" if r["navidrome_id"] in changed
                       else "no longer in any synced playlist")
@@ -338,11 +373,16 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
                 break
             if progress:
                 progress(added + len(batch), len(additions), t)
-            track = db.add_track(path)
+            # Navidrome's album name, not the file's tag: they can differ
+            # (e.g. "Inertia (deluxe digital)" vs "Inertia"), and the player
+            # should match what the user sees in Navidrome.
+            overrides = {"album": t["album"]} if t.get("album") else {}
+            track = db.add_track(path, **overrides)
             track.comment = NAVIDROME_TAG + t["id"]
             batch.append((track, t))
         if batch:
             save(db, guid)                          # DB first ...
+            saved = True
             with record.transaction():              # ... then the record
                 for track, t in batch:
                     record.add_track(guid, track.dbid, ipod_path=track.ipod_path,
@@ -356,7 +396,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
             break
 
     playlists_changed = sync_playlists(db, record, guid, manifest)
-    if playlists_changed:
+    if playlists_changed or (dirty and not saved):
         save(db, guid)
     return {"added": added, "removed": removed, "replaced": len(changed),
             "not_added_full": skipped_full, "playlists_changed": playlists_changed}

@@ -359,6 +359,17 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   record's queue and `dock_plays.upload_plays`; Navidrome's playCount went 1
   -> 2 and `played` = 2026-10-16T00:14:46-07:00. The Pi's timezone
   (America/Los_Angeles) must match the iPod's clock for times to be right.
+- **Handler rehearsal on the Pi (2026-10-16):** the real staged plan applied
+  to a fake iPod built from the Nano backup (throwaway record via
+  `MUSICDOCK_RECORD`): 82 tracks + Favorites (72) + Mel Test (22) in 7.7 min;
+  second run a no-op. The backup's old AAC BLOOM was adopted by metadata
+  match and replaced by the MP3 (different format = replace).
+- **Navidrome album names can differ from file tags** ("Inertia (deluxe
+  digital)" vs a TALB of "Inertia"); the handler passes Navidrome's album
+  name to pygpod so the player matches Navidrome and editions don't merge.
+- **The real Nano's 3 hand-copied MP3s** (BLOOM, Don't Care Crown, Make
+  Love) will be adopted on the first dock sync (title + artist + length
+  match, same format), not duplicated.
 - **pygpod's `remove_track()` leaves the audio file on the iPod by default.**
   Pass `delete_file=True`, or removed tracks pile up as orphans (seen
   2026-10-16). Artwork is removed either way.
