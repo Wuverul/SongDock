@@ -41,7 +41,9 @@ Two independent jobs share one e-ink screen:
    `failed`. Steps, in order:
    1. Show `syncing` **before** mounting anything.
    2. Mount the player.
-   3. Read play data and upload it to Navidrome.
+   3. Read play data, queue it on the Pi (flushed to disk), then try to
+      upload the queue to Navidrome. If the server is unreachable, keep
+      going: plays stay queued and the sync still copies music.
    4. Read the on-device keep list and mark those tracks on the server.
    5. Copy new tracks from the cache, remove purged ones, update playlists.
    6. Flush, unmount, show `safe` (or `failed`).
@@ -76,8 +78,15 @@ expand to their tracks. Discovery playlists come later.
 
 ## Safety rules (do not simplify these away)
 
-- **Never clear play data until the server confirms it received it.** A failed
-  sync must lose nothing.
+- **Never clear play data until the server confirms it received it, or it is
+  durably queued on the Pi** (written and fsynced before the iPod's copy can be
+  cleared). Queued plays are removed only after the server confirms them. A
+  failed sync or an unreachable server must lose nothing. (User decision,
+  2026-10-16: music still syncs when the server is down; plays wait.)
+- **Read the iPod's play data before any database write.** `Play Counts`
+  entries have no track IDs; they match tracks by position in `iTunesDB`, so
+  after the DB changes they would be credited to the wrong tracks. Never leave
+  a `Play Counts` file behind across a DB rewrite.
 - **Show `syncing` before mounting.** A crash then leaves "do not remove" on
   screen, which is the safe failure.
 - **The prepare job never draws over `syncing`** (nor `safe`, `failed`, or
@@ -194,6 +203,13 @@ expand to their tracks. Discovery playlists come later.
   (`pygpod.db.playcounts.parse_play_counts`) and upload them before letting
   pygpod open the DB. Play times are Mac-epoch seconds in the iPod's local
   time, with no time zone.
+- **Pending plays:** the queue lives on the Pi (e.g. a JSON-lines file in
+  `/var/lib/musicdock/`, one entry per play with the Navidrome song ID and
+  time). The sync uploads it when it can; the hourly prepare job also flushes
+  it whenever Navidrome is reachable, so plays don't wait for the next dock.
+  The final screen says how many plays are still queued. Mapping an iPod
+  track to its Navidrome ID needs a record kept when the dock adds the track
+  (design in Phase 4).
 - **pygpod's `remove_track()` leaves the audio file on the iPod by default.**
   Pass `delete_file=True`, or removed tracks pile up as orphans (seen
   2026-10-16). Artwork is removed either way.
