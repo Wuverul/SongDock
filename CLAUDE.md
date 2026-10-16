@@ -205,6 +205,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   the record is saved on the player at `iPod_Control/musicdock/dock.db`.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
+- **`wifi.txt` on an opted-in iPod** (`dock_wifi.py`; write mode only, after
+  the music): `SSID=` / `Password=` / optional `Hidden=yes`. The password goes
+  into a root-only NetworkManager keyfile (`/etc/NetworkManager/system-
+  connections/musicdock-<ssid>.nmconnection`, priority 10), never a command
+  line or the log; existing networks stay saved. Joined + address = success:
+  wifi.txt deleted, `wifi` screen ("Now on ...", Navidrome reachable or not).
+  Failure: previous network brought back, the new profile deleted, wifi.txt
+  kept, `wififail` screen with the reason. Read-only mode just reports it.
 - **Back to DOCK READY after a sync:** `dock_status.py --rest` swaps SAFE (and
   FAILED, on unplug only) for `idle` with "Last synced 3:02 PM (+79 -0, 5
   plays)" / "Last sync failed ...". Triggered by the udev `remove` rule for the

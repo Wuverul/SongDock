@@ -223,7 +223,7 @@ class OptInTests(unittest.TestCase):
         self.ipod(marker="MediaDock.txt")
         summary, sp, dev = self.run_work(known=False)
         dev.make_writable.assert_called_once()
-        self.assertEqual(summary, {"added": 1})
+        self.assertEqual((summary["added"], summary["wifi"]), (1, None))   # no wifi.txt
 
     def test_known_ipod_gets_marker_when_writing(self):
         self.ipod()
@@ -244,6 +244,31 @@ class OptInTests(unittest.TestCase):
         run_sync(dev, lambda s, *a, force=False: shown.append((s, a)),
                  work=lambda device, step: {"not_synced": "Not an iPod"})
         self.assertEqual(shown[-1], ("notsynced", ("--reason", "Not an iPod")))
+
+
+class WifiFileSyncTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        with open(os.path.join(self.tmp.name, "wifi.txt"), "w") as f:
+            f.write("SSID=Cafe\nPassword=12345678\n")
+
+    def test_read_only_reports_and_leaves_wifi_alone(self):
+        result = dock_sync.handle_wifi_file(FakeDevice(self.tmp.name), False, None)
+        self.assertEqual(result["reason"], "Dock is read-only (write = false)")
+        self.assertTrue(os.path.exists(os.path.join(self.tmp.name, "wifi.txt")))
+
+    def test_result_screen_carries_sync_counts(self):
+        shown = []
+        dev = RecordingDevice(self.tmp.name, [])
+        run_sync(dev, lambda s, *a, force=False: shown.append((s, a)),
+                 work=lambda d, step: {"added": 3, "plays_sent": 1, "wifi": {
+                     "ok": False, "ssid": "Cafe", "reason": "Wrong password", "server": None}})
+        screen, args = shown[-1]
+        self.assertEqual(screen, "wififail")
+        self.assertEqual(args[:6], ("--ssid", "Cafe", "--reason", "Wrong password",
+                                    "--server", "unknown"))
+        self.assertIn("3", args)
 
 
 class ScreenProcessTests(unittest.TestCase):

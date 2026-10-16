@@ -70,7 +70,7 @@ PROGRESS_SCREENS = {"syncing", "preparing"}   # rate-limited when repeated
 PREPARE_SCREENS = {"idle", "preparing"}       # drawn by the prepare job
 # Resting screens --refresh may redraw when Wi-Fi connects or drops. Active
 # screens (syncing, preparing, boot) redraw often enough on their own.
-REFRESHABLE = {"idle", "safe", "failed", "notsynced"}
+REFRESHABLE = {"idle", "safe", "failed", "notsynced", "wifi", "wififail"}
 # Options that control drawing rather than what's drawn; not saved for --refresh.
 CONTROL_OPTIONS = {"--force": 0, "--only-over": 1, "--preview": 1, "--at": 1,
                    "--wifi": 1, "--ip": 1}
@@ -266,6 +266,25 @@ def render(screen, args):
                (fit(plays, body_f), body_f),
                (f"Synced {now}", body_f)])
 
+    elif screen in ("wifi", "wififail"):
+        # Result of a wifi.txt on the player (the sync itself succeeded).
+        if screen == "wifi":
+            header(f"{check}WI-FI CHANGED", inverted=False)
+            rows = [("Safe to remove", body_f),
+                    (fit(f"Now on \u201c{args.ssid}\u201d", body_f), body_f)]
+            server = {"yes": "Navidrome reachable",
+                      "no": "Navidrome NOT reachable from here"}.get(args.server)
+            if server:
+                rows.append((fit(server, small_f), small_f))
+        else:
+            header(f"{warn}WI-FI UNCHANGED", inverted=True)
+            who = (f"Couldn't join \u201c{args.ssid}\u201d" if args.ssid
+                   else "wifi.txt not used")
+            rows = [("Safe to remove", body_f), (fit(who, body_f), body_f),
+                    (fit(args.reason or "", small_f), small_f)]
+        rows.append((f"Synced {now}", small_f))
+        lines(rows)
+
     elif screen == "notsynced":
         # A player the dock left alone: not an iPod, or no MediaDock.txt.
         header("NOT SYNCED", inverted=False)
@@ -435,7 +454,7 @@ def draw_on_panel(img, full_refresh):
 def build_parser():
     p = argparse.ArgumentParser(description="Dock e-ink status screen")
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
-                                      "failed", "starting", "offline", "notsynced"])
+                                      "failed", "starting", "offline", "notsynced", "wifi", "wififail"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
                    help="syncing: items done within this step (fills the bar)")
@@ -464,7 +483,9 @@ def build_parser():
                    help="starting: the clock has been set from the network")
     p.add_argument("--problem", choices=["wifi", "clock"], default="wifi",
                    help="offline: what's missing")
-    p.add_argument("--ssid", help="offline: the Wi-Fi network being joined")
+    p.add_argument("--ssid", help="offline/wifi: the Wi-Fi network")
+    p.add_argument("--server", choices=["yes", "no", "unknown"], default="unknown",
+                   help="wifi: whether Navidrome is reachable on the new network")
     p.add_argument("--only-over", metavar="SCREENS",
                    help="draw only if the current screen is one of these "
                         "(comma-separated; 'none' = nothing drawn yet)")
@@ -571,8 +592,9 @@ def refresh_main(argv=None, attempts=3, settle=3):
 
 
 REST_MODES = {
-    "timer": "safe,notsynced",            # 10 min after: not FAILED (stays up)
-    "unplug": "safe,failed,notsynced",    # player physically removed
+    # 10 min after a sync; FAILED and WI-FI UNCHANGED stay up until unplugged.
+    "timer": "safe,notsynced,wifi",
+    "unplug": "safe,failed,notsynced,wifi,wififail",  # player physically removed
 }
 MIN_SHOWN = 60   # seconds SAFE/FAILED stay up before an unplug swaps them
 
@@ -603,7 +625,7 @@ def rest_main(argv=None, sleep=time.sleep):
         return
     prev = build_parser().parse_args(state.get("argv") or [screen])
     when = datetime.fromtimestamp(drawn_at).strftime("%-I:%M %p")
-    if screen == "safe":
+    if screen in ("safe", "wifi", "wififail"):
         detail = (f"Last synced {when}\n"
                   f"+{prev.added}  \u2212{prev.removed} tracks \u00b7 {prev.plays} plays")
     else:

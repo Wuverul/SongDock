@@ -399,6 +399,15 @@ def run_sync(device, show, work=None, total=None):
             show("failed", "--reason", error, force=True)
         elif summary.get("not_synced"):
             show("notsynced", "--reason", summary["not_synced"], force=True)
+        elif summary.get("wifi"):
+            w = summary["wifi"]
+            server = {True: "yes", False: "no"}.get(w.get("server"), "unknown")
+            show("wifi" if w["ok"] else "wififail", "--ssid", w.get("ssid") or "",
+                 "--reason", w.get("reason") or "", "--server", server,
+                 "--added", str(summary.get("added", 0)),
+                 "--removed", str(summary.get("removed", 0)),
+                 "--plays", str(summary.get("plays_sent", 0)),
+                 "--queued", str(summary.get("plays_queued", 0)), force=True)
         else:
             show("safe", "--added", str(summary.get("added", 0)),
                  "--removed", str(summary.get("removed", 0)),
@@ -457,9 +466,34 @@ def make_ipod_work(cfg, guid, product, write):
                 progress=progress)
         finally:
             record.close()
+        summary["wifi"] = handle_wifi_file(device, write, client)
         log.info("Session summary: %s", summary)
         return summary
     return work
+
+
+def handle_wifi_file(device, write, client):
+    """wifi.txt on an opted-in player: try the network (write mode only,
+    since success deletes the file). Returns a result dict or None."""
+    import dock_wifi
+    if not dock_wifi.find_wifi_file(device.root):
+        return None
+    if not write:
+        log.info("wifi.txt found but the dock is read-only (write = false): ignored")
+        return {"ok": False, "ssid": "", "reason": "Dock is read-only (write = false)",
+                "server": None}
+
+    def server_check():
+        try:
+            client.call("ping")
+            return True
+        except Exception:
+            return False
+    try:
+        return dock_wifi.apply_wifi_file(device.root, server_check=server_check)
+    except Exception as e:                         # never fail the sync over Wi-Fi
+        log.exception("wifi.txt handling failed")
+        return {"ok": False, "ssid": "", "reason": f"Error: {e}"[:60], "server": None}
 
 
 def schedule_rest(minutes=REST_AFTER_MIN):

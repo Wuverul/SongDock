@@ -145,6 +145,18 @@ class RestScreenTests(WifiRefreshTests):
             self.rest(mode)
             self.assertEqual(dock_status.load_state()["screen"], "idle")
 
+    def test_wifi_results_clear_like_safe_and_failed(self):
+        dock_status.main(["wifi", "--ssid", "Cafe", "--added", "3"])
+        self.rest("timer")
+        self.assertEqual(dock_status.load_state()["screen"], "idle")
+        self.assertIn("+3", self.rendered[-1].detail)
+        dock_status.main(["wififail", "--ssid", "Cafe", "--reason", "Wrong password"])
+        self.draws.clear()
+        self.rest("timer")                                   # stays up: you should see it
+        self.assertEqual(self.draws, [])
+        self.rest("unplug")
+        self.assertEqual(dock_status.load_state()["screen"], "idle")
+
     def test_never_covers_a_running_sync(self):
         dock_status.main(["syncing", "--step", "2", "--total", "6"])
         self.draws.clear()
