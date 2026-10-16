@@ -15,7 +15,8 @@ favorites_playlist = "Favorites"   # player playlist made from "starred" ("" = n
 playlist_tag = "#ipod"             # also sync any playlist whose Navidrome comment has
                                    # this tag (any case). "" = off. Remove the tag to unsync.
 cache_dir = "~/musicdock/cache"
-max_cache_gb = 20                  # stay well under the 32GB card's capacity
+max_cache_gb = 20                  # the job also stops at 80% of the SD card
+workers = "auto"                   # parallel conversions: "auto" = CPU cores - 1 (min 1)
 
 [device]
 type = "stock_ipod"                # or "rockbox" once the modded iPod exists

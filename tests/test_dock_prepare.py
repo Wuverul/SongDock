@@ -390,6 +390,59 @@ class ShrinkCoverTests(unittest.TestCase):
         self.assertEqual(dock_prepare.shrink_cover(f.name), "none")
 
 
+class WorkerTests(unittest.TestCase):
+    def test_worker_count(self):
+        rw = dock_prepare.resolve_workers
+        self.assertEqual(rw("auto", cpu_count=1), 1)     # Pi Zero W
+        self.assertEqual(rw("auto", cpu_count=4), 3)     # Pi Zero 2 W
+        self.assertEqual(rw(2, cpu_count=4), 2)
+
+    def run_slots(self, limit, temp, jobs=6):
+        import threading
+        import time as _time
+        slots = dock_prepare.ConversionSlots(limit, temp=temp, recheck=0.01)
+        peak = {"now": 0, "max": 0}
+        guard = threading.Lock()
+
+        def job():
+            with slots:
+                with guard:
+                    peak["now"] += 1
+                    peak["max"] = max(peak["max"], peak["now"])
+                _time.sleep(0.05)
+                with guard:
+                    peak["now"] -= 1
+        threads = [threading.Thread(target=job) for _ in range(jobs)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        return peak["max"]
+
+    def test_slots_cap_parallel_conversions(self):
+        self.assertEqual(self.run_slots(3, temp=lambda: 50.0), 3)
+
+    def test_hot_pi_converts_one_at_a_time(self):
+        self.assertEqual(self.run_slots(3, temp=lambda: 80.0), 1)
+
+    def test_parallel_run_matches_sequential(self):
+        songs = [song(f"t{i:02d}", track=i) for i in range(12)]
+        results = []
+        for workers in (1, 4):
+            with tempfile.TemporaryDirectory() as cache:
+                cfg = config()
+                cfg["sync"]["workers"] = workers
+                server = FakeServer(songs=songs)
+                summary = prepare(server, cfg, cache, convert_fn=fake_convert,
+                                  disk_usage=ROOMY)
+                with open(os.path.join(cache, "manifest.json")) as f:
+                    ids = [t["id"] for t in json.load(f)["tracks"]]
+                results.append((summary["added"], sorted(os.listdir(
+                    os.path.join(cache, "tracks"))), ids))
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(results[1][0], 12)
+
+
 class ConfigTests(unittest.TestCase):
     def write(self, text):
         f = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)
@@ -421,6 +474,13 @@ class ConfigTests(unittest.TestCase):
         for bad in ('targets="starred"', 'targets=[]', 'targets=["favorites"]',
                     'targets=["playlist:"]'):
             with self.assertRaisesRegex(dock_config.ConfigError, "targets"):
+                dock_config.load(self.write(base + bad + "\n"))
+
+    def test_workers_validated(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
+        self.assertEqual(dock_config.load(self.write(base + 'workers=3\n'))["sync"]["workers"], 3)
+        for bad in ('workers=0', 'workers="many"', 'workers=true'):
+            with self.assertRaisesRegex(dock_config.ConfigError, "workers"):
                 dock_config.load(self.write(base + bad + "\n"))
 
     def test_mp3_quality_validated(self):

@@ -17,7 +17,7 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
-             "playlist_tag": "#ipod",
+             "playlist_tag": "#ipod", "workers": "auto",
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k"},
@@ -75,6 +75,9 @@ def load(path=None):
                         str(cfg["device"]["mp3_quality"]).lower()):
         raise ConfigError(f"{path}: mp3_quality must be v0-v9 (variable) or a "
                           "constant rate: 128k, 160k, 192k, 224k, 256k, 320k")
+    w = cfg["sync"]["workers"]
+    if not (w == "auto" or (isinstance(w, int) and not isinstance(w, bool) and w >= 1)):
+        raise ConfigError(f'{path}: workers must be "auto" or a whole number >= 1')
     if cfg["device"]["convert_to"] == "aac":
         log.warning("convert_to = \"aac\" uses ffmpeg's built-in AAC encoder, which "
                     "adds audible artifacts; \"mp3\" is recommended")

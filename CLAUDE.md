@@ -177,6 +177,13 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (`musicdock-prepare.service` uses `~/musicdock/venv/bin/python`; install.sh
   creates the venv from `pi/requirements.txt`). Without mutagen it logs a
   warning and leaves covers as they are.
+  **Parallelism:** `[sync] workers = "auto"` = CPU cores - 1 (min 1), worked
+  out each run (1 on the Zero W, 3 on a Zero 2 W - no reinstall after a board
+  swap). A thread pool of workers+1 overlaps the next download with current
+  conversions; `ConversionSlots` caps concurrent ffmpeg runs and drops to one
+  at a time above 75 C. Space is reserved per track before it starts. No CPU
+  pinning or systemd CPUQuota: the worker count leaves a core's worth free,
+  and nice 19 lets a sync preempt.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
 - **Wi-Fi indicator refresh:** NetworkManager dispatcher hook

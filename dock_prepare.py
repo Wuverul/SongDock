@@ -45,6 +45,9 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -352,6 +355,61 @@ def shrink_cover(path, cache=None):
     return "none"
 
 
+# --------------------------------------------------------------- workers ----
+HOT_C = 75.0               # above this, convert one track at a time until it cools
+
+
+def resolve_workers(setting="auto", cpu_count=None):
+    """How many conversions to run at once.
+
+    "auto" = cores - 1 (at least 1): 1 on a Pi Zero W, 3 on a Pi Zero 2 W.
+    Worked out every run, so moving the SD card to another board just works.
+    The spare core's worth is for the sync, the screen, and the system;
+    nice 19 means a sync still wins the CPU whenever it needs it.
+    """
+    if setting in (None, "auto"):
+        return max(1, (cpu_count or os.cpu_count() or 1) - 1)
+    return max(1, int(setting))
+
+
+def cpu_temp():
+    """SoC temperature in degrees C, or None if unknown (e.g. not a Pi)."""
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            return int(f.read().strip()) / 1000
+    except (OSError, ValueError):
+        return None
+
+
+class ConversionSlots:
+    """Lets at most `limit` conversions run at once; only one while the Pi is
+    hot (multi-core boards in an enclosure can reach thermal throttling)."""
+
+    def __init__(self, limit, temp=cpu_temp, recheck=10):
+        self.limit, self.temp, self.recheck = limit, temp, recheck
+        self.active = 0
+        self.cond = threading.Condition()
+        self.warned_hot = False
+
+    def __enter__(self):
+        with self.cond:
+            while True:
+                t = self.temp()
+                hot = t is not None and t >= HOT_C
+                if hot and not self.warned_hot:
+                    log.warning("Pi is at %.0f C: converting one track at a time", t)
+                    self.warned_hot = True
+                if self.active < (1 if hot else self.limit):
+                    self.active += 1
+                    return self
+                self.cond.wait(timeout=self.recheck)   # re-check the temperature
+
+    def __exit__(self, *exc):
+        with self.cond:
+            self.active -= 1
+            self.cond.notify_all()
+
+
 def fsync_file(path):
     """Make sure a file's data is on the SD card before we rename it."""
     fd = os.open(path, os.O_RDONLY)
@@ -508,27 +566,36 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 os.remove(tmp)
     covers.update(checked)
 
-    added, skipped = 0, []
-    for i, (name, t) in enumerate(missing):
+    # Download/convert in parallel: `workers` conversions at once, plus one
+    # more thread so the next download overlaps the current conversion (helps
+    # even on a single core). Space is reserved per track before it starts.
+    workers = resolve_workers(cfg["sync"].get("workers", "auto"))
+    slots = ConversionSlots(workers)
+    lock, show_lock = threading.Lock(), threading.Lock()
+    progress = {"added": 0, "started": 0, "reserved": 0}
+    skipped = []
+    if missing:
+        log.info("Getting %d tracks with %d conversion worker(s)", len(missing), workers)
+
+    def prepare_one(name, t, need):
         conv = needs_conversion(t.get("suffix"), device)
-        size = int(t.get("size") or 0)
-        reason = no_room(cache_dir, size * (2 if conv else 1), max_bytes, disk_usage)
-        if reason:
-            log.warning("Stopping early: %s", reason)
-            skipped += [{"id": t2["id"], "title": label(t2), "reason": reason,
-                         "error": False} for _, t2 in missing[i:]]
-            break
-        if show:
-            show("preparing", "--done", str(i), "--total", str(len(missing)),
-                 "--detail", f"{'Converting' if conv else 'Downloading'}: {label(t)}")
         try:
+            with lock:
+                n = progress["started"]
+                progress["started"] += 1
+            if show:
+                with show_lock:
+                    show("preparing", "--done", str(n), "--total", str(len(missing)),
+                         "--detail", f"{'Converting' if conv else 'Downloading'}: {label(t)}")
             src = os.path.join(tmp_dir, f"src-{name}.{(t.get('suffix') or 'bin').lower()}")
-            log.info("Downloading %s (%s, %.1f MB)", label(t), t.get("suffix"), size / 1e6)
+            log.info("Downloading %s (%s, %.1f MB)", label(t), t.get("suffix"),
+                     int(t.get("size") or 0) / 1e6)
             client.download(t["id"], src)
             if conv:
                 out = os.path.join(tmp_dir, name)
-                log.info("Converting (%s)", current)
-                convert_fn(src, out, options, t.get("duration"))
+                with slots:
+                    log.info("Converting %s (%s)", label(t), current)
+                    convert_fn(src, out, options, t.get("duration"))
                 os.remove(src)
             else:
                 out = src
@@ -538,11 +605,36 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 log.exception("Couldn't shrink the cover of %s (kept as is)", label(t))
             fsync_file(out)
             os.replace(out, os.path.join(tracks_dir, name))
-            added += 1
+            with lock:
+                progress["added"] += 1
         except Exception as e:      # one bad track shouldn't block the rest
             log.exception("Couldn't prepare %s", label(t))
-            skipped.append({"id": t["id"], "title": label(t), "reason": str(e),
-                            "error": True})
+            with lock:
+                skipped.append({"id": t["id"], "title": label(t), "reason": str(e),
+                                "error": True})
+        finally:
+            with lock:
+                progress["reserved"] -= need
+
+    with ThreadPoolExecutor(max_workers=workers + 1) as pool:
+        futures = []
+        for i, (name, t) in enumerate(missing):
+            conv = needs_conversion(t.get("suffix"), device)
+            need = int(t.get("size") or 0) * (2 if conv else 1)
+            with lock:
+                reason = no_room(cache_dir, need + progress["reserved"], max_bytes, disk_usage)
+                if not reason:
+                    progress["reserved"] += need
+            if reason:
+                log.warning("Stopping early: %s", reason)
+                with lock:
+                    skipped += [{"id": t2["id"], "title": label(t2), "reason": reason,
+                                 "error": False} for _, t2 in missing[i:]]
+                break
+            futures.append(pool.submit(prepare_one, name, t, need))
+        for f in futures:
+            f.result()
+    added = progress["added"]
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
