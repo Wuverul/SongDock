@@ -197,6 +197,14 @@ expand to their tracks. Discovery playlists come later.
 - **pygpod's `remove_track()` leaves the audio file on the iPod by default.**
   Pass `delete_file=True`, or removed tracks pile up as orphans (seen
   2026-10-16). Artwork is removed either way.
+- **Album art replaced the built-in games' icons** (Klondike etc.) after the
+  first pygpod write (user, 2026-10-16; cosmetic). pygpod's `ArtworkManager`
+  numbers images from 1 (`_next_image_id = 1`); the games seem to use low
+  image IDs too. iTunes/libgpod reportedly start at 100 (unverified). Phase 4:
+  start IDs at 100 and re-number existing images once, then check the icons.
+- **Manual test with 3 tracks passed on the Nano (2026-10-16):** MP3s
+  (2 converted V0, 1 original 320k with a 4000x4000 cover) played cleanly,
+  showed art, and sorted correctly. Not yet tested on the Pi itself.
 - **ffmpeg's built-in AAC encoder produces audible high-frequency artifacts**
   (user heard them on the Nano; measured 8-15 noise bursts per 28s vs 1 for
   Apple's encoder, and decoded peaks up to +3 dBFS on loud masters). The Pi
