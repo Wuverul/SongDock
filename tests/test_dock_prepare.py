@@ -443,6 +443,19 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(results[1][0], 12)
 
 
+class SyncFirstTests(unittest.TestCase):
+    def test_waits_while_a_sync_runs(self):
+        states = iter([True, True, False])          # sync busy for two checks
+        slept = []
+        waited = dock_prepare.wait_for_syncs(check=lambda: next(states),
+                                             sleep=slept.append, poll=15)
+        self.assertEqual((waited, slept), (30, [15, 15]))
+
+    def test_no_wait_when_idle(self):
+        self.assertEqual(dock_prepare.wait_for_syncs(check=lambda: False,
+                                                     sleep=self.fail), 0)
+
+
 class ConfigTests(unittest.TestCase):
     def write(self, text):
         f = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)

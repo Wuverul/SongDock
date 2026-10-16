@@ -702,6 +702,26 @@ def show_plan(manifest):
     return "\n".join(lines)
 
 
+def sync_running():
+    """True while a sync (musicdock-sync@*) is running: the iPod comes first."""
+    r = subprocess.run(["systemctl", "list-units", "--type=service", "--no-legend",
+                        "--state=active,activating", "musicdock-sync@*"],
+                       capture_output=True, text=True)
+    return bool(r.stdout.strip())
+
+
+def wait_for_syncs(check=sync_running, sleep=time.sleep, poll=15):
+    """Wait until no sync is running (a docked iPod gets the dock first).
+    Returns the seconds waited."""
+    waited = 0
+    while check():
+        if waited == 0:
+            log.info("A sync is running; checking for new music once it's done")
+        sleep(poll)
+        waited += poll
+    return waited
+
+
 # ------------------------------------------------------------------ main ----
 def main(argv=None):
     p = argparse.ArgumentParser(description="Music dock prepare job")
@@ -730,6 +750,9 @@ def main(argv=None):
         os.nice(19)          # conversion must never slow a sync down
     except OSError:
         pass
+
+    if not args.dry_run and shutil.which("systemctl"):
+        wait_for_syncs()
 
     try:
         cfg = dock_config.load(args.config)
