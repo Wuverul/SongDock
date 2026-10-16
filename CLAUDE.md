@@ -303,7 +303,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 ## Phase plan
 
 1. ✅ Display working on hardware
-2. Dock core: detect → mount → unmount → `safe`, using the Nano or a USB stick
+2. ✅ Dock core: detect → mount → unmount → `safe` (Nano on the real dock,
+   2026-10-16: udev → `musicdock-sync@sda1` in ~1 s, whole run 23 s, eject
+   works, no throttling while charging; the Nano reports its write cache
+   disabled)
 3. Server side: play upload, starred-track fetch, prepare job with conversion
 4. Stock iPod handler via pygpod (after the manual test passes)
 5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
