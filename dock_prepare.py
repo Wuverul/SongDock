@@ -151,43 +151,89 @@ def unique_ids(songs):
     return ids
 
 
-def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites"):
+def has_tag(comment, tag):
+    """True if the playlist comment contains the tag as a whole word (any case)."""
+    if not tag:
+        return False
+    pattern = r"(?<![\w#])" + re.escape(tag) + r"(?!\w)"
+    return re.search(pattern, comment or "", re.IGNORECASE) is not None
+
+
+def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites",
+                  tag="", previously_tagged=()):
     """Resolve the configured targets into one de-duplicated set of tracks.
 
     targets: e.g. ["starred", "playlist:Mel Test"].
     known_playlists: {target: playlist id} from the last run (for renames).
     favorites_name: the player playlist made from "starred" ("" for none).
+    tag: playlists whose Navidrome comment contains this (e.g. "#ipod") are
+    added too. previously_tagged: playlist IDs tagged last run, so an empty
+    playlist listing (server trouble) stops the run instead of pruning.
     Returns (tracks in artist/album/track order, {song id: [targets]},
     [playlist records for the manifest, in target order]).
     """
     known_playlists = known_playlists or {}
     tracks, sources, playlists = {}, {}, []
     listing = None
-    for target in targets:
-        if target == "starred":
-            songs = starred_songs(client)
-            if favorites_name:
-                playlists.append({"target": target, "id": None, "name": favorites_name,
-                                  "changed": None,
-                                  "song_ids": unique_ids(sorted(songs, key=library_order))})
-        elif target.startswith("playlist:"):
-            if listing is None:
-                listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
-            pl = find_playlist(client, target.split(":", 1)[1],
-                               known_playlists.get(target), listing)
-            songs = pl.get("entry", [])
-            playlists.append({"target": target, "id": pl["id"], "name": pl["name"],
-                              "changed": pl.get("changed"),
-                              "song_ids": [s["id"] for s in songs]})
-        else:
-            raise PrepareError(f"unknown target {target!r} "
-                               "(use \"starred\" or \"playlist:<name>\")")
+    if tag:
+        listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
+        if not listing and previously_tagged:
+            raise PrepareError(
+                f"the server listed no playlists, but {len(previously_tagged)} were "
+                f"tagged {tag} last time; stopping without removing anything. (If you "
+                f"really deleted them all, set playlist_tag = \"\" to continue.)")
+        tagged = [p for p in listing if has_tag(p.get("comment"), tag)]
+        targets = list(targets) + [("tagged", p) for p in tagged]
+
+    def add(target, songs):
         for song in songs:
             tracks.setdefault(song["id"], song)
             sources.setdefault(song["id"], [])
             if target not in sources[song["id"]]:
                 sources[song["id"]].append(target)
         log.info("Target %s: %d songs", target, len(songs))
+
+    seen_playlists = set()
+    for target in targets:
+        if isinstance(target, tuple):                  # found by tag
+            pid = target[1]["id"]
+            if pid in seen_playlists:
+                continue                               # also listed in config
+            try:
+                pl = client.call("getPlaylist", id=pid)["playlist"]
+            except SubsonicError as e:
+                raise PrepareError(f"tagged playlist {target[1]['name']!r} couldn't "
+                                   f"be read: {e}") from None
+            seen_playlists.add(pid)
+            songs = pl.get("entry", [])
+            key = f"playlist:{pl['name']}"
+            playlists.append({"target": key, "id": pl["id"], "name": pl["name"],
+                              "changed": pl.get("changed"), "via": "tag",
+                              "song_ids": [s["id"] for s in songs]})
+            add(key, songs)
+            continue
+        if target == "starred":
+            songs = starred_songs(client)
+            if favorites_name:
+                playlists.append({"target": target, "id": None, "name": favorites_name,
+                                  "changed": None, "via": "starred",
+                                  "song_ids": unique_ids(sorted(songs, key=library_order))})
+        elif target.startswith("playlist:"):
+            if listing is None:
+                listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
+            pl = find_playlist(client, target.split(":", 1)[1],
+                               known_playlists.get(target), listing)
+            if pl["id"] in seen_playlists:
+                continue
+            seen_playlists.add(pl["id"])
+            songs = pl.get("entry", [])
+            playlists.append({"target": target, "id": pl["id"], "name": pl["name"],
+                              "changed": pl.get("changed"), "via": "config",
+                              "song_ids": [s["id"] for s in songs]})
+        else:
+            raise PrepareError(f"unknown target {target!r} "
+                               "(use \"starred\" or \"playlist:<name>\")")
+        add(target, songs)
     return sorted(tracks.values(), key=library_order), sources, playlists
 
 
@@ -297,8 +343,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
 
     previous = read_manifest(cache_dir)
     known = {p["target"]: p["id"] for p in previous.get("playlists", []) if p.get("id")}
+    previously_tagged = [p["id"] for p in previous.get("playlists", [])
+                         if p.get("via") == "tag"]
     targets, sources, playlists = target_tracks(
-        client, cfg["sync"]["targets"], known, cfg["sync"].get("favorites_playlist", "Favorites"))
+        client, cfg["sync"]["targets"], known,
+        cfg["sync"].get("favorites_playlist", "Favorites"),
+        cfg["sync"].get("playlist_tag", ""), previously_tagged)
     wanted = {output_name(t, device, fmt): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
     to_remove = sorted(existing - wanted.keys())
@@ -385,6 +435,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     write_json_atomic(os.path.join(cache_dir, "manifest.json"), {
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "targets": cfg["sync"]["targets"], "device": device,
+        "playlist_tag": cfg["sync"].get("playlist_tag", ""),
         "tracks": ready, "playlists": playlists, "skipped": skipped,
     })
     return {"total": len(wanted), "ready": len(ready), "added": added,
@@ -396,8 +447,11 @@ def show_plan(manifest):
     if not manifest:
         return "No manifest yet: the prepare job hasn't run."
     tracks = {t["id"]: t for t in manifest.get("tracks", [])}
+    sources = ", ".join(manifest.get("targets", []))
+    if manifest.get("playlist_tag"):
+        sources += f" + playlists tagged {manifest['playlist_tag']}"
     lines = [f"Staged {manifest.get('generated')} for {manifest.get('device')} "
-             f"from {', '.join(manifest.get('targets', []))}:",
+             f"from {sources}:",
              f"  {len(tracks)} tracks ready, "
              f"{sum(t['size'] for t in tracks.values()) / 1e6:.0f} MB "
              f"(each stored once, however many lists it's in)"]
@@ -417,7 +471,8 @@ def show_plan(manifest):
             if a not in albums:
                 albums.append(a)
         missing = sum(1 for i in ids if i not in tracks)
-        lines.append(f"  iPod playlist {pl['name']!r}: {len(ids)} songs from "
+        via = {"tag": " [tagged]", "config": " [config]"}.get(pl.get("via"), "")
+        lines.append(f"  iPod playlist {pl['name']!r}{via}: {len(ids)} songs from "
                      f"{len(albums)} album(s): {', '.join(albums)}"
                      + (f" ({missing} not ready)" if missing else ""))
     return "\n".join(lines)

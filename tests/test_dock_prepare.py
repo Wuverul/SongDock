@@ -34,7 +34,7 @@ class FakeServer:
     def __init__(self, songs=(), albums=None, fail_download=(), playlists=None):
         self.songs = list(songs)
         self.albums = albums or {}            # album id -> [songs]
-        self.playlists = playlists or {}      # playlist id -> (name, [songs])
+        self.playlists = playlists or {}      # playlist id -> (name, [songs][, comment])
         self.fail_download = set(fail_download)
         self.downloads = []
 
@@ -46,11 +46,12 @@ class FakeServer:
             return {"album": {"song": self.albums[params["id"]]}}
         if endpoint == "getPlaylists":
             return {"playlists": {"playlist": [
-                {"id": pid, "name": name} for pid, (name, _) in self.playlists.items()]}}
+                {"id": pid, "name": v[0], **({"comment": v[2]} if len(v) > 2 else {})}
+                for pid, v in self.playlists.items()]}}
         if endpoint == "getPlaylist":
             if params["id"] not in self.playlists:
                 raise SubsonicError("getPlaylist: not found (code 70)")
-            name, songs = self.playlists[params["id"]]
+            name, songs = self.playlists[params["id"]][:2]
             return {"playlist": {"id": params["id"], "name": name,
                                  "changed": "2026-10-16", "entry": songs}}
         raise AssertionError(endpoint)
@@ -163,12 +164,13 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(sources["b1"], ["playlist:Mel Test"])
         self.assertEqual(m["playlists"], [
             {"target": "starred", "id": None, "name": "Favorites", "changed": None,
-             "song_ids": ["a1", "a2"]},
+             "via": "starred", "song_ids": ["a1", "a2"]},
             {"target": "playlist:Mel Test", "id": "P1", "name": "Mel Test",
-             "changed": "2026-10-16", "song_ids": ["a2", "b1", "b2"]}])
+             "changed": "2026-10-16", "via": "config", "song_ids": ["a2", "b1", "b2"]}])
         plan = dock_prepare.show_plan(m)
         self.assertIn("iPod playlist 'Favorites': 2 songs from 1 album(s): Album", plan)
-        self.assertIn("iPod playlist 'Mel Test': 3 songs from 2 album(s): Album, Other", plan)
+        self.assertIn("iPod playlist 'Mel Test' [config]: 3 songs from 2 album(s): "
+                      "Album, Other", plan)
 
     def test_favorites_playlist_dedupes_and_can_be_turned_off(self):
         # A starred song that's also on a starred album appears once.
@@ -180,6 +182,43 @@ class PrepareTests(unittest.TestCase):
         cfg["sync"]["favorites_playlist"] = ""
         self.run_prepare(server, cfg)
         self.assertEqual(self.manifest()["playlists"], [])
+
+    def tagged_cfg(self, targets=("starred",)):
+        cfg = config(targets=targets)
+        cfg["sync"]["playlist_tag"] = "#ipod"
+        return cfg
+
+    def test_tagged_playlists_sync_without_config(self):
+        server = FakeServer(playlists={
+            "P1": ("Mel Test", [song("b1")], "road trip #iPod"),     # any case
+            "P2": ("Podcasts", [song("c1")], "#ipodcast"),           # not the tag
+            "P3": ("Untagged", [song("d1")])})
+        self.run_prepare(server, self.tagged_cfg())
+        self.assertEqual(self.files(), ["b1.mp3"])
+        pls = [p for p in self.manifest()["playlists"] if p["via"] != "starred"]
+        self.assertEqual([(p["name"], p["via"]) for p in pls], [("Mel Test", "tag")])
+
+    def test_tagged_and_configured_playlist_counted_once(self):
+        server = FakeServer(playlists={"P1": ("Mel Test", [song("b1")], "#ipod")})
+        self.run_prepare(server, self.tagged_cfg(["playlist:Mel Test"]))
+        self.assertEqual([p["via"] for p in self.manifest()["playlists"]], ["config"])
+
+    def test_removing_tag_unsyncs_playlist(self):
+        server = FakeServer(songs=[song("a1")],
+                            playlists={"P1": ("Mel Test", [song("b1")], "#ipod")})
+        self.run_prepare(server, self.tagged_cfg())
+        server.playlists["P1"] = ("Mel Test", [song("b1")], "")      # tag removed
+        summary = self.run_prepare(server, self.tagged_cfg())
+        self.assertEqual(self.files(), ["a1.mp3"])
+        self.assertEqual(summary["removed"], 1)
+
+    def test_empty_playlist_listing_stops_without_pruning(self):
+        server = FakeServer(playlists={"P1": ("Mel Test", [song("b1")], "#ipod")})
+        self.run_prepare(server, self.tagged_cfg())
+        server.playlists = {}                       # server glitch: no playlists at all
+        with self.assertRaisesRegex(dock_prepare.PrepareError, "stopping without removing"):
+            self.run_prepare(server, self.tagged_cfg())
+        self.assertEqual(self.files(), ["b1.mp3"])
 
     def test_missing_playlist_stops_without_pruning(self):
         server = FakeServer(playlists={"P1": ("Mel Test", [song("b1")])})

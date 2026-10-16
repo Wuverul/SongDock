@@ -85,11 +85,15 @@ cached track also has a MusicBrainz recording ID, none shared). Playlists are
 found by name, remembered by ID (renames survive); a playlist that can't be
 found stops the run rather than pruning its tracks. `"starred"` also becomes a
 player playlist named by `favorites_playlist` (default "Favorites"; "" for
-none), in artist/album/track order. Planned: include any playlist whose
-Navidrome comment contains a tag (e.g. `#ipod`), so the user can pick
-playlists in the web UI; config `playlist:` entries remain for playlists the
-user can't edit (e.g. service-owned dynamic ones). Not built until the API is
-confirmed to return playlist comments.
+none), in artist/album/track order. **Choosing playlists:** any
+playlist whose Navidrome comment contains `playlist_tag` (default `#ipod`,
+whole word, any case) is synced; removing the tag unsyncs it at the next run.
+The user edits comments in the Navidrome web UI (the field is easy to miss;
+Navidrome returns it from getPlaylists/getPlaylist). Config `playlist:`
+entries remain for playlists the user can't edit (e.g. service-owned dynamic
+ones); a playlist both tagged and configured counts once. If the server lists
+no playlists at all but some were tagged last run, the run stops without
+pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 
 ## Safety rules (do not simplify these away)
 

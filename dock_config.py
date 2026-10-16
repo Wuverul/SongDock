@@ -17,6 +17,7 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
+             "playlist_tag": "#ipod",
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k"},
