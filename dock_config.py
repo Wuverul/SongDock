@@ -16,7 +16,7 @@ DEFAULT_PATH = os.environ.get("MUSICDOCK_CONFIG", "~/.config/musicdock/config.to
 PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
-    "sync": {"target": "starred", "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
+    "sync": {"targets": ["starred"], "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k"},
 }
@@ -52,6 +52,19 @@ def load(path=None):
     cfg["server"] = server
 
     cfg["sync"]["cache_dir"] = os.path.expanduser(cfg["sync"]["cache_dir"])
+
+    # Older configs had a single `target = "starred"`.
+    sync_raw = raw.get("sync", {})
+    if "target" in sync_raw and "targets" not in sync_raw:
+        cfg["sync"]["targets"] = [sync_raw["target"]]
+    cfg["sync"].pop("target", None)
+    targets = cfg["sync"]["targets"]
+    if (not isinstance(targets, list) or not targets
+            or not all(t == "starred" or (isinstance(t, str) and t.startswith("playlist:")
+                                          and len(t) > len("playlist:"))
+                       for t in targets)):
+        raise ConfigError(f'{path}: targets must be a list like '
+                          f'["starred", "playlist:Road Trip"]')
     if cfg["device"]["type"] not in ("stock_ipod", "rockbox"):
         raise ConfigError(f"{path}: device type must be stock_ipod or rockbox")
     if cfg["device"]["convert_to"] not in ("mp3", "alac", "aac"):

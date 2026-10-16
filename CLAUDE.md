@@ -75,8 +75,15 @@ core library is also loaded **through the dock** (one long first sync; faster
 on a Pi Zero 2 W), never by Finder/iTunes: Finder replaces the whole iTunesDB,
 wiping the dock's tracks and IDs. Keep the SD card (64GB; 57G root filesystem) under ~80% full.
 
-**Initial target:** the user's **starred** items (`getStarred2`). Starred albums
-expand to their tracks. Discovery playlists come later.
+**Targets** (`[sync] targets` in config): `"starred"` (starred songs; starred
+albums expand to their tracks) and/or `"playlist:<name>"`. Currently
+`["starred", "playlist:Mel Test"]`: Mel Test stands in for an explicit "sync to
+iPod" playlist. Dynamic playlists from the service come later, as more
+`playlist:` targets. A song in several targets is stored and copied once
+(keyed by Navidrome song ID, which is the same via every endpoint; every
+cached track also has a MusicBrainz recording ID, none shared). Playlists are
+found by name, remembered by ID (renames survive); a playlist that can't be
+found stops the run rather than pruning its tracks.
 
 ## Safety rules (do not simplify these away)
 
@@ -146,8 +153,11 @@ expand to their tracks. Discovery playlists come later.
   then hourly; runs as the login user at nice 19). Starred songs + starred
   albums' tracks → `cache/tracks/<id>.<ext>` (stock iPod: FLAC etc. → AAC;
   MP3/AAC/ALAC kept), prunes unstarred, writes `cache/manifest.json` (the sync
-  queue). Built in `cache/tmp/`, renamed when complete. `--dry-run` shows the
-  plan.
+  plan the sync applies): each track's `sources` (targets it came from) and
+  `encoding`, plus `playlists` (id, name, `changed`, ordered `song_ids`) for
+  the sync to recreate on the player. Built in `cache/tmp/`, renamed when
+  complete. `--dry-run` shows what a run would do; `--show-plan` prints the
+  staged plan (no network).
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
 - Panel access is serialized by `dock_status.panel_lock()` (flock next to the

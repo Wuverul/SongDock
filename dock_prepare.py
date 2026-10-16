@@ -4,15 +4,18 @@ dock_prepare.py - prepare job: get the next sync's tracks ready.
 
 Runs on a timer (musicdock-prepare.timer) as the login user, at low priority.
 Never touches the player. Steps:
-  1. Ask Navidrome for the target tracks: starred songs plus every track of
-     a starred album.
+  1. Ask Navidrome for the target tracks (config `targets`): "starred"
+     (starred songs plus every track of a starred album) and/or
+     "playlist:<name>". A song in several targets is stored once.
   2. Remove cached tracks that are no longer targeted.
   3. Download each missing track, convert it if the player needs that, and
      move it into the cache:
        stock_ipod: MP3/AAC/ALAC kept as-is (no lossy-to-lossy re-encode);
                    FLAC and anything else -> convert_to (default MP3 V0)
        rockbox:    everything kept as-is
-  4. Write manifest.json: the queue the sync job copies to the player.
+  4. Write manifest.json: the plan the sync job applies to the player -
+     the tracks (with the targets each came from) and each playlist's
+     song order, to recreate it on the player. --show-plan prints it.
 
 Files are built in tmp/ and renamed into tracks/ only when complete, so a
 power cut never leaves a half-written track that looks ready.
@@ -95,23 +98,81 @@ class PrepareError(Exception):
 
 
 # --------------------------------------------------------------- targets ----
-def target_tracks(client, target):
-    """Return the tracks to sync, de-duplicated, in artist/album/track order."""
-    if target != "starred":
-        raise PrepareError(f"target {target!r} isn't supported yet (only 'starred')")
+def starred_songs(client):
+    """Starred songs plus every track of a starred album."""
     starred = client.call("getStarred2").get("starred2", {})
-    tracks = {}
-    for song in starred.get("song", []):
-        tracks.setdefault(song["id"], song)
+    songs = list(starred.get("song", []))
     for album in starred.get("album", []):
-        for song in client.call("getAlbum", id=album["id"]).get("album", {}).get("song", []):
-            tracks.setdefault(song["id"], song)
+        songs += client.call("getAlbum", id=album["id"]).get("album", {}).get("song", [])
     if starred.get("artist"):
         log.info("Ignoring %d starred artist(s): only songs and albums are synced",
                  len(starred["artist"]))
-    return sorted(tracks.values(), key=lambda s: (
+    return songs
+
+
+def find_playlist(client, name, known_id=None, listing=None):
+    """Return the playlist called `name` (with its songs).
+
+    Looked up by name; if no playlist has that name any more but we know its
+    ID from an earlier run, the ID is used (so renaming doesn't break it).
+    A playlist that can't be found is an error, never "empty": treating it
+    as empty would delete all its tracks from the cache.
+    """
+    if listing is None:
+        listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
+    matches = [p for p in listing if p["name"] == name]
+    if len(matches) > 1:
+        raise PrepareError(f"several playlists are named {name!r}; rename one")
+    if matches:
+        pid = matches[0]["id"]
+    elif known_id:
+        log.warning("No playlist named %r; using its previous ID %s (renamed?)",
+                    name, known_id)
+        pid = known_id
+    else:
+        raise PrepareError(f"playlist {name!r} not found on the server")
+    try:
+        return client.call("getPlaylist", id=pid)["playlist"]
+    except SubsonicError as e:
+        raise PrepareError(f"playlist {name!r} couldn't be read: {e}") from None
+
+
+def target_tracks(client, targets, known_playlists=None):
+    """Resolve the configured targets into one de-duplicated set of tracks.
+
+    targets: e.g. ["starred", "playlist:Mel Test"].
+    known_playlists: {target: playlist id} from the last run (for renames).
+    Returns (tracks in artist/album/track order, {song id: [targets]},
+    [playlist records for the manifest, in target order]).
+    """
+    known_playlists = known_playlists or {}
+    tracks, sources, playlists = {}, {}, []
+    listing = None
+    for target in targets:
+        if target == "starred":
+            songs = starred_songs(client)
+        elif target.startswith("playlist:"):
+            if listing is None:
+                listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
+            pl = find_playlist(client, target.split(":", 1)[1],
+                               known_playlists.get(target), listing)
+            songs = pl.get("entry", [])
+            playlists.append({"target": target, "id": pl["id"], "name": pl["name"],
+                              "changed": pl.get("changed"),
+                              "song_ids": [s["id"] for s in songs]})
+        else:
+            raise PrepareError(f"unknown target {target!r} "
+                               "(use \"starred\" or \"playlist:<name>\")")
+        for song in songs:
+            tracks.setdefault(song["id"], song)
+            sources.setdefault(song["id"], [])
+            if target not in sources[song["id"]]:
+                sources[song["id"]].append(target)
+        log.info("Target %s: %d songs", target, len(songs))
+    ordered = sorted(tracks.values(), key=lambda s: (
         (s.get("artist") or "").lower(), (s.get("album") or "").lower(),
         s.get("discNumber") or 0, s.get("track") or 0, s.get("title") or ""))
+    return ordered, sources, playlists
 
 
 def needs_conversion(suffix, device_type):
@@ -211,22 +272,23 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     show(screen, *args) draws a progress screen (optional).
     """
     device = cfg["device"]["type"]
-    target = cfg["device"]["convert_to"]
+    fmt = cfg["device"]["convert_to"]
     current = encoding(cfg["device"])
     options = audio_options(cfg["device"])
     max_bytes = int(float(cfg["sync"]["max_cache_gb"]) * 1e9)
     tracks_dir = os.path.join(cache_dir, "tracks")
     tmp_dir = os.path.join(cache_dir, "tmp")
 
-    targets = target_tracks(client, cfg["sync"]["target"])
-    wanted = {output_name(t, device, target): t for t in targets}
+    previous = read_manifest(cache_dir)
+    known = {p["target"]: p["id"] for p in previous.get("playlists", [])}
+    targets, sources, playlists = target_tracks(client, cfg["sync"]["targets"], known)
+    wanted = {output_name(t, device, fmt): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
     to_remove = sorted(existing - wanted.keys())
 
     # Cached conversions made with different settings get re-done. Entries
     # from before encodings were recorded are assumed current.
-    made_with = {t["id"]: t.get("encoding")
-                 for t in read_manifest(cache_dir).get("tracks", [])}
+    made_with = {t["id"]: t.get("encoding") for t in previous.get("tracks", [])}
     stale = {name for name, t in wanted.items()
              if name in existing and needs_conversion(t.get("suffix"), device)
              and made_with.get(t["id"]) not in (None, current)}
@@ -301,14 +363,47 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 "converted": needs_conversion(t.get("suffix"), device),
                 "encoding": (current if needs_conversion(t.get("suffix"), device)
                              else "original"),
+                "sources": sources.get(t["id"], []),
             })
     write_json_atomic(os.path.join(cache_dir, "manifest.json"), {
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "target": cfg["sync"]["target"], "device": device,
-        "tracks": ready, "skipped": skipped,
+        "targets": cfg["sync"]["targets"], "device": device,
+        "tracks": ready, "playlists": playlists, "skipped": skipped,
     })
     return {"total": len(wanted), "ready": len(ready), "added": added,
             "removed": len(to_remove), "skipped": skipped}
+
+
+def show_plan(manifest):
+    """Describe what the next sync would put on the player (from the manifest)."""
+    if not manifest:
+        return "No manifest yet: the prepare job hasn't run."
+    tracks = {t["id"]: t for t in manifest.get("tracks", [])}
+    lines = [f"Staged {manifest.get('generated')} for {manifest.get('device')} "
+             f"from {', '.join(manifest.get('targets', []))}:",
+             f"  {len(tracks)} tracks ready, "
+             f"{sum(t['size'] for t in tracks.values()) / 1e6:.0f} MB "
+             f"(each stored once, however many lists it's in)"]
+    combos = {}
+    for t in tracks.values():
+        key = " + ".join(t.get("sources") or ["?"])
+        combos[key] = combos.get(key, 0) + 1
+    for key, n in sorted(combos.items()):
+        lines.append(f"    {n:4d} from {key}")
+    if manifest.get("skipped"):
+        lines.append(f"  {len(manifest['skipped'])} not ready (see manifest 'skipped')")
+    for pl in manifest.get("playlists", []):
+        ids = pl["song_ids"]
+        albums = []
+        for i in ids:
+            a = tracks.get(i, {}).get("album") or "?"
+            if a not in albums:
+                albums.append(a)
+        missing = sum(1 for i in ids if i not in tracks)
+        lines.append(f"  iPod playlist {pl['name']!r}: {len(ids)} songs from "
+                     f"{len(albums)} album(s): {', '.join(albums)}"
+                     + (f" ({missing} not ready)" if missing else ""))
+    return "\n".join(lines)
 
 
 # ------------------------------------------------------------------ main ----
@@ -317,10 +412,23 @@ def main(argv=None):
     p.add_argument("--config", help="config.toml path (default: %s)" % dock_config.DEFAULT_PATH)
     p.add_argument("--cache-dir", help="override cache_dir from the config")
     p.add_argument("--dry-run", action="store_true", help="show the plan only")
+    p.add_argument("--show-plan", action="store_true",
+                   help="print what the next sync would put on the player, from "
+                        "the last run's manifest (no network)")
     p.add_argument("--preview-dir", metavar="DIR",
                    help="save screens as PNGs instead of drawing on the panel")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+    if args.show_plan:
+        try:
+            cfg = dock_config.load(args.config)
+        except dock_config.ConfigError as e:
+            log.error("%s", e)
+            return 1
+        print(show_plan(read_manifest(os.path.expanduser(
+            args.cache_dir or cfg["sync"]["cache_dir"]))))
+        return 0
 
     try:
         os.nice(19)          # conversion must never slow a sync down

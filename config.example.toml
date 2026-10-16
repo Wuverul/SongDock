@@ -8,7 +8,9 @@ username = "your-navidrome-username"
 password = "your-navidrome-password"  # used only to compute Subsonic auth tokens
 
 [sync]
-target = "starred"                 # later: playlist names from the discovery service
+targets = ["starred"]              # what to sync: "starred" and/or "playlist:<name>",
+                                   # e.g. ["starred", "playlist:Road Trip"]. A song in
+                                   # several lists is stored and copied once.
 cache_dir = "~/musicdock/cache"
 max_cache_gb = 20                  # stay well under the 32GB card's capacity
 
