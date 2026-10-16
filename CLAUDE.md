@@ -309,6 +309,14 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
    (see "Resilience without a mirror"). Rockbox handler deprioritized.
 6. 3D-printed dock enclosure
+7. Documentation, setup guide, and packaging for friends (after Phase 4):
+   README (hardware list, OS image, SSH key setup, one-command install);
+   `install.sh` installs apt deps (ffmpeg, rsync, python3-pil/-gpiozero/
+   -spidev/-lgpio, fonts-dejavu-core), enables SPI (`raspi-config nonint
+   do_spi 0`), fetches a pinned Waveshare e-Paper lib, creates the venv and a
+   mode-600 config from the template; clear errors for unsupported setups
+   (no NetworkManager, other display); placeholder server URL in
+   `config.example.toml`; display model/rotation as config if needed.
 
 ## Notes
 
