@@ -174,7 +174,9 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 - `deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
   on the Pi (cache stays in `~/musicdock/cache`).
 - `dock_prepare.py`: prepare job (`musicdock-prepare.timer`: 1 min after boot -
-  in practice once the boot screens and network are done - then hourly; it
+  in practice once the boot screens and network are done - then every 15 min
+  after the previous run ends (`OnUnitInactiveSec`); only redraws/rewrites the
+  manifest when something changed; it
   first waits for any running `musicdock-sync@*`, since the iPod comes first; runs as the login user at nice 19). Starred songs + starred
   albums' tracks → `cache/tracks/<id>.<ext>` (stock iPod: FLAC etc. → AAC;
   MP3/AAC/ALAC kept), prunes unstarred, writes `cache/manifest.json` (the sync

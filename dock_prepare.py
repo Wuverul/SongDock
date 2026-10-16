@@ -656,12 +656,16 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 **({"cover": covers[t["id"]], "cover_max": COVER_MAX}
                    if covers.get(t["id"], "unchecked") != "unchecked" else {}),
             })
-    write_json_atomic(os.path.join(cache_dir, "manifest.json"), {
-        "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    manifest = {
         "targets": cfg["sync"]["targets"], "device": device,
         "playlist_tag": cfg["sync"].get("playlist_tag", ""),
         "tracks": ready, "playlists": playlists, "skipped": skipped,
-    })
+    }
+    # Runs every 15 minutes: only write the plan when it changed (spares the
+    # SD card; "generated" then says when the plan last changed).
+    if {k: v for k, v in previous.items() if k != "generated"} != manifest:
+        manifest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        write_json_atomic(os.path.join(cache_dir, "manifest.json"), manifest)
     return {"total": len(wanted), "ready": len(ready), "added": added,
             "removed": len(to_remove), "skipped": skipped}
 

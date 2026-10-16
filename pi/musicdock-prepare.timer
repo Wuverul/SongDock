@@ -1,15 +1,17 @@
-# Runs the prepare job right after boot, then hourly. The service waits for
+# Runs the prepare job right after boot, then every 15 minutes (counted from
+# the end of the previous run, so a long conversion batch isn't followed by
+# an immediate rerun). The service waits for
 # the boot screens and the network (After=), and for any running sync (the
 # iPod comes first). A run with nothing to do makes one small API call and
 # doesn't redraw the screen.
 #   systemctl list-timers musicdock-prepare   # when it runs next
 
 [Unit]
-Description=Music Dock prepare, hourly
+Description=Music Dock prepare, every 15 minutes
 
 [Timer]
 OnBootSec=1min
-OnUnitActiveSec=1h
+OnUnitInactiveSec=15min
 
 [Install]
 WantedBy=timers.target

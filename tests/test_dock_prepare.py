@@ -267,6 +267,20 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(server.downloads, [])
         self.assertEqual(summary["added"], 0)
 
+    def test_unchanged_plan_not_rewritten(self):
+        server = FakeServer(songs=[song("a")])
+        self.run_prepare(server)
+        path = os.path.join(self.cache, "manifest.json")
+        before = (os.stat(path).st_mtime_ns, self.manifest()["generated"])
+        os.utime(path, ns=(1, 1))                       # mark the file
+        self.run_prepare(server)                        # nothing changed
+        self.assertEqual(os.stat(path).st_mtime_ns, 1)  # not rewritten
+        self.assertEqual(self.manifest()["generated"], before[1])
+        server.songs.append(song("b"))
+        self.run_prepare(server)                        # something changed
+        self.assertNotEqual(os.stat(path).st_mtime_ns, 1)
+        self.assertEqual(len(self.manifest()["tracks"]), 2)
+
     def test_unstarred_tracks_are_pruned(self):
         server = FakeServer(songs=[song("a"), song("b")])
         self.run_prepare(server)
