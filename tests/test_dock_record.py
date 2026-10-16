@@ -76,6 +76,12 @@ class RecordTests(unittest.TestCase):
                 raise RuntimeError("power cut")
         self.assertIsNone(self.rec.player("X"))
 
+    def test_plays_matched_later_get_their_song(self):
+        self.rec.queue_plays(GUID, [play(77, nid=None, title="Hand-copied")])
+        self.rec.add_track(GUID, 77, navidrome_id="nav77", title="Hand-copied")  # adopted
+        self.assertEqual(self.rec.rematch_plays(GUID), 1)
+        self.assertEqual(self.rec.unsent_plays()[0]["navidrome_id"], "nav77")
+
     def test_managed_playlists(self):
         self.rec.set_managed_playlists(GUID, {"starred": "Favorites",
                                               "playlist:Mel Test": "Mel Test"})

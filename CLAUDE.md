@@ -146,8 +146,12 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   `safe`, `failed`), with a Wi-Fi indicator and IP address. `--preview out.png`
   renders without hardware; `--wifi -56|off` and `--ip` fake readings for
   previews. `DOCK_STATE_FILE` overrides where screen state is kept.
-- `dock_sync.py`: sync job. Detects/mounts (read-only for now) the player,
-  lists it, unmounts, shows `safe`/`failed`. `--fake-device DIR` uses a folder
+- `dock_sync.py`: sync job (runs under the venv). Identifies the player from
+  udev (`ID_SERIAL_SHORT` = FireWire GUID, `ID_MODEL_ID`), mounts it (read-only
+  unless `[device] write = true`), runs `ipod_handler.sync_player` between
+  mount and unmount (6 steps on `syncing`), unmounts/ejects, shows `safe`
+  (added/removed/plays sent/queued) or `failed`. `--list-only` = the Phase 2
+  check; `--write` forces a full sync (for fake devices). `--fake-device DIR` uses a folder
   and writes screen PNGs to `previews/`; `--fake-fail mount|unmount` tests
   error paths.
 - `dock_boot.py`: boot screens, run once per power-on by
@@ -184,6 +188,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   at a time above 75 C. Space is reserved per track before it starts. No CPU
   pinning or systemd CPUQuota: the worker count leaves a core's worth free,
   and nice 19 lets a sync preempt.
+- `dock_record.py`: the SQLite record (`/var/lib/musicdock/dock.db`; players,
+  tracks, pending_plays, playlists). `dock_plays.py`: upload queued plays
+  (batches of 25; leave the queue only on server confirmation). Both the sync
+  and the hourly prepare job send queued plays.
+- `ipod_handler.py`: stock-iPod handler (pygpod). Snapshot + queue plays,
+  SysInfo recovery, backup/restore (on the Pi under `backups/<GUID>/`, last 3),
+  reconcile, apply the staged plan, playlists, `sync_player` session. A copy of
+  the record is saved on the player at `iPod_Control/musicdock/dock.db`.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
 - **Wi-Fi indicator refresh:** NetworkManager dispatcher hook
@@ -307,8 +319,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    2026-10-16: udev → `musicdock-sync@sda1` in ~1 s, whole run 23 s, eject
    works, no throttling while charging; the Nano reports its write cache
    disabled)
-3. Server side: play upload, starred-track fetch, prepare job with conversion
-4. Stock iPod handler via pygpod (after the manual test passes)
+3. ✅ Server side: play upload, starred/playlist fetch, prepare job with
+   conversion (real play upload verified 2026-10-16)
+4. Stock iPod handler via pygpod: built and rehearsed; read-only dock mode is
+   the default (`[device] write = false`); first real full sync pending
 5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
    (see "Resilience without a mirror"). Rockbox handler deprioritized.
 6. 3D-printed dock enclosure

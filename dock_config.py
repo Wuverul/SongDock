@@ -20,12 +20,26 @@ DEFAULTS = {
              "playlist_tag": "#ipod", "workers": "auto",
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
-               "aac_bitrate": "256k"},
+               "aac_bitrate": "256k", "write": False},
 }
 
 
 class ConfigError(Exception):
     pass
+
+
+def expand_home(value, config_path):
+    """Expand a leading ~ to the home of the config file's owner, not the
+    current user's: the sync job runs as root, whose ~ is /root."""
+    if not value.startswith("~"):
+        return value
+    try:
+        import pwd
+        home = pwd.getpwuid(os.stat(config_path).st_uid).pw_dir
+    except (KeyError, OSError, ImportError):
+        return os.path.expanduser(value)
+    return home + value[1:] if value in ("~",) or value.startswith("~/") \
+        else os.path.expanduser(value)
 
 
 def load(path=None):
@@ -53,7 +67,7 @@ def load(path=None):
         raise ConfigError(f"{path}: still has the placeholder password")
     cfg["server"] = server
 
-    cfg["sync"]["cache_dir"] = os.path.expanduser(cfg["sync"]["cache_dir"])
+    cfg["sync"]["cache_dir"] = expand_home(cfg["sync"]["cache_dir"], path)
 
     # Older configs had a single `target = "starred"`.
     sync_raw = raw.get("sync", {})
@@ -69,6 +83,8 @@ def load(path=None):
                           f'["starred", "playlist:Road Trip"]')
     if cfg["device"]["type"] not in ("stock_ipod", "rockbox"):
         raise ConfigError(f"{path}: device type must be stock_ipod or rockbox")
+    if not isinstance(cfg["device"]["write"], bool):
+        raise ConfigError(f"{path}: [device] write must be true or false")
     if cfg["device"]["convert_to"] not in ("mp3", "alac", "aac"):
         raise ConfigError(f"{path}: convert_to must be mp3, alac, or aac")
     if not re.fullmatch(r"v[0-9]|(128|160|192|224|256|320)k",

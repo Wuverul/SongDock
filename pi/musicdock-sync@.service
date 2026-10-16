@@ -14,9 +14,13 @@ Type=oneshot
 # lgpio (the panel's GPIO library) creates helper files in the working
 # directory. The default, /, isn't writable by the login user.
 WorkingDirectory=/var/lib/musicdock
-ExecStart=/usr/bin/python3 @APP_DIR@/dock_sync.py --device /dev/%I
+# The venv adds pygpod (the iPod database) to the system packages.
+ExecStart=@HOME@/musicdock/venv/bin/python @APP_DIR@/dock_sync.py --device /dev/%I
+# Runs as root (mounting), so point at the login user's config explicitly;
+# "~" in it (cache_dir) is expanded from the config file owner's home.
+Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
 # As root, "~" would mean /root, so point at the login user's e-Paper library.
 Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
 Environment=PYTHONUNBUFFERED=1
-# Copying a week of music will take a while once Phase 4 lands.
-TimeoutStartSec=2h
+# A first load or a rebuild of a large player can take many hours.
+TimeoutStartSec=24h

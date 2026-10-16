@@ -44,7 +44,8 @@ MOUNT_POINT = "/media/musicdock"
 LOCK_FILE = os.path.join(tempfile.gettempdir(), "musicdock-sync.lock")
 LIST_LIMIT = 200          # files logged by name; a full player would flood the log
 UNMOUNT_TRIES = 3         # "target is busy" usually clears within a few seconds
-TOTAL_STEPS = 3           # mount, read, unmount
+TOTAL_STEPS = 3           # listing only: mount, read, unmount
+IPOD_STEPS = 6            # mount, plays, upload, backup, copy, unmount
 
 
 class SyncError(Exception):
@@ -125,9 +126,10 @@ def is_mounted_anywhere(dev_path):
 class BlockDevice:
     """A real USB partition on the Pi. mount/umount need root."""
 
-    def __init__(self, path, mount_point=MOUNT_POINT):
+    def __init__(self, path, mount_point=MOUNT_POINT, writable=False):
         self.path = path
         self.root = mount_point
+        self.writable = writable
         self.mounted = False
 
     def mount(self):
@@ -138,9 +140,15 @@ class BlockDevice:
         os.makedirs(self.root, exist_ok=True)
         if mounted_source(self.root):
             raise SyncError(f"{self.root} already in use")
-        log.info("Mounting %s at %s (read-only)", self.path, self.root)
-        run(["mount", "-o", "ro,noatime", self.path, self.root],
-            "Couldn't mount player")
+        opts = "ro,noatime"
+        if self.writable:
+            fstype = subprocess.run(["lsblk", "-no", "FSTYPE", self.path],
+                                    capture_output=True, text=True).stdout.strip()
+            # flush: vfat writes data out promptly - safer on a removable player.
+            opts = "rw,noatime,flush" if fstype == "vfat" else "rw,noatime"
+        log.info("Mounting %s at %s (%s)", self.path, self.root,
+                 "read-write" if self.writable else "read-only")
+        run(["mount", "-o", opts, self.path, self.root], "Couldn't mount player")
         self.mounted = True
 
     def unmount(self):
@@ -171,6 +179,36 @@ class BlockDevice:
         r = subprocess.run(["eject", self.path], capture_output=True, text=True)
         if r.returncode != 0:
             log.warning("eject %s: %s", self.path, r.stderr.strip())
+
+
+def player_identity(dev_path):
+    """(FireWire GUID, USB product ID) of a docked player, from udev.
+
+    On iPods the USB serial number *is* the FireWire GUID that signs the
+    database. Returns (None, None) if udev doesn't know the device.
+    """
+    r = subprocess.run(["udevadm", "info", "--query=property", f"--name={dev_path}"],
+                       capture_output=True, text=True)
+    props = dict(line.split("=", 1) for line in r.stdout.splitlines() if "=" in line)
+    guid = props.get("ID_SERIAL_SHORT")
+    try:
+        product = int(props.get("ID_MODEL_ID", ""), 16)
+    except ValueError:
+        product = None
+    return (guid.upper() if guid else None), product
+
+
+def sysinfo_guid(root):
+    """FirewireGuid from a player folder's SysInfo (fake devices), or None."""
+    try:
+        with open(os.path.join(root, "iPod_Control", "Device", "SysInfo")) as f:
+            for line in f:
+                key, _, val = line.partition(":")
+                if key.strip() == "FirewireGuid":
+                    return val.strip().upper().replace("0X", "")
+    except OSError:
+        pass
+    return None
 
 
 class FakeDevice:
@@ -267,16 +305,21 @@ class Screen:
 
 
 # ------------------------------------------------------------------ sync ----
-def run_sync(device, show):
+def run_sync(device, show, work=None, total=None):
     """Run one sync. show(screen, *args, force=False) draws a screen.
 
+    work(device, step) does the player-specific part between mount and
+    unmount (e.g. ipod_handler.sync_player) and returns a summary dict;
+    without it the player is just listed (the Phase 2 check).
     Returns True if the player was synced and is safe to remove.
     """
+    total = total or (IPOD_STEPS if work else TOTAL_STEPS)
+
     def step(n, detail):
         # Progress redraws are nice-to-have: SYNCING is already on screen,
         # so a panel hiccup here shouldn't abort the sync.
         try:
-            show("syncing", "--step", str(n), "--total", str(TOTAL_STEPS),
+            show("syncing", "--step", str(n), "--total", str(total),
                  "--detail", detail)
         except Exception:
             log.exception("Progress redraw failed (continuing)")
@@ -285,25 +328,27 @@ def run_sync(device, show):
     #    rate limiting, so it's guaranteed to draw. If it can't be drawn,
     #    the user could unplug mid-sync, so we stop before mounting.
     try:
-        show("syncing", "--step", "1", "--total", str(TOTAL_STEPS),
+        show("syncing", "--step", "1", "--total", str(total),
              "--detail", "Mounting player", force=True)
     except Exception:
         log.exception("Couldn't draw SYNCING; not mounting the player")
         return False
 
-    error = None
+    error, summary = None, {}
     try:
         device.mount()
-        step(2, "Reading player")
-        list_contents(device.root)
-        # Phase 3+: upload plays, read keep list, copy tracks - all here.
+        if work:
+            summary = work(device, step) or {}
+        else:
+            step(2, "Reading player")
+            list_contents(device.root)
     except Exception as e:
         log.exception("Sync failed")
         error = str(e) or type(e).__name__
 
     # Always unmount if we mounted, even after an error.
     if device.mounted:
-        step(3, "Unmounting")
+        step(total, "Unmounting")
         try:
             device.unmount()
         except Exception:
@@ -319,11 +364,50 @@ def run_sync(device, show):
         if error:
             show("failed", "--reason", error, force=True)
         else:
-            show("safe", force=True)
+            show("safe", "--added", str(summary.get("added", 0)),
+                 "--removed", str(summary.get("removed", 0)),
+                 "--plays", str(summary.get("plays_sent", 0)),
+                 "--queued", str(summary.get("plays_queued", 0)), force=True)
     except Exception:
         log.exception("Couldn't draw final screen; SYNCING stays up")
         return False
     return error is None
+
+
+def make_ipod_work(cfg, guid, product, write):
+    """The stock-iPod session for run_sync (needs the venv: pygpod)."""
+    import ipod_handler
+    from dock_record import SHARED_DIR, Record
+    from subsonic import Client
+
+    base = SHARED_DIR if os.path.isdir(SHARED_DIR) else os.path.expanduser("~/.cache/musicdock")
+    cache_dir = cfg["sync"]["cache_dir"]
+
+    def work(device, step):
+        try:
+            with open(os.path.join(cache_dir, "manifest.json")) as f:
+                manifest = json.load(f)
+        except (OSError, ValueError):
+            log.warning("No staged plan yet (prepare job hasn't run): plays only")
+            manifest = {}
+        client = Client(cfg["server"]["url"], cfg["server"]["username"],
+                        cfg["server"]["password"])
+        record = Record()
+
+        def progress(n, total, t):
+            step(5, f"Copying {n + 1}/{total}: {t.get('artist')} - {t.get('title')}")
+        try:
+            summary = ipod_handler.sync_player(
+                device.root, guid, record, manifest, cache_dir,
+                work_dir=os.path.join(base, "work", guid),
+                backup_root=os.path.join(base, "backups", guid),
+                write=write, client=client, usb_product=product, step=step,
+                progress=progress)
+        finally:
+            record.close()
+        log.info("Session summary: %s", summary)
+        return summary
+    return work
 
 
 def acquire_lock(path=LOCK_FILE):
@@ -341,6 +425,38 @@ def acquire_lock(path=LOCK_FILE):
 
 
 # ------------------------------------------------------------------ main ----
+def build_work(args, device):
+    """Decide what the session does: the iPod sync, or just a listing.
+    Returns a work callable, None (listing), or False (can't run)."""
+    import dock_config
+    try:
+        cfg = dock_config.load()
+    except dock_config.ConfigError as e:
+        log.warning("No usable config (%s): listing the player only", e)
+        return None
+    if cfg["device"]["type"] != "stock_ipod":
+        log.warning("Device type %r has no handler yet: listing only", cfg["device"]["type"])
+        return None
+    if isinstance(device, FakeDevice):
+        guid, product = sysinfo_guid(device.root), None
+    else:
+        guid, product = player_identity(device.path)
+    if not guid:
+        log.error("Can't identify the player (no USB serial / FirewireGuid)")
+        return False
+    write = cfg["device"]["write"] or args.write
+    if isinstance(device, BlockDevice):
+        device.writable = write
+    log.info("Player %s (USB product %s): %s", guid,
+             f"0x{product:04x}" if product else "?",
+             "full sync" if write else "read-only (plays only; config write = false)")
+    try:
+        return make_ipod_work(cfg, guid, product, write)
+    except ImportError as e:
+        log.error("Can't load the iPod handler (%s); run with ~/musicdock/venv", e)
+        return False
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description="Music dock sync job")
     src = p.add_mutually_exclusive_group()
@@ -357,6 +473,11 @@ def main(argv=None):
                    help="with --fake-device: draw on the real e-ink panel "
                         "instead of saving PNGs (on the Pi)")
     p.add_argument("--mount-point", default=MOUNT_POINT)
+    p.add_argument("--list-only", action="store_true",
+                   help="just mount, list and unmount (the Phase 2 check)")
+    p.add_argument("--write", action="store_true",
+                   help="full sync even if the config says write = false "
+                        "(e.g. to test against a --fake-device copy)")
     args = p.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -388,7 +509,13 @@ def main(argv=None):
         log.info("Another sync is already running; exiting")
         return 0
 
-    ok = run_sync(device, Screen(preview_dir).show)
+    work = None
+    if not args.list_only:
+        work = build_work(args, device)
+        if work is False:
+            return 1
+
+    ok = run_sync(device, Screen(preview_dir).show, work=work)
     if preview_dir:
         log.info("Screen previews in %s", preview_dir)
     log.info("Sync %s", "finished: safe to remove" if ok else "did not complete")

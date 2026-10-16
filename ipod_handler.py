@@ -368,6 +368,10 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
         batch = []
         for t in additions[i:i + batch_size]:
             path = os.path.join(cache_dir, t["file"])
+            if not os.path.exists(path):
+                # The prepare job pruned or is replacing it; next sync gets it.
+                log_info(f"Skipping {t.get('title')}: not in the cache right now")
+                continue
             if shutil.disk_usage(mount).free - os.path.getsize(path) < FREE_SPACE_MARGIN:
                 skipped_full = len(additions) - (i + len(batch))
                 break
@@ -444,3 +448,76 @@ def sync_playlists(db, record, guid, manifest):
 def log_info(message):
     import logging
     logging.getLogger("ipod_handler").info(message)
+
+
+# ================================================================ session ====
+RECORD_COPY = os.path.join("iPod_Control", "musicdock", "dock.db")
+
+
+def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
+                write=False, client=None, usb_product=None, step=None, progress=None):
+    """One dock session for a stock iPod (the sync job's steps 2-5).
+
+    2. Snapshot the play data and DB, map plays to songs (reconciling the
+       record against the snapshot first, so hand-copied tracks are matched),
+       and queue them - committed before anything can clear them.
+    3. Send queued plays if the server is reachable (else they wait).
+    With write=True (config [device] write), also:
+    4. Make sure SysInfo is complete, back up iTunesDB/ArtworkDB to the Pi.
+    5. Open the live DB (pygpod clears Play Counts here - already queued),
+       reconcile, apply the staged plan. On any error the backup is restored
+       and the error re-raised.
+    Then a copy of the record is saved onto the player. Returns a summary.
+    """
+    import pygpod
+
+    import dock_plays
+    step = step or (lambda n, detail: None)
+    summary = {"plays_new": 0, "plays_sent": 0, "plays_queued": 0,
+               "added": 0, "removed": 0, "wrote": False}
+
+    step(2, "Reading plays")
+    shutil.rmtree(work_dir, ignore_errors=True)
+    copied = snapshot_play_data(mount, work_dir)
+    if "iTunesDB" in copied:
+        snap = pygpod.Database.from_file(os.path.join(work_dir, "iTunesDB"))
+        reconcile(snap, record, guid, mount, delete_orphans=False, manifest=manifest)
+        plays = plays_from_snapshot(work_dir, record, guid)
+        summary["plays_new"] = record.queue_plays(guid, plays)
+        record.rematch_plays(guid)
+        if summary["plays_new"]:
+            log_info(f"Queued {summary['plays_new']} new play(s)")
+
+    if client is not None and record.unsent_count()[0]:
+        step(3, f"Sending {record.unsent_count()[0]} plays")
+        summary["plays_sent"] = dock_plays.upload_plays(client, record)[0]
+    summary["plays_queued"] = record.unsent_count()[0]
+
+    if write:
+        step(4, "Backing up player")
+        ensure_sysinfo(mount, guid, record, usb_product)
+        os.makedirs(backup_root, exist_ok=True)
+        backup = backup_player(mount, backup_root)
+        try:
+            db = pygpod.Database(mount)
+            report = reconcile(db, record, guid, mount, manifest=manifest)
+            if report["reset"]:
+                log_info("Player appears to have been reset: rebuilding it")
+            step(5, "Copying tracks")
+            result = apply_plan(db, record, guid, mount, manifest, cache_dir,
+                                progress=progress, dirty=report["dirty"])
+        except Exception:
+            log_info("Sync failed: restoring the player's database from the backup")
+            restore_backup(mount, backup)
+            raise
+        summary.update(result, reconcile=report, wrote=True)
+
+    try:
+        dest = os.path.join(mount, RECORD_COPY)
+        if write:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            record.backup_to(dest)
+    except OSError as e:
+        log_info(f"Couldn't save a copy of the record on the player: {e}")
+    record.mark_synced(guid) if record.player(guid) else None
+    return summary

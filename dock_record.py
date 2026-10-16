@@ -181,6 +181,18 @@ class Record:
                   p.get("album"), p.get("title"), now) for p in plays])
             return self.db.total_changes - before
 
+    def rematch_plays(self, guid):
+        """Give queued plays from tracks matched since (e.g. adopted by
+        reconcile) their Navidrome ID. Returns how many were matched."""
+        with self.db:
+            cur = self.db.execute(
+                "UPDATE pending_plays SET navidrome_id = (SELECT t.navidrome_id FROM "
+                "tracks t WHERE t.guid = pending_plays.guid AND t.dbid = pending_plays.dbid) "
+                "WHERE guid = ? AND navidrome_id IS NULL AND sent_at IS NULL AND EXISTS "
+                "(SELECT 1 FROM tracks t WHERE t.guid = pending_plays.guid "
+                "AND t.dbid = pending_plays.dbid)", (guid,))
+            return cur.rowcount
+
     def unsent_plays(self, limit=None):
         """Plays waiting for the server that can be sent (matched to a song)."""
         sql = ("SELECT * FROM pending_plays WHERE sent_at IS NULL AND navidrome_id "

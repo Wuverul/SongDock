@@ -25,3 +25,5 @@ convert_to = "mp3"                 # stock iPod can't play FLAC. mp3 = LAME V0 (
 mp3_quality = "v0"                 # v0 = variable, best (~260k avg); or constant "320k", "256k".
                                    # Changing it re-converts the cache on the next prepare run.
 aac_bitrate = "256k"               # only used by convert_to = "aac"
+write = false                      # false: read-only check (plays still logged);
+                                   # true: full sync - copy tracks, playlists, removals

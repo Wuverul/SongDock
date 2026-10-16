@@ -483,6 +483,20 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(dock_config.ConfigError, "workers"):
                 dock_config.load(self.write(base + bad + "\n"))
 
+    def test_home_expanded_from_config_owner(self):
+        path = self.write('[server]\nurl="https://x"\nusername="u"\npassword="p"\n')
+        import pwd
+        owner_home = pwd.getpwuid(os.stat(path).st_uid).pw_dir
+        cfg = dock_config.load(path)
+        self.assertEqual(cfg["sync"]["cache_dir"], owner_home + "/musicdock/cache")
+        self.assertFalse(cfg["device"]["write"])                 # read-only by default
+
+    def test_write_must_be_boolean(self):
+        path = self.write('[server]\nurl="https://x"\nusername="u"\npassword="p"\n'
+                          '[device]\nwrite="yes"\n')
+        with self.assertRaisesRegex(dock_config.ConfigError, "write"):
+            dock_config.load(path)
+
     def test_mp3_quality_validated(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[device]\n'
         self.assertEqual(dock_config.load(self.write(base + 'mp3_quality="320K"\n'))

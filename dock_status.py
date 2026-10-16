@@ -247,7 +247,10 @@ def render(screen, args):
         header(f"{check}SAFE TO REMOVE", inverted=False)
         stats = f"+{args.added}  \u2212{args.removed} tracks \u00b7 {args.plays} plays sent" \
             if has_glyphs else f"+{args.added} -{args.removed} tracks, {args.plays} plays sent"
-        lines([(stats, body_f), (f"Synced {now}", body_f)])
+        rows = [(stats, body_f), (f"Synced {now}", body_f)]
+        if args.queued:
+            rows.append((f"{args.queued} plays queued (server offline)", small_f))
+        lines(rows)
 
     elif screen == "failed":
         header(f"{warn}SYNC FAILED", inverted=True)
@@ -414,6 +417,8 @@ def build_parser():
     p.add_argument("--added", type=int, default=0)
     p.add_argument("--removed", type=int, default=0)
     p.add_argument("--plays", type=int, default=0)
+    p.add_argument("--queued", type=int, default=0,
+                   help="safe: plays still waiting for the server")
     p.add_argument("--reason")
     p.add_argument("--boot", action="store_true",
                    help="idle: say the dock just powered on (dock_boot.py)")

@@ -101,6 +101,50 @@ class SyncOrderTests(unittest.TestCase):
         self.assertEqual(calls[-1], "safe")
 
 
+class WorkTests(unittest.TestCase):
+    """run_sync with a player-specific session (e.g. the iPod handler)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.events, self.shown = [], []
+
+    def show(self, screen, *args, force=False):
+        self.events.append(screen)
+        self.shown.append((screen, args))
+
+    def test_work_runs_between_mount_and_unmount_and_feeds_safe_screen(self):
+        dev = RecordingDevice(self.tmp.name, self.events)
+
+        def work(device, step):
+            self.events.append("work")
+            step(5, "Copying 1/2: A - B")
+            return {"added": 2, "removed": 1, "plays_sent": 3, "plays_queued": 4}
+        self.assertTrue(run_sync(dev, self.show, work=work))
+        order = [e for e in self.events if e in ("syncing", "mount", "work", "unmount", "safe")]
+        self.assertEqual(order[:3], ["syncing", "mount", "work"])
+        self.assertLess(self.events.index("unmount"), self.events.index("safe"))
+        self.assertEqual(self.shown[-1], ("safe", ("--added", "2", "--removed", "1",
+                                                   "--plays", "3", "--queued", "4")))
+        self.assertIn(("syncing", ("--step", "1", "--total", "6", "--detail",
+                                   "Mounting player")), self.shown)
+
+    def test_work_failure_still_unmounts_and_shows_failed(self):
+        dev = RecordingDevice(self.tmp.name, self.events)
+
+        def work(device, step):
+            raise RuntimeError("Player is full")
+        self.assertFalse(run_sync(dev, self.show, work=work))
+        self.assertIn("unmount", self.events)
+        self.assertEqual(self.shown[-1], ("failed", ("--reason", "Player is full")))
+
+    def test_sysinfo_guid_for_fake_devices(self):
+        os.makedirs(os.path.join(self.tmp.name, "iPod_Control", "Device"))
+        with open(os.path.join(self.tmp.name, "iPod_Control", "Device", "SysInfo"), "w") as f:
+            f.write("ModelNumStr: xB903\nFirewireGuid: 0x000a2700000000ab\n")
+        self.assertEqual(dock_sync.sysinfo_guid(self.tmp.name), "000A2700000000AB")
+
+
 class ScreenProcessTests(unittest.TestCase):
     """Screen must draw in a separate process (GPIO is released on exit)."""
 
