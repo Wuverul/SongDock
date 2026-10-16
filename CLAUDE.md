@@ -71,7 +71,9 @@ ffmpeg -i in.flac -c:a libmp3lame -q:a 0 -id3v2_version 3 -map_metadata 0 \
 ```
 Not `-c:a aac`: ffmpeg's built-in AAC encoder adds audible artifacts (Notes).
 The cache holds only the **weekly rotation**, not the whole library. The static
-core library is loaded once from the Mac. Keep the SD card (64GB; 57G root filesystem) under ~80% full.
+core library is also loaded **through the dock** (one long first sync; faster
+on a Pi Zero 2 W), never by Finder/iTunes: Finder replaces the whole iTunesDB,
+wiping the dock's tracks and IDs. Keep the SD card (64GB; 57G root filesystem) under ~80% full.
 
 **Initial target:** the user's **starred** items (`getStarred2`). Starred albums
 expand to their tracks. Discovery playlists come later.
@@ -164,6 +166,45 @@ expand to their tracks. Discovery playlists come later.
   `python3-gpiozero`, `ffmpeg`.
 - udev only *triggers* a systemd service. Never do long work inside a udev rule,
   because udev kills it.
+
+## Phase 4 plan: stock iPod sync (agreed 2026-10-16)
+
+The user's priorities: **plays are always logged, and the dock always knows
+what is and isn't on the iPod.**
+
+- **How plays map to songs:** `Play Counts` entry #N → track #N in the
+  *current* `iTunesDB` → its `dbid` (64-bit persistent ID, set when the dock
+  adds the track and kept by pygpod across rewrites; `ipod_path` as a
+  cross-check) → the Pi's table → Navidrome song ID. `track_id` and position
+  are not stable; titles aren't unique; a file hash can't match the server's
+  FLAC. The iPod logs a count plus the *last* play time only, so repeat plays
+  between syncs get approximate times.
+- **Pi database: SQLite** (`sqlite3` is in the standard library; transactions
+  survive power cuts), in `/var/lib/musicdock/`. Tables:
+  - `tracks`: iPod FireWire GUID + `dbid` + `ipod_path` → Navidrome ID, plus
+    MusicBrainz recording ID (when tagged) and artist/album/title/track/
+    duration, encoding, date added, and present/removed state. The extra
+    fields let the dock re-find a song if Navidrome's ID changes (the server
+    owner may move files). Keyed by GUID so each player has its own map.
+  - `pending_plays`: Navidrome ID, play time, sent state (the queue above).
+- **iPod-side backup of the mapping:** also store the Navidrome ID in a
+  non-displayed field of each track record (the comment field is a
+  candidate - test that the Nano doesn't show it), so a lost SD card can be
+  rebuilt by reading the iPod.
+- **Reconcile at every sync**, before changing anything: compare the iPod's
+  actual `iTunesDB` and `Music/` files with the `tracks` table. Missing tracks
+  are marked removed; tracks the dock didn't add are left alone and logged;
+  files with no DB entry (orphans) are reported and removed.
+- **Order of a sync:** reconcile → copy and parse play data → queue plays
+  (fsync) → upload what can be sent → back up `iPod_Control/iTunes/` → open
+  with pygpod (deletes `Play Counts`, already queued) → remove tracks that left
+  the targets (`delete_file=True`) → add new tracks → save → unmount.
+- **Resumable long syncs:** add tracks in batches (e.g. 25), saving the DB
+  (with a fresh backup) after each batch, so an interrupted first sync loses
+  at most one batch and the next sync resumes. Progress on the `syncing`
+  screen: `Copying 12/72: Artist - Title`.
+- **Before every save:** confirm `requires_hash` / HASH58 and the GUID (else
+  pygpod writes an unsigned DB the iPod rejects); start artwork IDs at 100.
 
 ## Phase plan
 
