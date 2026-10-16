@@ -322,6 +322,74 @@ class PrepareTests(unittest.TestCase):
         self.assertIn("Converting: Artist - Song a", shown[0])
 
 
+try:
+    import io
+    from PIL import Image
+    from mutagen.id3 import APIC, ID3
+    HAVE_COVER_TOOLS = True
+except ImportError:
+    HAVE_COVER_TOOLS = False
+
+
+@unittest.skipUnless(HAVE_COVER_TOOLS, "needs Pillow and mutagen (the Pi venv)")
+class ShrinkCoverTests(unittest.TestCase):
+    AUDIO = b"\xff\xfb\x90\x00" * 5000          # stands in for MP3 frames
+
+    def make_mp3(self, size_px, fmt="JPEG"):
+        f = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        f.write(self.AUDIO)
+        f.close()
+        self.addCleanup(os.remove, f.name)
+        buf = io.BytesIO()
+        Image.new("RGB", (size_px, size_px), (200, 30, 90)).save(buf, fmt)
+        tags = ID3()
+        tags.add(APIC(encoding=3, mime=f"image/{fmt.lower()}", type=3, desc="", data=buf.getvalue()))
+        tags.save(f.name, v2_version=3)
+        return f.name
+
+    def audio_bytes(self, path):
+        with open(path, "rb") as f:
+            data = f.read()
+        return data[data.index(self.AUDIO[:4]):]
+
+    def cover(self, path):
+        pic = ID3(path).getall("APIC")[0]
+        return Image.open(io.BytesIO(pic.data)), pic
+
+    def test_big_cover_shrunk_audio_untouched(self):
+        path = self.make_mp3(2000)
+        before = self.audio_bytes(path)
+        self.assertEqual(dock_prepare.shrink_cover(path), "shrunk")
+        im, pic = self.cover(path)
+        self.assertEqual(im.size, (600, 600))
+        self.assertEqual(pic.mime, "image/jpeg")
+        self.assertEqual(self.audio_bytes(path), before)
+        self.assertEqual(ID3(path).version[1], 3)          # still ID3v2.3
+
+    def test_small_jpeg_kept(self):
+        path = self.make_mp3(500)
+        self.assertEqual(dock_prepare.shrink_cover(path), "kept")
+
+    def test_png_cover_becomes_jpeg(self):
+        path = self.make_mp3(500, fmt="PNG")
+        self.assertEqual(dock_prepare.shrink_cover(path), "shrunk")
+        self.assertEqual(self.cover(path)[0].format, "JPEG")
+
+    def test_album_cover_decoded_once(self):
+        a, b = self.make_mp3(2000), self.make_mp3(2000)
+        cache = {}
+        dock_prepare.shrink_cover(a, cache)
+        dock_prepare.shrink_cover(b, cache)
+        self.assertEqual(len(cache), 1)
+
+    def test_no_tag_or_cover(self):
+        f = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        f.write(self.AUDIO)
+        f.close()
+        self.addCleanup(os.remove, f.name)
+        self.assertEqual(dock_prepare.shrink_cover(f.name), "none")
+
+
 class ConfigTests(unittest.TestCase):
     def write(self, text):
         f = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)

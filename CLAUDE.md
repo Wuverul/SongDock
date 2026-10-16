@@ -167,7 +167,13 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   `encoding`, plus `playlists` (id, name, `changed`, ordered `song_ids`) for
   the sync to recreate on the player. Built in `cache/tmp/`, renamed when
   complete. `--dry-run` shows what a run would do; `--show-plan` prints the
-  staged plan (no network).
+  staged plan (no network). **Covers:** embedded covers over 600px / 300 KB /
+  non-JPEG are replaced with a 600px baseline JPEG via mutagen (tags only;
+  audio bytes untouched), one decode per album; recorded per track as
+  `cover`/`cover_max`, so cached tracks are checked once. Runs under the venv
+  (`musicdock-prepare.service` uses `~/musicdock/venv/bin/python`; install.sh
+  creates the venv from `pi/requirements.txt`). Without mutagen it logs a
+  warning and leaves covers as they are.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
 - **Wi-Fi indicator refresh:** NetworkManager dispatcher hook
@@ -185,9 +191,9 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   0.3 s each at 83 tracks (signature valid); RSS 20-24 MB, peak 153 MB while
   decoding a 4000x4000 cover; no throttling. Big embedded covers dominate:
   4000px 87 s, 3000px 32-52 s per track (resized again for every track). The
-  Nano's largest thumbnail is 240x240. Shrinking covers to ~600px in the
-  prepare job would roughly halve the first sync and save space. USB write
-  speed to the real iPod not yet measured.
+  Nano's largest thumbnail is 240x240. Covers are now shrunk to 600px in the
+  prepare job (60 of 82 shrunk; cache 773 -> 624 MB). USB write speed to the
+  real iPod not yet measured.
 - Panel access is serialized by `dock_status.panel_lock()` (flock next to the
   state file); the screen-state check and draw happen under it.
 - `tests/`: `python3 -m unittest discover -s tests -v`.

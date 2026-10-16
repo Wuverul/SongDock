@@ -21,6 +21,16 @@ done
 # and the prepare job can write it; root (sync, boot) can write it anyway.
 install -d -o "$LOGIN_USER" -g "$(id -gn "$LOGIN_USER")" -m 755 /var/lib/musicdock
 
+# Python packages not in apt (pygpod, mutagen) live in a venv owned by the
+# login user; it also sees apt's Pillow/gpiozero. Raspberry Pi OS blocks
+# system-wide pip installs.
+VENV="$USER_HOME/musicdock/venv"
+if [ ! -x "$VENV/bin/python" ]; then
+  sudo -u "$LOGIN_USER" python3 -m venv --system-site-packages "$VENV"
+fi
+sudo -u "$LOGIN_USER" "$VENV/bin/pip" install -q --disable-pip-version-check \
+  -r "$APP_DIR/pi/requirements.txt"
+
 for unit in musicdock-sync@.service musicdock-boot.service \
             musicdock-prepare.service musicdock-prepare.timer \
             musicdock-wifi-refresh.service; do

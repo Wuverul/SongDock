@@ -255,6 +255,103 @@ def label(track):
 
 
 # ----------------------------------------------------------------- files ----
+COVER_MAX = 600            # px. The Nano's largest thumbnail is 240px; keep margin
+COVER_MAX_BYTES = 300_000  # for other players (e.g. Rockbox's cover.jpg).
+_warned_no_cover_tools = False
+
+
+def shrink_cover(path, cache=None):
+    """Replace an oversized embedded cover with a <=COVER_MAX JPEG.
+
+    Only the tag block changes (mutagen rewrites tags in place); the audio
+    data is untouched. Big covers made every track take 30-90 s to add to
+    the iPod on a Pi Zero (pygpod resizes the art per track) and wasted
+    megabytes per track. `cache` maps a cover's hash to its replacement, so
+    an album's shared cover is decoded once.
+
+    Returns "none" (no cover), "kept" (already small), "shrunk", or
+    "unchecked" (mutagen/Pillow not available - run under the venv).
+    """
+    global _warned_no_cover_tools
+    try:
+        import hashlib
+        import io
+        from mutagen.flac import FLAC, Picture
+        from mutagen.id3 import APIC, ID3, ID3NoHeaderError
+        from mutagen.mp4 import MP4, MP4Cover
+        from PIL import Image
+    except ImportError:
+        if not _warned_no_cover_tools:
+            log.warning("mutagen/Pillow missing: covers not shrunk (run with ~/musicdock/venv)")
+            _warned_no_cover_tools = True
+        return "unchecked"
+
+    def smaller(data):
+        """Replacement JPEG bytes, or None if the cover is already fine."""
+        key = hashlib.sha1(data).hexdigest()
+        if cache is not None and key in cache:
+            return cache[key]
+        im = Image.open(io.BytesIO(data))
+        if (max(im.size) <= COVER_MAX and len(data) <= COVER_MAX_BYTES
+                and im.format == "JPEG"):
+            new = None
+        else:
+            im.draft("RGB", (COVER_MAX, COVER_MAX))   # JPEG: decode at reduced scale
+            im = im.convert("RGB")
+            im.thumbnail((COVER_MAX, COVER_MAX), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=90, optimize=True, progressive=False)
+            new = buf.getvalue()
+        if cache is not None:
+            cache[key] = new
+        return new
+
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".mp3":
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            return "none"
+        pics = tags.getall("APIC")
+        if not pics:
+            return "none"
+        front = next((p for p in pics if p.type == 3), pics[0])
+        new = smaller(front.data)
+        if new is None and len(pics) == 1:
+            return "kept"
+        tags.delall("APIC")                         # keep one cover, not several
+        tags.add(APIC(encoding=3, mime="image/jpeg" if new else front.mime,
+                      type=3, desc="", data=new or front.data))
+        tags.save(path, v2_version=3)
+        return "shrunk" if new else "kept"
+    if ext in (".m4a", ".mp4"):
+        f = MP4(path)
+        covers = (f.tags or {}).get("covr")
+        if not covers:
+            return "none"
+        new = smaller(bytes(covers[0]))
+        if new is None and len(covers) == 1:
+            return "kept"
+        f.tags["covr"] = [MP4Cover(new, imageformat=MP4Cover.FORMAT_JPEG)] if new else covers[:1]
+        f.save()
+        return "shrunk" if new else "kept"
+    if ext == ".flac":
+        f = FLAC(path)
+        if not f.pictures:
+            return "none"
+        front = next((p for p in f.pictures if p.type == 3), f.pictures[0])
+        new = smaller(front.data)
+        if new is None and len(f.pictures) == 1:
+            return "kept"
+        pic = Picture()
+        pic.type, pic.mime, pic.data = 3, "image/jpeg" if new else front.mime, new or front.data
+        f.clear_pictures()
+        f.add_picture(pic)
+        f.save()
+        return "shrunk" if new else "kept"
+    return "none"
+
+
 def fsync_file(path):
     """Make sure a file's data is on the SD card before we rename it."""
     fd = os.open(path, os.O_RDONLY)
@@ -382,6 +479,35 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         log.info("Removing (no longer targeted): %s", name)
         os.remove(os.path.join(tracks_dir, name))
 
+    # Shrink covers on tracks cached before covers were checked (one-time pass;
+    # each file is edited in tmp/ and swapped in whole).
+    cover_cache, covers = {}, {}
+    checked = {t["id"]: t.get("cover") for t in previous.get("tracks", [])
+               if t.get("cover_max") == COVER_MAX}
+    missing_names = {n for n, _ in missing}
+    unchecked = [(n, t) for n, t in wanted.items()
+                 if n in existing and n not in missing_names and t["id"] not in checked]
+    if unchecked:
+        log.info("Checking covers on %d cached tracks", len(unchecked))
+    for i, (name, t) in enumerate(unchecked):
+        if show and i % 10 == 0:
+            show("preparing", "--done", str(i), "--total", str(len(unchecked)),
+                 "--detail", f"Shrinking covers: {label(t)}")
+        tmp = os.path.join(tmp_dir, f"cover-{name}")
+        try:
+            shutil.copy2(os.path.join(tracks_dir, name), tmp)
+            result = shrink_cover(tmp, cover_cache)
+            if result == "shrunk":
+                fsync_file(tmp)
+                os.replace(tmp, os.path.join(tracks_dir, name))
+            covers[t["id"]] = result
+        except Exception:
+            log.exception("Couldn't check the cover of %s (left as is)", label(t))
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+    covers.update(checked)
+
     added, skipped = 0, []
     for i, (name, t) in enumerate(missing):
         conv = needs_conversion(t.get("suffix"), device)
@@ -406,6 +532,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 os.remove(src)
             else:
                 out = src
+            try:
+                covers[t["id"]] = shrink_cover(out, cover_cache)
+            except Exception:
+                log.exception("Couldn't shrink the cover of %s (kept as is)", label(t))
             fsync_file(out)
             os.replace(out, os.path.join(tracks_dir, name))
             added += 1
@@ -431,6 +561,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 "encoding": (current if needs_conversion(t.get("suffix"), device)
                              else "original"),
                 "sources": sources.get(t["id"], []),
+                **({"cover": covers[t["id"]], "cover_max": COVER_MAX}
+                   if covers.get(t["id"], "unchecked") != "unchecked" else {}),
             })
     write_json_atomic(os.path.join(cache_dir, "manifest.json"), {
         "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),

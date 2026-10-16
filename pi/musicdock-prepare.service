@@ -17,7 +17,8 @@ WorkingDirectory=/var/lib/musicdock
 # Runs as the login user: it doesn't need root, and its config and cache
 # live in that user's home.
 User=@USER@
-ExecStart=/usr/bin/python3 @APP_DIR@/dock_prepare.py
+# The venv adds mutagen (cover shrinking) and pygpod to the system packages.
+ExecStart=@HOME@/musicdock/venv/bin/python @APP_DIR@/dock_prepare.py
 Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
 Environment=PYTHONUNBUFFERED=1
 # Lowest priority so a sync (or anything else) always wins the CPU and disk.

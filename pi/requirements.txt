@@ -1,0 +1,4 @@
+# Installed into ~/musicdock/venv on the Pi by install.sh (pure Python; the
+# venv also sees apt's python3-pil and gpiozero via --system-site-packages).
+pygpod==0.0.6
+mutagen==1.47.0
