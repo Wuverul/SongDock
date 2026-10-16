@@ -1,5 +1,6 @@
 """Tests for the Pi's SQLite record. Run: python3 -m unittest discover -s tests -v"""
 
+import contextlib
 import os
 import sqlite3
 import sys
@@ -22,7 +23,7 @@ class RecordTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = os.path.join(self.tmp.name, "dock.db")
         self.rec = Record(self.path)
-        self.addCleanup(self.rec.close)
+        self.addCleanup(lambda: self.rec.close())     # self.rec may be replaced
 
     def test_player_model_kept_once_known(self):
         self.rec.upsert_player(GUID, model="xB903")
@@ -93,7 +94,7 @@ class RecordTests(unittest.TestCase):
         self.rec.add_track(GUID, 42, navidrome_id="n42", title="BLOOM")
         dest = os.path.join(self.tmp.name, "copy.db")
         self.rec.backup_to(dest)
-        with sqlite3.connect(dest) as c:
+        with contextlib.closing(sqlite3.connect(dest)) as c:
             self.assertEqual(c.execute("SELECT title FROM tracks").fetchone()[0], "BLOOM")
 
     def test_reopen_keeps_data(self):

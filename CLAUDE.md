@@ -329,7 +329,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 3. ✅ Server side: play upload, starred/playlist fetch, prepare job with
    conversion (real play upload verified 2026-10-16)
 4. Stock iPod handler via pygpod: built and rehearsed; read-only dock mode is
-   the default (`[device] write = false`); first real full sync pending
+   the default (`[device] write = false`). Read-only dock on the real Nano
+   (2026-10-16): identified via udev, adopted the 3 hand-copied MP3s, queued
+   and sent 4 plays (BLOOM x2: one exact, one estimated), ~30 s. First real
+   full sync (write = true) pending
 5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
    (see "Resilience without a mirror"). Rockbox handler deprioritized.
 6. 3D-printed dock enclosure

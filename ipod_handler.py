@@ -16,7 +16,12 @@ Play data, and why the order of operations matters:
 
 import os
 import shutil
+import warnings
 from datetime import datetime, timedelta
+
+# pygpod warns at import that pyusb (its USB auto-detection) is missing; the
+# dock reads the player's identity from udev instead, so it isn't needed.
+warnings.filterwarnings("ignore", message="pygpod: optional dependencies not installed")
 
 PLAY_FILES = ("Play Counts", "iTunesStats", "PlayCounts.plist")
 MAC_EPOCH = datetime(1904, 1, 1)
