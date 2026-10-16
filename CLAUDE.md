@@ -179,6 +179,15 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 - **pygpod on the Pi** lives in a venv: `~/musicdock/venv` (created with
   `--system-site-packages` to use apt's Pillow/gpiozero; `pip install
   pygpod==0.0.6 mutagen==1.47.0`). Raspberry Pi OS blocks system-wide pip.
+- **pygpod benchmark on the Pi Zero W (2026-10-16):** 82 tracks (810 MB) added
+  to a fake iPod folder (`~/musicdock/bench-ipod`, SD to SD) in 18.2 min,
+  13.3 s/track avg; ~6-8 s for tracks with <=1200px covers. Save and reopen
+  0.3 s each at 83 tracks (signature valid); RSS 20-24 MB, peak 153 MB while
+  decoding a 4000x4000 cover; no throttling. Big embedded covers dominate:
+  4000px 87 s, 3000px 32-52 s per track (resized again for every track). The
+  Nano's largest thumbnail is 240x240. Shrinking covers to ~600px in the
+  prepare job would roughly halve the first sync and save space. USB write
+  speed to the real iPod not yet measured.
 - Panel access is serialized by `dock_status.panel_lock()` (flock next to the
   state file); the screen-state check and draw happen under it.
 - `tests/`: `python3 -m unittest discover -s tests -v`.
