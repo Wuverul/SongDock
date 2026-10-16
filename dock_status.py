@@ -70,7 +70,7 @@ PROGRESS_SCREENS = {"syncing", "preparing"}   # rate-limited when repeated
 PREPARE_SCREENS = {"idle", "preparing"}       # drawn by the prepare job
 # Resting screens --refresh may redraw when Wi-Fi connects or drops. Active
 # screens (syncing, preparing, boot) redraw often enough on their own.
-REFRESHABLE = {"idle", "safe", "failed"}
+REFRESHABLE = {"idle", "safe", "failed", "notsynced"}
 # Options that control drawing rather than what's drawn; not saved for --refresh.
 CONTROL_OPTIONS = {"--force": 0, "--only-over": 1, "--preview": 1, "--at": 1,
                    "--wifi": 1, "--ip": 1}
@@ -266,6 +266,15 @@ def render(screen, args):
                (fit(plays, body_f), body_f),
                (f"Synced {now}", body_f)])
 
+    elif screen == "notsynced":
+        # A player the dock left alone: not an iPod, or no MediaDock.txt.
+        header("NOT SYNCED", inverted=False)
+        rows = [("Safe to remove", body_f), (fit(args.reason or "", body_f), body_f)]
+        if "MediaDock" in (args.reason or ""):
+            rows.append(("Add MediaDock.txt to sync it", small_f))
+        rows.append((f"Checked {now}", small_f))
+        lines(rows)
+
     elif screen == "failed":
         header(f"{warn}SYNC FAILED", inverted=True)
         lines([
@@ -426,7 +435,7 @@ def draw_on_panel(img, full_refresh):
 def build_parser():
     p = argparse.ArgumentParser(description="Dock e-ink status screen")
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
-                                      "failed", "starting", "offline"])
+                                      "failed", "starting", "offline", "notsynced"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
                    help="syncing: items done within this step (fills the bar)")
@@ -562,8 +571,8 @@ def refresh_main(argv=None, attempts=3, settle=3):
 
 
 REST_MODES = {
-    "timer": "safe",            # 10 min after a sync: SAFE only (FAILED stays up)
-    "unplug": "safe,failed",    # player physically removed
+    "timer": "safe,notsynced",            # 10 min after: not FAILED (stays up)
+    "unplug": "safe,failed,notsynced",    # player physically removed
 }
 MIN_SHOWN = 60   # seconds SAFE/FAILED stay up before an unplug swaps them
 
@@ -589,6 +598,9 @@ def rest_main(argv=None, sleep=time.sleep):
         wait = MIN_SHOWN - (time.time() - drawn_at)
         if wait > 0:
             sleep(wait)
+    if screen == "notsynced":
+        main(["idle", "--only-over", allowed])          # nothing to summarize
+        return
     prev = build_parser().parse_args(state.get("argv") or [screen])
     when = datetime.fromtimestamp(drawn_at).strftime("%-I:%M %p")
     if screen == "safe":

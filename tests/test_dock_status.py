@@ -139,6 +139,12 @@ class RestScreenTests(WifiRefreshTests):
         self.assertEqual(len(waited), 1)
         self.assertGreater(waited[0], 50)
 
+    def test_not_synced_clears_on_unplug_or_timer(self):
+        for mode in ("unplug", "timer"):
+            dock_status.main(["notsynced", "--reason", "No MediaDock.txt on this iPod"])
+            self.rest(mode)
+            self.assertEqual(dock_status.load_state()["screen"], "idle")
+
     def test_never_covers_a_running_sync(self):
         dock_status.main(["syncing", "--step", "2", "--total", "6"])
         self.draws.clear()

@@ -48,6 +48,15 @@ TOTAL_STEPS = 3           # listing only: mount, read, unmount
 IPOD_STEPS = 6            # mount, plays, upload, backup, copy, unmount
 REST_AFTER_MIN = 10       # SAFE -> DOCK READY if the player stays docked
 
+# An iPod opts in to this dock with this file in its top folder (any case).
+# Without it the dock touches nothing - no plays sent, no writes - so a
+# friend's iPod docked by mistake isn't filled with this library or credited
+# to this account. Players the dock already syncs get it created for them.
+MARKER = "MediaDock.txt"
+MARKER_TEXT = ("This iPod is synced by Music Dock "
+               "(plays, tracks and playlists).\n"
+               "Delete this file to stop syncing it.\n")
+
 
 class SyncError(Exception):
     """A failure with a short message that fits on the e-ink screen."""
@@ -141,16 +150,20 @@ class BlockDevice:
         os.makedirs(self.root, exist_ok=True)
         if mounted_source(self.root):
             raise SyncError(f"{self.root} already in use")
-        opts = "ro,noatime"
-        if self.writable:
-            fstype = subprocess.run(["lsblk", "-no", "FSTYPE", self.path],
-                                    capture_output=True, text=True).stdout.strip()
-            # flush: vfat writes data out promptly - safer on a removable player.
-            opts = "rw,noatime,flush" if fstype == "vfat" else "rw,noatime"
-        log.info("Mounting %s at %s (%s)", self.path, self.root,
-                 "read-write" if self.writable else "read-only")
-        run(["mount", "-o", opts, self.path, self.root], "Couldn't mount player")
+        # Always read-only first; make_writable() remounts once the player
+        # has been checked (it's an iPod and it opted in).
+        log.info("Mounting %s at %s (read-only)", self.path, self.root)
+        run(["mount", "-o", "ro,noatime", self.path, self.root], "Couldn't mount player")
         self.mounted = True
+
+    def make_writable(self):
+        fstype = subprocess.run(["lsblk", "-no", "FSTYPE", self.path],
+                                capture_output=True, text=True).stdout.strip()
+        # flush: vfat writes data out promptly - safer on a removable player.
+        opts = "remount,rw,noatime,flush" if fstype == "vfat" else "remount,rw,noatime"
+        log.info("Remounting %s read-write", self.root)
+        run(["mount", "-o", opts, self.root], "Couldn't make the player writable")
+        self.writable = True
 
     def unmount(self):
         log.info("Flushing and unmounting %s", self.root)
@@ -180,6 +193,20 @@ class BlockDevice:
         r = subprocess.run(["eject", self.path], capture_output=True, text=True)
         if r.returncode != 0:
             log.warning("eject %s: %s", self.path, r.stderr.strip())
+
+
+def opt_in_status(root, known):
+    """"not_ipod", "marked" (has MediaDock.txt), "known" (no marker, but the
+    dock already syncs this player), or "unmarked"."""
+    if not os.path.isdir(os.path.join(root, "iPod_Control")):
+        return "not_ipod"
+    try:
+        names = {n.lower() for n in os.listdir(root)}
+    except OSError:
+        names = set()
+    if MARKER.lower() in names:
+        return "marked"
+    return "known" if known else "unmarked"
 
 
 def player_identity(dev_path):
@@ -231,6 +258,9 @@ class FakeDevice:
             raise SyncError(f"Fake device {self.path} not found")
         log.info("[fake] Would mount; using folder %s", self.root)
         self.mounted = True
+
+    def make_writable(self):
+        log.info("[fake] Would remount %s read-write", self.root)
 
     def unmount(self):
         if self.fail == "unmount":
@@ -367,6 +397,8 @@ def run_sync(device, show, work=None, total=None):
     try:
         if error:
             show("failed", "--reason", error, force=True)
+        elif summary.get("not_synced"):
+            show("notsynced", "--reason", summary["not_synced"], force=True)
         else:
             show("safe", "--added", str(summary.get("added", 0)),
                  "--removed", str(summary.get("removed", 0)),
@@ -394,9 +426,24 @@ def make_ipod_work(cfg, guid, product, write):
         except (OSError, ValueError):
             log.warning("No staged plan yet (prepare job hasn't run): plays only")
             manifest = {}
+        record = Record()
+        status = opt_in_status(device.root, record.player(guid) is not None)
+        if status in ("not_ipod", "unmarked"):
+            record.close()
+            reason = ("Not an iPod" if status == "not_ipod"
+                      else f"No {MARKER} on this iPod")
+            log.info("Not syncing: %s (nothing read or written)", reason)
+            return {"not_synced": reason}
+        if write:
+            device.make_writable()
+            if status == "known":
+                with open(os.path.join(device.root, MARKER), "w") as f:
+                    f.write(MARKER_TEXT)
+                    f.flush()
+                    os.fsync(f.fileno())
+                log.info("Created %s on this already-synced iPod", MARKER)
         client = Client(cfg["server"]["url"], cfg["server"]["username"],
                         cfg["server"]["password"])
-        record = Record()
 
         def progress(n, total, t):
             step(5, f"Copying {n + 1}/{total}: {t.get('artist')} - {t.get('title')}",
@@ -465,8 +512,6 @@ def build_work(args, device):
         log.error("Can't identify the player (no USB serial / FirewireGuid)")
         return False
     write = cfg["device"]["write"] or args.write
-    if isinstance(device, BlockDevice):
-        device.writable = write
     log.info("Player %s (USB product %s): %s", guid,
              f"0x{product:04x}" if product else "?",
              "full sync" if write else "read-only (plays only; config write = false)")

@@ -100,6 +100,13 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 
 ## Safety rules (do not simplify these away)
 
+- **Only players that opted in are touched.** An iPod opts in with a
+  `MediaDock.txt` file in its top folder (any case). Without it the dock reads
+  nothing (no plays) and writes nothing, and shows `notsynced` ("No
+  MediaDock.txt on this iPod" / "Not an iPod"). Players the record already
+  syncs get the marker created on their next write-mode sync. Every player is
+  mounted read-only first and remounted read-write only after this check.
+
 - **Never clear play data until the server confirms it received it, or it is
   durably queued on the Pi** (written and fsynced before the iPod's copy can be
   cleared). Queued plays are removed only after the server confirms them. A
@@ -346,6 +353,9 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    mode-600 config from the template; clear errors for unsupported setups
    (no NetworkManager, other display); placeholder server URL in
    `config.example.toml`; display model/rotation as config if needed.
+   The guide must warn: a docked iPod with `MediaDock.txt` gets the dock
+   owner's library and its plays go to the owner's Navidrome account; how to
+   add/remove `MediaDock.txt` (disk mode on a computer).
 
 ## Notes
 

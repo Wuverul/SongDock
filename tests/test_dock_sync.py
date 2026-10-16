@@ -174,6 +174,78 @@ class RestTimerTests(unittest.TestCase):
         run.assert_not_called()
 
 
+class OptInTests(unittest.TestCase):
+    """MediaDock.txt decides whether the dock touches a player at all."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = self.tmp.name
+
+    def ipod(self, marker=None):
+        os.makedirs(os.path.join(self.root, "iPod_Control"), exist_ok=True)
+        if marker:
+            open(os.path.join(self.root, marker), "w").close()
+
+    def test_status(self):
+        self.assertEqual(dock_sync.opt_in_status(self.root, known=True), "not_ipod")
+        self.ipod()
+        self.assertEqual(dock_sync.opt_in_status(self.root, known=False), "unmarked")
+        self.assertEqual(dock_sync.opt_in_status(self.root, known=True), "known")
+        self.ipod(marker="mediadock.TXT")                       # FAT: any case
+        self.assertEqual(dock_sync.opt_in_status(self.root, known=False), "marked")
+
+    def run_work(self, known, write=True):
+        cfg = {"sync": {"cache_dir": self.root},
+               "server": {"url": "https://x", "username": "u", "password": "p"}}
+        fake_record = mock.Mock()
+        fake_record.player.return_value = {"guid": "G"} if known else None
+        dev = FakeDevice(self.root)
+        dev.make_writable = mock.Mock()
+        with mock.patch("dock_record.Record", return_value=fake_record), \
+                mock.patch("ipod_handler.sync_player", return_value={"added": 1}) as sp:
+            summary = dock_sync.make_ipod_work(cfg, "G", 0x1263, write)(dev, lambda *a, **k: None)
+        return summary, sp, dev
+
+    def test_unmarked_ipod_left_completely_alone(self):
+        self.ipod()
+        summary, sp, dev = self.run_work(known=False)
+        self.assertEqual(summary, {"not_synced": "No MediaDock.txt on this iPod"})
+        sp.assert_not_called()
+        dev.make_writable.assert_not_called()
+
+    def test_not_an_ipod(self):
+        summary, sp, _ = self.run_work(known=False)
+        self.assertEqual(summary, {"not_synced": "Not an iPod"})
+        sp.assert_not_called()
+
+    def test_marked_ipod_is_made_writable_and_synced(self):
+        self.ipod(marker="MediaDock.txt")
+        summary, sp, dev = self.run_work(known=False)
+        dev.make_writable.assert_called_once()
+        self.assertEqual(summary, {"added": 1})
+
+    def test_known_ipod_gets_marker_when_writing(self):
+        self.ipod()
+        self.run_work(known=True, write=True)
+        with open(os.path.join(self.root, "MediaDock.txt")) as f:
+            self.assertIn("Delete this file to stop syncing", f.read())
+
+    def test_known_ipod_read_only_writes_nothing(self):
+        self.ipod()
+        _, sp, dev = self.run_work(known=True, write=False)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "MediaDock.txt")))
+        dev.make_writable.assert_not_called()
+        sp.assert_called_once()                                 # plays still logged
+
+    def test_not_synced_screen_shown(self):
+        events, shown = [], []
+        dev = RecordingDevice(self.root, events)
+        run_sync(dev, lambda s, *a, force=False: shown.append((s, a)),
+                 work=lambda device, step: {"not_synced": "Not an iPod"})
+        self.assertEqual(shown[-1], ("notsynced", ("--reason", "Not an iPod")))
+
+
 class ScreenProcessTests(unittest.TestCase):
     """Screen must draw in a separate process (GPIO is released on exit)."""
 
