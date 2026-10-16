@@ -11,6 +11,9 @@ After=musicdock-boot.service
 
 [Service]
 Type=oneshot
+# lgpio (the panel's GPIO library) creates helper files in the working
+# directory. The default, /, isn't writable by the login user.
+WorkingDirectory=/var/lib/musicdock
 ExecStart=/usr/bin/python3 @APP_DIR@/dock_sync.py --device /dev/%I
 # As root, "~" would mean /root, so point at the login user's e-Paper library.
 Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib

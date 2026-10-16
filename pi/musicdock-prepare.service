@@ -1,0 +1,27 @@
+# Prepare job: download + convert the next sync's tracks. Started by
+# musicdock-prepare.timer. install.sh fills in @USER@, @APP_DIR@, @HOME@.
+#   journalctl -u musicdock-prepare -e        # recent runs
+#   sudo systemctl start musicdock-prepare    # run it now
+
+[Unit]
+Description=Music Dock prepare (download and convert tracks)
+# Not during the boot screens, and only once the network is up.
+After=musicdock-boot.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# lgpio (the panel's GPIO library) creates helper files in the working
+# directory. The default, /, isn't writable by the login user.
+WorkingDirectory=/var/lib/musicdock
+# Runs as the login user: it doesn't need root, and its config and cache
+# live in that user's home.
+User=@USER@
+ExecStart=/usr/bin/python3 @APP_DIR@/dock_prepare.py
+Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
+Environment=PYTHONUNBUFFERED=1
+# Lowest priority so a sync (or anything else) always wins the CPU and disk.
+Nice=19
+IOSchedulingClass=idle
+# Converting a big batch on a Pi Zero can take hours.
+TimeoutStartSec=12h

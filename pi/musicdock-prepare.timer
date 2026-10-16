@@ -1,0 +1,13 @@
+# Runs the prepare job 10 minutes after boot, then hourly. A run with nothing
+# to do makes one small API call and doesn't redraw the screen.
+#   systemctl list-timers musicdock-prepare   # when it runs next
+
+[Unit]
+Description=Music Dock prepare, hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

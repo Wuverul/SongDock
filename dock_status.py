@@ -36,6 +36,8 @@ Safety rules baked in:
 """
 
 import argparse
+import contextlib
+import fcntl
 import json
 import os
 import socket
@@ -83,6 +85,24 @@ def load_font(path, size):
 
 
 # ----------------------------------------------------------------- state ----
+@contextlib.contextmanager
+def panel_lock():
+    """One drawing job at a time (sync, prepare, boot can overlap).
+
+    Covers the state check, the draw, and the state save, so two jobs can't
+    both decide they may draw and then talk to the panel at once. The lock
+    file is opened read-only, so it works whichever user created it.
+    """
+    path = os.path.join(os.path.dirname(STATE_FILE), ".panel.lock")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def load_state():
     try:
         with open(STATE_FILE) as f:
@@ -331,6 +351,8 @@ class PartialUpdates:
 
     def __enter__(self):
         if not self.preview_dir:
+            self._lock = panel_lock()
+            self._lock.__enter__()
             self.epd = open_panel()
             self.epd.init()
         return self
@@ -347,8 +369,12 @@ class PartialUpdates:
             self.epd.displayPartial(buf)
 
     def __exit__(self, *exc):
-        if self.epd:
-            self.epd.sleep()  # never leave the panel powered
+        try:
+            if self.epd:
+                self.epd.sleep()  # never leave the panel powered
+        finally:
+            if not self.preview_dir:
+                self._lock.__exit__(None, None, None)
 
 
 def draw_on_panel(img, full_refresh):
@@ -394,6 +420,9 @@ def build_parser():
     p.add_argument("--problem", choices=["wifi", "clock"], default="wifi",
                    help="offline: what's missing")
     p.add_argument("--ssid", help="offline: the Wi-Fi network being joined")
+    p.add_argument("--only-over", metavar="SCREENS",
+                   help="draw only if the current screen is one of these "
+                        "(comma-separated; 'none' = nothing drawn yet)")
     return p
 
 
@@ -408,26 +437,35 @@ def main(argv=None):
         print(f"Saved preview to {args.preview}")
         return
 
-    state = load_state()
-    now = time.time()
-    same_screen = state.get("screen") == args.screen
+    with panel_lock():
+        state = load_state()
+        now = time.time()
+        same_screen = state.get("screen") == args.screen
 
-    # The prepare job (idle/preparing) must never cover the "do not remove"
-    # warning. If a sync crashed, SYNCING stays up until the next sync runs.
-    if (state.get("screen") == "syncing" and args.screen in PREPARE_SCREENS
-            and not args.force):
-        return
+        # Checked under the lock, so another job can't change the screen
+        # between this check and the draw.
+        if args.only_over:
+            allowed = set(args.only_over.split(","))
+            if (state.get("screen") or "none") not in allowed:
+                print(f"Leaving {state.get('screen')} up (not drawing {args.screen})")
+                return
 
-    # Progress-only redraws are rate-limited.
-    if (same_screen and args.screen in PROGRESS_SCREENS and not args.force
-            and now - state.get("last_draw", 0) < MIN_PROGRESS_INTERVAL):
-        return
+        # The prepare job (idle/preparing) must never cover the "do not remove"
+        # warning. If a sync crashed, SYNCING stays up until the next sync runs.
+        if (state.get("screen") == "syncing" and args.screen in PREPARE_SCREENS
+                and not args.force):
+            return
 
-    count = state.get("fast_count", 0) + 1
-    full = count >= FULL_REFRESH_EVERY or not same_screen
-    draw_on_panel(img, full_refresh=full)
-    save_state({"screen": args.screen, "last_draw": now,
-                "fast_count": 0 if full else count})
+        # Progress-only redraws are rate-limited.
+        if (same_screen and args.screen in PROGRESS_SCREENS and not args.force
+                and now - state.get("last_draw", 0) < MIN_PROGRESS_INTERVAL):
+            return
+
+        count = state.get("fast_count", 0) + 1
+        full = count >= FULL_REFRESH_EVERY or not same_screen
+        draw_on_panel(img, full_refresh=full)
+        save_state({"screen": args.screen, "last_draw": now,
+                    "fast_count": 0 if full else count})
 
 
 if __name__ == "__main__":

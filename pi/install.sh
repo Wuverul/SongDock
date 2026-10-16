@@ -21,14 +21,19 @@ done
 # and the prepare job can write it; root (sync, boot) can write it anyway.
 install -d -o "$LOGIN_USER" -g "$(id -gn "$LOGIN_USER")" -m 755 /var/lib/musicdock
 
-for unit in musicdock-sync@.service musicdock-boot.service; do
+for unit in musicdock-sync@.service musicdock-boot.service \
+            musicdock-prepare.service musicdock-prepare.timer; do
   sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@HOME@|$USER_HOME|g" \
+      -e "s|@USER@|$LOGIN_USER|g" \
     "$APP_DIR/pi/$unit" > "/etc/systemd/system/$unit"
 done
 install -m 644 "$APP_DIR/pi/99-musicdock.rules" /etc/udev/rules.d/99-musicdock.rules
 
+command -v ffmpeg >/dev/null || echo "Note: ffmpeg is missing; run: sudo apt install ffmpeg"
+
 systemctl daemon-reload
 systemctl enable musicdock-boot.service
+systemctl enable --now musicdock-prepare.timer
 udevadm control --reload
 
 echo "Installed. The boot screen appears on the next power-on."

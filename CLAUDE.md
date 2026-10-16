@@ -65,7 +65,7 @@ ffmpeg -i in.flac -c:a aac -b:a 256k -map_metadata 0 \
   -c:v copy -disposition:v attached_pic out.m4a
 ```
 The cache holds only the **weekly rotation**, not the whole library. The static
-core library is loaded once from the Mac. Keep the 32GB SD card under ~80% full.
+core library is loaded once from the Mac. Keep the SD card (64GB; 57G root filesystem) under ~80% full.
 
 **Initial target:** the user's **starred** items (`getStarred2`). Starred albums
 expand to their tracks. Discovery playlists come later.
@@ -76,7 +76,8 @@ expand to their tracks. Discovery playlists come later.
   sync must lose nothing.
 - **Show `syncing` before mounting.** A crash then leaves "do not remove" on
   screen, which is the safe failure.
-- **The prepare job never draws over `syncing`.** Only the sync job (or
+- **The prepare job never draws over `syncing`** (nor `safe`, `failed`, or
+  the boot screens: it passes `--only-over none,idle,preparing`). Only the sync job (or
   `--force`) can replace it. This is enforced and tested in `dock_status.py`.
   One exception: at power-on, `dock_boot.py` replaces a leftover `syncing`
   with `failed` ("Sync interrupted by restart"), because after a reboot no
@@ -126,6 +127,16 @@ expand to their tracks. Discovery playlists come later.
   service), `musicdock-boot.service`, `install.sh`.
 - `deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
   on the Pi (cache stays in `~/musicdock/cache`).
+- `dock_prepare.py`: prepare job (`musicdock-prepare.timer`: 10 min after boot,
+  then hourly; runs as the login user at nice 19). Starred songs + starred
+  albums' tracks → `cache/tracks/<id>.<ext>` (stock iPod: FLAC etc. → AAC;
+  MP3/AAC/ALAC kept), prunes unstarred, writes `cache/manifest.json` (the sync
+  queue). Built in `cache/tmp/`, renamed when complete. `--dry-run` shows the
+  plan.
+- `subsonic.py`: token-auth client. Request URLs contain a working token: never
+  log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
+- Panel access is serialized by `dock_status.panel_lock()` (flock next to the
+  state file); the screen-state check and draw happen under it.
 - `tests/`: `python3 -m unittest discover -s tests -v`.
 
 ## Development workflow

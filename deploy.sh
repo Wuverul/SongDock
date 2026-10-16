@@ -34,6 +34,12 @@ if keys=$(grep -rlI --exclude-dir=.git -e "-----BEGIN [A-Z ]*PRIVATE KEY-----" .
   exit 1
 fi
 
+if ! grep -q 'password = "your-navidrome-password"' config.example.toml; then
+  echo "Refusing to deploy: config.example.toml no longer has the placeholder" >&2
+  echo "password. Real credentials go on the Pi in ~/.config/musicdock/config.toml." >&2
+  exit 1
+fi
+
 echo "== Running tests"
 python3 -m unittest discover -s tests -q
 
