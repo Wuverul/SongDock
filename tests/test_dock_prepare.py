@@ -161,11 +161,25 @@ class PrepareTests(unittest.TestCase):
         sources = {t["id"]: t["sources"] for t in m["tracks"]}
         self.assertEqual(sources["a2"], ["starred", "playlist:Mel Test"])
         self.assertEqual(sources["b1"], ["playlist:Mel Test"])
-        self.assertEqual(m["playlists"], [{"target": "playlist:Mel Test", "id": "P1",
-                                           "name": "Mel Test", "changed": "2026-10-16",
-                                           "song_ids": ["a2", "b1", "b2"]}])
+        self.assertEqual(m["playlists"], [
+            {"target": "starred", "id": None, "name": "Favorites", "changed": None,
+             "song_ids": ["a1", "a2"]},
+            {"target": "playlist:Mel Test", "id": "P1", "name": "Mel Test",
+             "changed": "2026-10-16", "song_ids": ["a2", "b1", "b2"]}])
         plan = dock_prepare.show_plan(m)
+        self.assertIn("iPod playlist 'Favorites': 2 songs from 1 album(s): Album", plan)
         self.assertIn("iPod playlist 'Mel Test': 3 songs from 2 album(s): Album, Other", plan)
+
+    def test_favorites_playlist_dedupes_and_can_be_turned_off(self):
+        # A starred song that's also on a starred album appears once.
+        server = FakeServer(songs=[song("a2", track=2)],
+                            albums={"alb": [song("a1", track=1), song("a2", track=2)]})
+        self.run_prepare(server)
+        self.assertEqual(self.manifest()["playlists"][0]["song_ids"], ["a1", "a2"])
+        cfg = config()
+        cfg["sync"]["favorites_playlist"] = ""
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.manifest()["playlists"], [])
 
     def test_missing_playlist_stops_without_pruning(self):
         server = FakeServer(playlists={"P1": ("Mel Test", [song("b1")])})

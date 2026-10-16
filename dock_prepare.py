@@ -137,11 +137,26 @@ def find_playlist(client, name, known_id=None, listing=None):
         raise PrepareError(f"playlist {name!r} couldn't be read: {e}") from None
 
 
-def target_tracks(client, targets, known_playlists=None):
+def library_order(song):
+    return ((song.get("artist") or "").lower(), (song.get("album") or "").lower(),
+            song.get("discNumber") or 0, song.get("track") or 0, song.get("title") or "")
+
+
+def unique_ids(songs):
+    seen, ids = set(), []
+    for s in songs:
+        if s["id"] not in seen:
+            seen.add(s["id"])
+            ids.append(s["id"])
+    return ids
+
+
+def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites"):
     """Resolve the configured targets into one de-duplicated set of tracks.
 
     targets: e.g. ["starred", "playlist:Mel Test"].
     known_playlists: {target: playlist id} from the last run (for renames).
+    favorites_name: the player playlist made from "starred" ("" for none).
     Returns (tracks in artist/album/track order, {song id: [targets]},
     [playlist records for the manifest, in target order]).
     """
@@ -151,6 +166,10 @@ def target_tracks(client, targets, known_playlists=None):
     for target in targets:
         if target == "starred":
             songs = starred_songs(client)
+            if favorites_name:
+                playlists.append({"target": target, "id": None, "name": favorites_name,
+                                  "changed": None,
+                                  "song_ids": unique_ids(sorted(songs, key=library_order))})
         elif target.startswith("playlist:"):
             if listing is None:
                 listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
@@ -169,10 +188,7 @@ def target_tracks(client, targets, known_playlists=None):
             if target not in sources[song["id"]]:
                 sources[song["id"]].append(target)
         log.info("Target %s: %d songs", target, len(songs))
-    ordered = sorted(tracks.values(), key=lambda s: (
-        (s.get("artist") or "").lower(), (s.get("album") or "").lower(),
-        s.get("discNumber") or 0, s.get("track") or 0, s.get("title") or ""))
-    return ordered, sources, playlists
+    return sorted(tracks.values(), key=library_order), sources, playlists
 
 
 def needs_conversion(suffix, device_type):
@@ -280,8 +296,9 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     tmp_dir = os.path.join(cache_dir, "tmp")
 
     previous = read_manifest(cache_dir)
-    known = {p["target"]: p["id"] for p in previous.get("playlists", [])}
-    targets, sources, playlists = target_tracks(client, cfg["sync"]["targets"], known)
+    known = {p["target"]: p["id"] for p in previous.get("playlists", []) if p.get("id")}
+    targets, sources, playlists = target_tracks(
+        client, cfg["sync"]["targets"], known, cfg["sync"].get("favorites_playlist", "Favorites"))
     wanted = {output_name(t, device, fmt): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
     to_remove = sorted(existing - wanted.keys())

@@ -83,7 +83,13 @@ iPod" playlist. Dynamic playlists from the service come later, as more
 (keyed by Navidrome song ID, which is the same via every endpoint; every
 cached track also has a MusicBrainz recording ID, none shared). Playlists are
 found by name, remembered by ID (renames survive); a playlist that can't be
-found stops the run rather than pruning its tracks.
+found stops the run rather than pruning its tracks. `"starred"` also becomes a
+player playlist named by `favorites_playlist` (default "Favorites"; "" for
+none), in artist/album/track order. Planned: include any playlist whose
+Navidrome comment contains a tag (e.g. `#ipod`), so the user can pick
+playlists in the web UI; config `playlist:` entries remain for playlists the
+user can't edit (e.g. service-owned dynamic ones). Not built until the API is
+confirmed to return playlist comments.
 
 ## Safety rules (do not simplify these away)
 

@@ -16,7 +16,8 @@ DEFAULT_PATH = os.environ.get("MUSICDOCK_CONFIG", "~/.config/musicdock/config.to
 PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
-    "sync": {"targets": ["starred"], "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
+    "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
+             "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k"},
 }

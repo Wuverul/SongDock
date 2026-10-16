@@ -11,6 +11,7 @@ password = "your-navidrome-password"  # used only to compute Subsonic auth token
 targets = ["starred"]              # what to sync: "starred" and/or "playlist:<name>",
                                    # e.g. ["starred", "playlist:Road Trip"]. A song in
                                    # several lists is stored and copied once.
+favorites_playlist = "Favorites"   # player playlist made from "starred" ("" = none)
 cache_dir = "~/musicdock/cache"
 max_cache_gb = 20                  # stay well under the 32GB card's capacity
 
