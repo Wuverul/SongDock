@@ -25,7 +25,10 @@ player overnight. An e-ink screen shows whether it's safe to unplug.
 - **Player now:** iPod Nano 4th gen, **stock firmware** (Rockbox doesn't
   support it). 16GB. Plays AAC/MP3/ALAC, **not FLAC**. The dock converts to
   **MP3 (LAME V0)** for it (decided 2026-10-16; see Notes).
-- **Player later:** modded iPod Video running **Rockbox**, plays FLAC natively.
+- **Player later:** possibly a modded iPod (e.g. a Classic with 512 GB of
+  flash), **still on stock firmware**: the user prefers the stock UI, so a
+  Rockbox conversion is unlikely (decided 2026-10-16). Plan for players whose
+  storage exceeds the Pi's (see "Resilience without a mirror").
 - **Connection:** Pi "USB" port → micro-USB OTG adapter → USB-A to 30-pin
   cable. The Pi powers and charges the iPod.
 
@@ -250,13 +253,53 @@ what is and isn't on the iPod.**
 - **Before every save:** confirm `requires_hash` / HASH58 and the GUID (else
   pygpod writes an unsigned DB the iPod rejects); start artwork IDs at 100.
 
+## Requirement: resilience without a mirror (2026-10-16)
+
+The player's storage may exceed the Pi's (e.g. 200 GB of music on a 512 GB
+iPod vs a 64 GB SD card). The dock must still be able to **rebuild a wiped
+or reset player completely**. Wipes are rare, so a multi-day rebuild is
+acceptable; a normal sync over ~50 GB is unlikely but must work.
+
+- **Source of truth is Navidrome**, not the Pi's files: what the player
+  should hold = its targets (starred + tagged/configured playlists). The
+  cache is a speed-up; the Pi's SQLite record adds mappings and pending
+  plays. A rebuild needs only Navidrome + the targets.
+- **Hybrid cache:** mirror every targeted track while it fits under
+  `max_cache_gb` / 80% of the card. When over, evict only tracks the record
+  shows **confirmed on the player** (DB saved, reconciled), largest/oldest
+  first. Never evict a track the player still needs.
+- **Rolling batches for big jobs:** the prepare job fills the cache with the
+  next batch of missing tracks in **priority order** (tagged playlists and
+  Favorites first, then the rest); the sync copies a batch, saves the DB,
+  marks those tracks evictable; repeat. While the player stays docked the
+  sync should keep going as batches arrive (no re-plugging per batch).
+  Progress on screen, e.g. `Restoring 12,340 / 40,000`.
+- **Reset detection:** if every known track is missing at once, log "player
+  appears to have been reset" and rebuild, instead of 1,000s of removals.
+- **SysInfo recovery:** a reset wipes `SysInfo`, and pygpod then writes an
+  unsigned DB. Store each player's model number in the record (keyed by
+  FireWire GUID) once known, and rewrite `SysInfo` when it's missing.
+- **Back up the record:** copy the SQLite DB (small) onto the player at each
+  sync, and keep the Navidrome ID in each track record (see Phase 4 plan), so
+  either side can rebuild the other if one is lost.
+- **Throughput (estimates; measure on hardware):** Wi-Fi ~2-4 MB/s (200 GB
+  ~15-30 h); USB to player ~10 MB/s; FLAC->MP3 conversion is the bottleneck
+  (~song length per track on the Zero W, so 200 GB of FLAC ~20 days; run
+  conversions in parallel on a Zero 2 W, ~2 days). Plays recorded since the
+  last sync are lost in a wipe; server-purged discovery tracks can't return.
+- **Optional accelerators (not required):** "Mac mode" - run the dock's own
+  sync engine on the Mac against the mounted player and hand the resulting
+  record to the Pi (never Finder); or a larger microSD card so the cache can
+  mirror again.
+
 ## Phase plan
 
 1. ✅ Display working on hardware
 2. Dock core: detect → mount → unmount → `safe`, using the Nano or a USB stick
 3. Server side: play upload, starred-track fetch, prepare job with conversion
 4. Stock iPod handler via pygpod (after the manual test passes)
-5. Modded iPod Video + Rockbox handler
+5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
+   (see "Resilience without a mirror"). Rockbox handler deprioritized.
 6. 3D-printed dock enclosure
 
 ## Notes
