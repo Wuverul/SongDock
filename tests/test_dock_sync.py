@@ -129,6 +129,17 @@ class WorkTests(unittest.TestCase):
         self.assertIn(("syncing", ("--step", "1", "--total", "6", "--detail",
                                    "Mounting player")), self.shown)
 
+    def test_copy_progress_feeds_the_bar(self):
+        dev = RecordingDevice(self.tmp.name, self.events)
+
+        def work(device, step):
+            step(5, "Copying 3/79: A - B", part_done=2, part_total=79)
+            return {}
+        run_sync(dev, self.show, work=work)
+        self.assertIn(("syncing", ("--step", "5", "--total", "6", "--detail",
+                                   "Copying 3/79: A - B", "--part-done", "2",
+                                   "--part-total", "79")), self.shown)
+
     def test_work_failure_still_unmounts_and_shows_failed(self):
         dev = RecordingDevice(self.tmp.name, self.events)
 

@@ -172,6 +172,17 @@ def wifi_bars(dbm):
 
 
 # ---------------------------------------------------------------- render ----
+def syncing_progress(args):
+    """(done, total) for the SYNCING bar: progress within the current stage
+    when it has its own count (e.g. tracks copied, --part-done/--part-total),
+    else which stage of how many. The header always shows the stage."""
+    if args.part_total:
+        return args.part_done or 0, args.part_total
+    if args.step and args.total:
+        return args.step, args.total
+    return 0, 0
+
+
 def render(screen, args):
     img = Image.new("1", (WIDTH, HEIGHT), 255)  # 255 = white
     d = ImageDraw.Draw(img)
@@ -240,8 +251,9 @@ def render(screen, args):
             rows.append((fit(args.detail, body_f), body_f))
         rows.append((f"Updated {now}", small_f))
         lines(rows)
-        if args.step and args.total:
-            progress_bar(args.step, args.total)
+        done, total = syncing_progress(args)
+        if total:
+            progress_bar(done, total)
 
     elif screen == "safe":
         header(f"{check}SAFE TO REMOVE", inverted=False)
@@ -410,6 +422,9 @@ def build_parser():
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
                                       "failed", "starting", "offline"])
     p.add_argument("--step", type=int, help="syncing: current step")
+    p.add_argument("--part-done", type=int,
+                   help="syncing: items done within this step (fills the bar)")
+    p.add_argument("--part-total", type=int, help="syncing: items in this step")
     p.add_argument("--done", type=int, help="preparing: tracks converted so far")
     p.add_argument("--ready", type=int, help="idle: tracks ready for next sync")
     p.add_argument("--total", type=int)

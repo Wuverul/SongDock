@@ -86,6 +86,23 @@ class WifiRefreshTests(unittest.TestCase):
 
 
 @unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+class SyncingBarTests(unittest.TestCase):
+    def progress(self, *argv):
+        return dock_status.syncing_progress(dock_status.build_parser().parse_args(
+            ["syncing", *argv]))
+
+    def test_bar_follows_tracks_within_the_copy_step(self):
+        self.assertEqual(self.progress("--step", "5", "--total", "6",
+                                       "--part-done", "2", "--part-total", "79"), (2, 79))
+
+    def test_bar_shows_stage_when_step_has_no_count(self):
+        self.assertEqual(self.progress("--step", "2", "--total", "6"), (2, 6))
+
+    def test_no_bar_without_numbers(self):
+        self.assertEqual(self.progress("--detail", "Unmount failed"), (0, 0))
+
+
+@unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
 class RestScreenTests(WifiRefreshTests):
     """SAFE/FAILED -> DOCK READY after an unplug or the 10-minute timer."""
 

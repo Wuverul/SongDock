@@ -316,12 +316,15 @@ def run_sync(device, show, work=None, total=None):
     """
     total = total or (IPOD_STEPS if work else TOTAL_STEPS)
 
-    def step(n, detail):
+    def step(n, detail, part_done=None, part_total=None):
         # Progress redraws are nice-to-have: SYNCING is already on screen,
-        # so a panel hiccup here shouldn't abort the sync.
+        # so a panel hiccup here shouldn't abort the sync. part_done/total:
+        # progress within this step (e.g. tracks copied) for the bar.
+        part = (["--part-done", str(part_done), "--part-total", str(part_total)]
+                if part_total else [])
         try:
             show("syncing", "--step", str(n), "--total", str(total),
-                 "--detail", detail)
+                 "--detail", detail, *part)
         except Exception:
             log.exception("Progress redraw failed (continuing)")
 
@@ -396,7 +399,8 @@ def make_ipod_work(cfg, guid, product, write):
         record = Record()
 
         def progress(n, total, t):
-            step(5, f"Copying {n + 1}/{total}: {t.get('artist')} - {t.get('title')}")
+            step(5, f"Copying {n + 1}/{total}: {t.get('artist')} - {t.get('title')}",
+                 part_done=n, part_total=total)
         try:
             summary = ipod_handler.sync_player(
                 device.root, guid, record, manifest, cache_dir,
