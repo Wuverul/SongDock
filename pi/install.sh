@@ -33,7 +33,7 @@ sudo -u "$LOGIN_USER" "$VENV/bin/pip" install -q --disable-pip-version-check \
 
 for unit in musicdock-sync@.service musicdock-boot.service \
             musicdock-prepare.service musicdock-prepare.timer \
-            musicdock-wifi-refresh.service; do
+            musicdock-wifi-refresh.service musicdock-rest@.service; do
   sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@HOME@|$USER_HOME|g" \
       -e "s|@USER@|$LOGIN_USER|g" \
     "$APP_DIR/pi/$unit" > "/etc/systemd/system/$unit"

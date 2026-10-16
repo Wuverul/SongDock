@@ -85,5 +85,49 @@ class WifiRefreshTests(unittest.TestCase):
         self.assertEqual(self.draws, [])
 
 
+@unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+class RestScreenTests(WifiRefreshTests):
+    """SAFE/FAILED -> DOCK READY after an unplug or the 10-minute timer."""
+
+    def rest(self, mode, waited=None):
+        record = waited.append if waited is not None else (lambda s: None)
+        dock_status.rest_main(["--mode", mode], sleep=record)
+
+    def test_timer_turns_safe_into_ready_with_summary(self):
+        dock_status.main(["safe", "--added", "79", "--removed", "0", "--plays", "5"])
+        self.rest("timer")
+        args = self.rendered[-1]
+        self.assertEqual(args.screen, "idle")
+        self.assertIn("Last synced", args.detail)
+        self.assertIn("+79", args.detail)
+        self.assertIn("5 plays", args.detail)
+        self.assertEqual(dock_status.load_state()["screen"], "idle")
+
+    def test_timer_leaves_failed_up(self):
+        dock_status.main(["failed", "--reason", "Player is full"])
+        self.draws.clear()
+        self.rest("timer")
+        self.assertEqual(self.draws, [])
+
+    def test_unplug_clears_failed_but_keeps_the_news(self):
+        dock_status.main(["failed", "--reason", "Player is full"])
+        self.rest("unplug")
+        self.assertIn("Last sync failed", self.rendered[-1].detail)
+
+    def test_unplug_keeps_result_up_for_a_minute(self):
+        dock_status.main(["safe"])
+        waited = []
+        self.rest("unplug", waited)
+        self.assertEqual(len(waited), 1)
+        self.assertGreater(waited[0], 50)
+
+    def test_never_covers_a_running_sync(self):
+        dock_status.main(["syncing", "--step", "2", "--total", "6"])
+        self.draws.clear()
+        self.rest("unplug")
+        self.rest("timer")
+        self.assertEqual(self.draws, [])
+
+
 if __name__ == "__main__":
     unittest.main()

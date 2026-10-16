@@ -46,6 +46,7 @@ LIST_LIMIT = 200          # files logged by name; a full player would flood the 
 UNMOUNT_TRIES = 3         # "target is busy" usually clears within a few seconds
 TOTAL_STEPS = 3           # listing only: mount, read, unmount
 IPOD_STEPS = 6            # mount, plays, upload, backup, copy, unmount
+REST_AFTER_MIN = 10       # SAFE -> DOCK READY if the player stays docked
 
 
 class SyncError(Exception):
@@ -410,6 +411,21 @@ def make_ipod_work(cfg, guid, product, write):
     return work
 
 
+def schedule_rest(minutes=REST_AFTER_MIN):
+    """Have systemd swap SAFE for DOCK READY in `minutes`, in case the player
+    stays docked (unplugging does it sooner, via the udev rule). Root only."""
+    if os.geteuid() != 0 or not shutil.which("systemd-run"):
+        return
+    subprocess.run(["systemctl", "stop", "musicdock-rest-later.timer"],
+                   capture_output=True)
+    r = subprocess.run(["systemd-run", f"--on-active={minutes}min",
+                        "--unit=musicdock-rest-later", "--collect",
+                        "systemctl", "start", "musicdock-rest@timer.service"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        log.warning("Couldn't schedule the screen reset: %s", r.stderr.strip())
+
+
 def acquire_lock(path=LOCK_FILE):
     """Return an open, locked file, or None if another sync holds the lock.
 
@@ -516,6 +532,8 @@ def main(argv=None):
             return 1
 
     ok = run_sync(device, Screen(preview_dir).show, work=work)
+    if ok and not preview_dir:
+        schedule_rest()
     if preview_dir:
         log.info("Screen previews in %s", preview_dir)
     log.info("Sync %s", "finished: safe to remove" if ok else "did not complete")

@@ -145,6 +145,24 @@ class WorkTests(unittest.TestCase):
         self.assertEqual(dock_sync.sysinfo_guid(self.tmp.name), "000A2700000000AB")
 
 
+class RestTimerTests(unittest.TestCase):
+    def test_schedules_ten_minute_reset_as_root(self):
+        with mock.patch.object(dock_sync.os, "geteuid", return_value=0), \
+                mock.patch.object(dock_sync.shutil, "which", return_value="/usr/bin/systemd-run"), \
+                mock.patch.object(dock_sync.subprocess, "run",
+                                  return_value=mock.Mock(returncode=0, stderr="")) as run:
+            dock_sync.schedule_rest()
+        cmd = run.call_args_list[-1][0][0]
+        self.assertIn("--on-active=10min", cmd)
+        self.assertEqual(cmd[-1], "musicdock-rest@timer.service")
+
+    def test_no_timer_when_not_root(self):
+        with mock.patch.object(dock_sync.os, "geteuid", return_value=1000), \
+                mock.patch.object(dock_sync.subprocess, "run") as run:
+            dock_sync.schedule_rest()
+        run.assert_not_called()
+
+
 class ScreenProcessTests(unittest.TestCase):
     """Screen must draw in a separate process (GPIO is released on exit)."""
 

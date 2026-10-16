@@ -198,6 +198,13 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   the record is saved on the player at `iPod_Control/musicdock/dock.db`.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
+- **Back to DOCK READY after a sync:** `dock_status.py --rest` swaps SAFE (and
+  FAILED, on unplug only) for `idle` with "Last synced 3:02 PM (+79 -0, 5
+  plays)" / "Last sync failed ...". Triggered by the udev `remove` rule for the
+  USB disk (`musicdock-rest@unplug`, keeps the result up >= 60 s in case the
+  player drops USB after eject) and a transient systemd timer 10 min after a
+  successful sync (`musicdock-rest@timer`, SAFE only). Uses `--only-over`
+  under the panel lock, so it never covers a new sync.
 - **Wi-Fi indicator refresh:** NetworkManager dispatcher hook
   `pi/90-musicdock-wifi` (wlan0 up/down) starts `musicdock-wifi-refresh.service`
   (5s settle) → `dock_status.py --refresh`, which redraws a resting screen

@@ -1,0 +1,17 @@
+# Puts DOCK READY (with a summary of the last sync) back after SAFE/FAILED.
+#   musicdock-rest@unplug: started by the udev rule when the player is removed
+#   musicdock-rest@timer:  started 10 min after a sync (set by dock_sync.py)
+# install.sh fills in @APP_DIR@ and @HOME@.
+
+[Unit]
+Description=Music Dock screen back to ready (%i)
+
+[Service]
+Type=oneshot
+# lgpio (the panel's GPIO library) creates helper files in the working
+# directory. The default, /, isn't writable by the login user.
+WorkingDirectory=/var/lib/musicdock
+ExecStart=/usr/bin/python3 @APP_DIR@/dock_status.py --rest --mode %i
+Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
+Environment=PYTHONUNBUFFERED=1
+TimeoutStartSec=10min

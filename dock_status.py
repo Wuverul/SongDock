@@ -540,6 +540,43 @@ def refresh_main(argv=None, attempts=3, settle=3):
         time.sleep(settle)
 
 
+REST_MODES = {
+    "timer": "safe",            # 10 min after a sync: SAFE only (FAILED stays up)
+    "unplug": "safe,failed",    # player physically removed
+}
+MIN_SHOWN = 60   # seconds SAFE/FAILED stay up before an unplug swaps them
+
+
+def rest_main(argv=None, sleep=time.sleep):
+    """Replace a finished SAFE (or FAILED) screen with DOCK READY plus a
+    summary of the last sync. Started by the unplug udev rule and by the
+    timer the sync job sets. The only-over check happens under the panel
+    lock, so a sync that started meanwhile is never covered."""
+    p = argparse.ArgumentParser(description="Back to DOCK READY after a sync")
+    p.add_argument("--mode", choices=sorted(REST_MODES), default="unplug")
+    args = p.parse_args(argv)
+    allowed = REST_MODES[args.mode]
+    state = load_state()
+    screen = state.get("screen")
+    if screen not in allowed.split(","):
+        print(f"Leaving the {screen} screen up")
+        return
+    drawn_at = state.get("drawn_at") or time.time()
+    if args.mode == "unplug":
+        # Some players drop the USB link right after an eject; keep the
+        # result readable for a minute either way.
+        wait = MIN_SHOWN - (time.time() - drawn_at)
+        if wait > 0:
+            sleep(wait)
+    prev = build_parser().parse_args(state.get("argv") or [screen])
+    when = datetime.fromtimestamp(drawn_at).strftime("%-I:%M %p")
+    if screen == "safe":
+        detail = f"Last synced {when} (+{prev.added} \u2212{prev.removed}, {prev.plays} plays)"
+    else:
+        detail = f"Last sync failed {when}"
+    main(["idle", "--detail", detail, "--only-over", allowed])
+
+
 def stream_main(argv=None):
     """Child-process side of a partial-update burst (used by dock_boot.py).
 
@@ -568,5 +605,7 @@ if __name__ == "__main__":
         stream_main(sys.argv[2:])
     elif sys.argv[1:2] == ["--refresh"]:
         refresh_main(sys.argv[2:])
+    elif sys.argv[1:2] == ["--rest"]:
+        rest_main(sys.argv[2:])
     else:
         main()

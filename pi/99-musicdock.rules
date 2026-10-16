@@ -8,3 +8,7 @@
 # ID_FS_USAGE=filesystem matches partitions (sda1) and also "superfloppy"
 # USB sticks that have a filesystem on the whole disk (sda).
 ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", TAG+="systemd", ENV{SYSTEMD_WANTS}+="musicdock-sync@%k.service"
+
+# When the USB disk goes away (player unplugged), put DOCK READY back.
+# systemctl --no-block returns at once, so this is safe inside udev.
+ACTION=="remove", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="disk", RUN+="/bin/systemctl --no-block start musicdock-rest@unplug.service"
