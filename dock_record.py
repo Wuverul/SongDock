@@ -129,6 +129,11 @@ class Record:
                 "ON CONFLICT(guid) DO UPDATE SET model = COALESCE(excluded.model, model)",
                 (guid, model, now))
 
+    def last_synced_player(self):
+        row = self.db.execute("SELECT * FROM players WHERE last_sync IS NOT NULL "
+                              "ORDER BY last_sync DESC LIMIT 1").fetchone()
+        return dict(row) if row else None
+
     def mark_synced(self, guid):
         with self.db:
             self.db.execute("UPDATE players SET last_sync = ? WHERE guid = ?",

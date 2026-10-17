@@ -216,6 +216,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   wifi.txt deleted, `wifi` screen ("Now on ...", Navidrome reachable or not).
   Failure: previous network brought back, the new profile deleted, wifi.txt
   kept, `wififail` screen with the reason. Read-only mode just reports it.
+- **DOCK READY shows the next sync** (prepare job, `pending_args`): "Next sync:
+  +19 -3 tracks" or "iPod is up to date" for the most recently synced player
+  (record vs manifest via `ipod_handler.pending_changes`), plus "12/19 tracks
+  prepared" while converting and "Last sync ... · updated ...". Redrawn only
+  when those arguments differ from what's on screen.
+- **Removals only for songs that left every target:** `targeted_ids` = ready
+  tracks + manifest `skipped` (targeted but not cached right now), so a failed
+  download or a full cache never removes a song from the player.
 - **Back to DOCK READY after a sync:** `dock_status.py --rest` swaps SAFE (and
   FAILED, on unplug only) for `idle` with "Last synced 3:02 PM (+79 -0, 5
   plays)" / "Last sync failed ...". Triggered by the udev `remove` rule for the

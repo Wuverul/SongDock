@@ -172,6 +172,14 @@ def wifi_bars(dbm):
 
 
 # ---------------------------------------------------------------- render ----
+def pending_line(args, has_glyphs=True):
+    add, remove = args.pending_add or 0, args.pending_remove or 0
+    if not add and not remove:
+        return "iPod is up to date"
+    minus = "\u2212" if has_glyphs else "-"
+    return f"Next sync: +{add}  {minus}{remove} tracks"
+
+
 def syncing_progress(args):
     """(done, total) for the SYNCING bar: progress within the current stage
     when it has its own count (e.g. tracks copied, --part-done/--part-total),
@@ -359,14 +367,26 @@ def render(screen, args):
         # A multi-line detail (the last-sync summary, see rest_main) takes
         # the place of "Waiting for player", leaving room for the IP line.
         detail = args.detail.split("\n") if args.detail else []
-        if args.total:
+        if args.pending_add is not None:
+            # What the next sync will do to the docked iPod (prepare job).
+            rows = [(pending_line(args, has_glyphs), body_f)]
+            if args.total and (args.ready or 0) < args.total:
+                rows.append((f"{args.ready or 0}/{args.total} tracks prepared", small_f))
+            if args.last_sync:
+                last = datetime.fromtimestamp(args.last_sync).strftime("%-I:%M %p")
+                rows.append((fit(f"Last sync {last} \u00b7 updated {now}", small_f), small_f))
+            else:
+                rows.append((f"Since {now}", small_f))
+            detail = []
+        elif args.total:
             rows = [(f"Next sync: {args.ready or 0}/{args.total} tracks ready", body_f)]
         elif len(detail) < 2:
             rows = [("Waiting for player", body_f)]
         else:
             rows = []
-        rows += [(fit(line, body_f), body_f) for line in detail]
-        rows.append((f"Powered on {now}" if args.boot else f"Since {now}", small_f))
+        if args.pending_add is None:
+            rows += [(fit(line, body_f), body_f) for line in detail]
+            rows.append((f"Powered on {now}" if args.boot else f"Since {now}", small_f))
         lines(rows)
         ip = args.ip if args.ip is not None else read_ip()
         if ip:
@@ -466,6 +486,12 @@ def build_parser():
     p.add_argument("--added", type=int, default=0)
     p.add_argument("--removed", type=int, default=0)
     p.add_argument("--plays", type=int, default=0)
+    p.add_argument("--pending-add", type=int,
+                   help="idle: tracks the next sync will add to the iPod")
+    p.add_argument("--pending-remove", type=int, default=0,
+                   help="idle: tracks the next sync will remove")
+    p.add_argument("--last-sync", type=float, metavar="EPOCH",
+                   help="idle: when the iPod was last synced")
     p.add_argument("--queued", type=int, default=0,
                    help="safe: plays still waiting for the server")
     p.add_argument("--reason")

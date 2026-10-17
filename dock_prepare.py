@@ -706,6 +706,28 @@ def show_plan(manifest):
     return "\n".join(lines)
 
 
+def pending_args(manifest):
+    """DOCK READY arguments saying what the next sync will do to the most
+    recently synced player (+adds, -removes), or [] if none synced yet."""
+    try:
+        import ipod_handler
+        from dock_record import Record
+        record = Record()
+        try:
+            player = record.last_synced_player()
+            if not player:
+                return []
+            present = {r["navidrome_id"] for r in record.tracks(player["guid"])}
+        finally:
+            record.close()
+        add, remove = ipod_handler.pending_changes(manifest, present)
+        return ["--pending-add", str(add), "--pending-remove", str(remove),
+                "--last-sync", str(int(player["last_sync"]))]
+    except Exception:
+        log.exception("Couldn't work out the next sync's changes")
+        return []
+
+
 def sync_running():
     """True while a sync (musicdock-sync@*) is running: the iPod comes first."""
     r = subprocess.run(["systemctl", "list-units", "--type=service", "--no-legend",
@@ -776,12 +798,6 @@ def main(argv=None):
     from dock_sync import Screen
     screen = Screen(args.preview_dir)
 
-    def current_screen():
-        if args.preview_dir:
-            return None          # previews don't touch the real screen state
-        import dock_status
-        return dock_status.load_state().get("screen")
-
     def show(name, *screen_args):
         if args.dry_run:
             return
@@ -813,10 +829,21 @@ def main(argv=None):
         log.error("Prepare failed: %s", e)
         return 1
 
+    idle = ["idle", "--ready", str(summary["ready"]), "--total", str(summary["total"])]
+    if not args.dry_run:
+        idle += pending_args(read_manifest(cache_dir))
     prev_ready = len(previous.get("tracks", []))
     changed = summary["added"] or summary["removed"] or prev_ready != summary["ready"]
-    if changed or current_screen() == "preparing":
-        show("idle", "--ready", str(summary["ready"]), "--total", str(summary["total"]))
+    if args.preview_dir:
+        if changed:
+            show(*idle)
+    elif not args.dry_run:
+        # Redraw only when what DOCK READY would say differs from what's up
+        # (dock_status checks --only-over under the panel lock).
+        import dock_status
+        state = dock_status.load_state()
+        if state.get("screen") in (None, "idle", "preparing") and state.get("argv") != idle:
+            show(*idle)
     log.info("Done: %d/%d ready (%d added, %d removed, %d skipped)",
              summary["ready"], summary["total"], summary["added"],
              summary["removed"], len(summary["skipped"]))

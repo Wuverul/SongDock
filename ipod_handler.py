@@ -318,6 +318,21 @@ def start_artwork_ids_at(db, first=ARTWORK_FIRST_ID):
         mgr._next_image_id = first
 
 
+def targeted_ids(manifest):
+    """Songs the player should hold: ready tracks plus targeted ones that
+    aren't cached right now (manifest "skipped": download failed, cache
+    full, ...). Only songs outside this set are ever removed."""
+    return ({t["id"] for t in manifest.get("tracks", [])}
+            | {s["id"] for s in manifest.get("skipped", [])})
+
+
+def pending_changes(manifest, present_ids):
+    """(to_add, to_remove) for a player holding `present_ids`, as apply_plan
+    would do it (not counting re-encode replacements)."""
+    ready = {t["id"] for t in manifest.get("tracks", [])}
+    return len(ready - set(present_ids)), len(set(present_ids) - targeted_ids(manifest))
+
+
 def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
                progress=None, save=checked_save, dirty=False):
     """Make the player match the staged plan (prepare job's manifest).
@@ -342,7 +357,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
     changed = {nid for nid, r in present.items()
                if nid in wanted and r.get("encoding")
                and wanted[nid].get("encoding") and r["encoding"] != wanted[nid]["encoding"]}
-    removals = [r for nid, r in present.items() if nid not in wanted or nid in changed]
+    keep = targeted_ids(manifest)        # a song not cached right now stays put
+    removals = [r for nid, r in present.items() if nid not in keep or nid in changed]
     additions = [t for nid, t in wanted.items() if nid not in present or nid in changed]
 
     # Remove from the DB, save, and only then delete the files: if the save

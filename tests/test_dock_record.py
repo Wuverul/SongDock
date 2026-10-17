@@ -83,6 +83,13 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(self.rec.rematch_plays(GUID), 1)
         self.assertEqual(self.rec.unsent_plays()[0]["navidrome_id"], "nav77")
 
+    def test_last_synced_player(self):
+        self.assertIsNone(self.rec.last_synced_player())
+        self.rec.upsert_player(GUID, model="xB903")
+        self.rec.upsert_player("OTHER")
+        self.rec.mark_synced(GUID)
+        self.assertEqual(self.rec.last_synced_player()["guid"], GUID)
+
     def test_managed_playlists(self):
         self.rec.set_managed_playlists(GUID, {"starred": "Favorites",
                                               "playlist:Mel Test": "Mel Test"})

@@ -90,6 +90,15 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(self.rec.tracks(G, "removed")[0]["note"],
                          "no longer in any synced playlist")
 
+    def test_targeted_but_uncached_track_stays_on_player(self):
+        a, b = self.song("n1", "One"), self.song("n2", "Two")
+        self.apply(self.manifest([a, b]))
+        m = self.manifest([a])
+        m["skipped"] = [{"id": "n2", "title": "Two", "reason": "cache full", "error": False}]
+        summary = self.apply(m)                    # n2 still wanted, just not cached
+        self.assertEqual(summary["removed"], 0)
+        self.assertEqual(sorted(t.title for t in self.db().tracks), ["One", "Two"])
+
     def test_crash_mid_sync_resumes_without_duplicates(self):
         songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
         real_save, calls = h.checked_save, []
