@@ -24,3 +24,6 @@ DockKey.pub
 id_*
 *.pem
 *.key
+
+# Release packages (make_release.sh)
+dist/

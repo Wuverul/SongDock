@@ -36,7 +36,8 @@ class FakeNM:
         if a[:4] == ["-g", "802-11-wireless.ssid", "connection", "show"]:
             return out(self.profiles.get(a[4], {}).get("ssid", ""))
         if a[:2] == ["connection", "load"]:
-            text = open(a[2]).read()
+            with open(a[2]) as f:
+                text = f.read()
             get = lambda k: next((l.split("=", 1)[1] for l in text.splitlines()  # noqa
                                   if l.startswith(k + "=")), "")
             self.profiles[get("id")] = {"ssid": get("ssid"), "psk": get("psk")}
@@ -144,7 +145,8 @@ class ApplyTests(unittest.TestCase):
         [name] = os.listdir(self.keyfiles)
         path = os.path.join(self.keyfiles, name)
         self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
-        text = open(path).read()
+        with open(path) as f:
+            text = f.read()
         self.assertIn("autoconnect-priority=10", text)
         self.assertIn(f"psk={PASSWORD}", text)
 

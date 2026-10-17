@@ -376,7 +376,13 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
    (see "Resilience without a mirror"). Rockbox handler deprioritized.
 6. 3D-printed dock enclosure
-7. Documentation, setup guide, and packaging for friends (after Phase 4):
+7. Documentation, setup guide, and packaging for friends. **Built
+   2026-10-16:** README.md, INSTALL.md, `make_release.sh` (builds
+   `dist/music-dock/` + `dist/music-dock-<date>.tar.gz`: only Pi code, pi/,
+   vendor/, docs; refuses to build on failing tests or personal data; no macOS
+   tar metadata). Verified by unpacking on the Pi, importing every module and
+   running `install.sh --check`. A fresh-Pi install is untested until the
+   friend (iPod classic) does it. Original plan:
    README (hardware list, OS image, SSH key setup, one-command install);
    `install.sh` installs apt deps (ffmpeg, rsync, python3-pil/-gpiozero/
    -spidev/-lgpio, fonts-dejavu-core), enables SPI (`raspi-config nonint
