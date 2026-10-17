@@ -244,9 +244,27 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(values, {"ModelNumStr": "xB903", "FirewireGuid": f"0x{G}"})
         self.assertEqual(self.db()._device.checksum_type.name, "HASH58")
 
+    def test_model_from_serial_number(self):
+        open(h.sysinfo_path(self.mount), "w").close()          # emptied by a restore
+        model = h.ensure_sysinfo(self.mount, G, self.rec, usb_product=0x1261,
+                                 block_device="/dev/sda",
+                                 read_serial=lambda dev: "8K1234567Y5N")  # a Classic 80GB
+        self.assertEqual(model, "xB029")
+        self.assertEqual(h.read_sysinfo(self.mount)[0]["ModelNumStr"], "xB029")
+        self.assertEqual(self.rec.player(G)["model"], "xB029")   # remembered
+
+    def test_serial_read_failure_falls_back(self):
+        open(h.sysinfo_path(self.mount), "w").close()
+
+        def broken(dev):
+            raise OSError("SG_IO not permitted")
+        self.assertEqual(h.ensure_sysinfo(self.mount, G, self.rec, usb_product=0x1263,
+                                          block_device="/dev/sda", read_serial=broken),
+                         "xB903")
+
     def test_unknown_model_is_a_clear_error(self):
         open(h.sysinfo_path(self.mount), "w").close()
-        with self.assertRaisesRegex(h.HandlerError, "ModelNumStr"):
+        with self.assertRaisesRegex(h.HandlerError, "Unknown iPod model"):
             h.ensure_sysinfo(self.mount, G, self.rec)
         self.assertEqual(h.ensure_sysinfo(self.mount, G, self.rec, usb_product=0x1263),
                          "xB903")

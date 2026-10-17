@@ -149,6 +149,11 @@ class WorkTests(unittest.TestCase):
         self.assertIn("unmount", self.events)
         self.assertEqual(self.shown[-1], ("failed", ("--reason", "Player is full")))
 
+    def test_whole_disk(self):
+        self.assertEqual(dock_sync.whole_disk("/dev/sda1"), "/dev/sda")
+        self.assertEqual(dock_sync.whole_disk("/dev/sdb"), "/dev/sdb")
+        self.assertIsNone(dock_sync.whole_disk("/tmp/fake_ipod"))
+
     def test_sysinfo_guid_for_fake_devices(self):
         os.makedirs(os.path.join(self.tmp.name, "iPod_Control", "Device"))
         with open(os.path.join(self.tmp.name, "iPod_Control", "Device", "SysInfo"), "w") as f:

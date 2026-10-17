@@ -143,7 +143,30 @@ def read_sysinfo(mount):
     return values, lines
 
 
-def ensure_sysinfo(mount, guid, record, usb_product=None):
+def model_from_serial(block_device, read_serial=None):
+    """("x<model>", serial) from the iPod's real serial number, or None.
+
+    The USB serial is the FireWire GUID; the real serial comes from SCSI VPD
+    page 0x80 (needs root - the sync job has it). Its last 3 characters name
+    the exact model (libgpod's table, via pygpod)."""
+    try:
+        from pygpod.device.models import lookup_model_by_serial
+        from pygpod.device.usb import _read_scsi_serial
+    except ImportError:
+        return None
+    try:
+        serial = (read_serial or _read_scsi_serial)(block_device)
+    except Exception as e:
+        log_info(f"Couldn't read the iPod's serial number: {e}")
+        return None
+    info = lookup_model_by_serial(serial) if serial else None
+    if info and info.model_number and info.model_number != "Unknown":
+        return "x" + info.model_number, serial
+    return None
+
+
+def ensure_sysinfo(mount, guid, record, usb_product=None, block_device=None,
+                   read_serial=None):
     """Make sure SysInfo has the model number and FireWire GUID.
 
     Without them pygpod can't tell the player needs a signed database and
@@ -152,13 +175,19 @@ def ensure_sysinfo(mount, guid, record, usb_product=None):
     """
     values, lines = read_sysinfo(mount)
     known = record.player(guid) or {}
-    model = (values.get("ModelNumStr") or known.get("model")
-             or REPRESENTATIVE_MODELS.get(usb_product))
+    model = values.get("ModelNumStr") or known.get("model")
+    if not model and block_device:
+        found = model_from_serial(block_device, read_serial)
+        if found:
+            model = found[0]
+            log_info(f"iPod model {model} worked out from its serial number ({found[1]})")
+    model = model or REPRESENTATIVE_MODELS.get(usb_product)
     if not model:
-        raise HandlerError(
-            "unknown iPod model: SysInfo is empty and this player hasn't been seen "
-            f"before. Add a line 'ModelNumStr: x<model>' to {sysinfo_path(mount)} "
-            "(model from Settings > About, e.g. MB903 -> xB903).")
+        log_info("Unknown iPod model: SysInfo is empty, the serial number didn't help, "
+                 "and this player hasn't been seen before. Add a line "
+                 f"'ModelNumStr: x<model>' to {sysinfo_path(mount)} (model from "
+                 "Settings > About, e.g. MB903 -> xB903), then dock again.")
+        raise HandlerError("Unknown iPod model (see the guide)")
     add = []
     if "ModelNumStr" not in values:
         add.append(f"ModelNumStr: {model}")
@@ -476,7 +505,8 @@ RECORD_COPY = os.path.join("iPod_Control", "musicdock", "dock.db")
 
 
 def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
-                write=False, client=None, usb_product=None, step=None, progress=None):
+                write=False, client=None, usb_product=None, step=None, progress=None,
+                block_device=None):
     """One dock session for a stock iPod (the sync job's steps 2-5).
 
     2. Snapshot the play data and DB, map plays to songs (reconciling the
@@ -516,7 +546,7 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
 
     if write:
         step(4, "Backing up player")
-        ensure_sysinfo(mount, guid, record, usb_product)
+        ensure_sysinfo(mount, guid, record, usb_product, block_device)
         os.makedirs(backup_root, exist_ok=True)
         backup = backup_player(mount, backup_root)
         try:

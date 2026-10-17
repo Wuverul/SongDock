@@ -31,6 +31,7 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -419,6 +420,12 @@ def run_sync(device, show, work=None, total=None):
     return error is None
 
 
+def whole_disk(dev_path):
+    """/dev/sda1 -> /dev/sda (SCSI inquiries go to the disk); else None."""
+    m = re.fullmatch(r"(/dev/sd[a-z]+)\d*", dev_path or "")
+    return m.group(1) if m else None
+
+
 def make_ipod_work(cfg, guid, product, write):
     """The stock-iPod session for run_sync (needs the venv: pygpod)."""
     import ipod_handler
@@ -463,7 +470,7 @@ def make_ipod_work(cfg, guid, product, write):
                 work_dir=os.path.join(base, "work", guid),
                 backup_root=os.path.join(base, "backups", guid),
                 write=write, client=client, usb_product=product, step=step,
-                progress=progress)
+                progress=progress, block_device=whole_disk(getattr(device, "path", "")))
         finally:
             record.close()
         summary["wifi"] = handle_wifi_file(device, write, client)
