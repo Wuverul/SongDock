@@ -51,10 +51,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------------------- config ----
 WIDTH, HEIGHT = 250, 122            # landscape
-EPD_LIB = os.environ.get(
-    "EPD_LIB",
-    os.path.expanduser("~/e-Paper/RaspberryPi_JetsonNano/python/lib"),
-)
+_BUNDLED_EPD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
+EPD_LIB = os.environ.get("EPD_LIB") or (
+    _BUNDLED_EPD if os.path.isdir(os.path.join(_BUNDLED_EPD, "waveshare_epd"))
+    else os.path.expanduser("~/e-Paper/RaspberryPi_JetsonNano/python/lib"))
 # Every job (sync and boot run as root; manual runs and the prepare job as the
 # login user) must share one state file, or the "never draw over SYNCING"
 # check can't see another job's screen. pi/install.sh creates the shared

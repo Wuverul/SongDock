@@ -12,7 +12,8 @@ Type=oneshot
 # directory. The default, /, isn't writable by the login user.
 WorkingDirectory=/var/lib/musicdock
 ExecStart=/usr/bin/python3 @APP_DIR@/dock_status.py --rest --mode %i
-Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
+# The bundled Waveshare display driver (vendor/waveshare_epd).
+Environment=EPD_LIB=@APP_DIR@/vendor
 Environment=PYTHONUNBUFFERED=1
 # The login user's config ([display] invert, etc.).
 Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml

@@ -19,8 +19,8 @@ ExecStart=@HOME@/musicdock/venv/bin/python @APP_DIR@/dock_sync.py --device /dev/
 # Runs as root (mounting), so point at the login user's config explicitly;
 # "~" in it (cache_dir) is expanded from the config file owner's home.
 Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
-# As root, "~" would mean /root, so point at the login user's e-Paper library.
-Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
+# The bundled Waveshare display driver (vendor/waveshare_epd).
+Environment=EPD_LIB=@APP_DIR@/vendor
 Environment=PYTHONUNBUFFERED=1
 # A first load or a rebuild of a large player can take many hours.
 TimeoutStartSec=24h
