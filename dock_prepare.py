@@ -533,8 +533,13 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     shutil.rmtree(tmp_dir, ignore_errors=True)    # leftovers from a cut-off run
     os.makedirs(tmp_dir)
 
+    # Name songs in the log, not just cache file names (the previous plan
+    # still has their artist/title).
+    known_names = {t["file"].split("/", 1)[-1]: f"{t.get('artist')} - {t.get('title')}"
+                   for t in previous.get("tracks", [])}
     for name in to_remove:
-        log.info("Removing (no longer targeted): %s", name)
+        log.info("Removing from the cache (no longer targeted): %s",
+                 known_names.get(name, name))
         os.remove(os.path.join(tracks_dir, name))
 
     # Shrink covers on tracks cached before covers were checked (one-time pass;
