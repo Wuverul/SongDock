@@ -17,6 +17,9 @@ playlist_tag = "#ipod"             # also sync any playlist whose Navidrome comm
 cache_dir = "~/musicdock/cache"
 max_cache_gb = 20                  # the job also stops at 80% of the SD card
 workers = "auto"                   # parallel conversions: "auto" = CPU cores - 1 (min 1)
+removal_grace_days = 7             # 0-30: keep tracks that left every list cached this
+                                   # long (re-adding is instant); deleted oldest-first
+                                   # sooner if the SD card drops below 25% free
 
 [device]
 type = "stock_ipod"                # or "rockbox" once the modded iPod exists

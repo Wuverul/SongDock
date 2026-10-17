@@ -208,7 +208,9 @@ class PrepareTests(unittest.TestCase):
                             playlists={"P1": ("Mel Test", [song("b1")], "#ipod")})
         self.run_prepare(server, self.tagged_cfg())
         server.playlists["P1"] = ("Mel Test", [song("b1")], "")      # tag removed
-        summary = self.run_prepare(server, self.tagged_cfg())
+        cfg = self.tagged_cfg()
+        cfg["sync"]["removal_grace_days"] = 0
+        summary = self.run_prepare(server, cfg)
         self.assertEqual(self.files(), ["a1.mp3"])
         self.assertEqual(summary["removed"], 1)
 
@@ -283,12 +285,73 @@ class PrepareTests(unittest.TestCase):
 
     def test_unstarred_tracks_are_pruned(self):
         server = FakeServer(songs=[song("a"), song("b")])
-        self.run_prepare(server)
+        cfg = config()
+        cfg["sync"]["removal_grace_days"] = 0             # no grace: delete at once
+        self.run_prepare(server, cfg)
         server.songs = [song("a")]
-        summary = self.run_prepare(server)
+        summary = self.run_prepare(server, cfg)
         self.assertEqual(self.files(), ["a.mp3"])
         self.assertEqual(summary["removed"], 1)
         self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a"])
+
+    def grace_run(self, server, days=7, now=0, **kw):
+        cfg = config()
+        cfg["sync"]["removal_grace_days"] = days
+        return self.run_prepare(server, cfg, clock=lambda: now * dock_prepare.DAY, **kw)
+
+    def test_removed_track_kept_for_grace_period_and_reused(self):
+        server = FakeServer(songs=[song("a"), song("b")])
+        self.grace_run(server, now=0)
+        server.songs = [song("a")]                       # b unstarred
+        summary = self.grace_run(server, now=1)
+        self.assertEqual(summary["removed"], 1)
+        self.assertEqual(self.files(), ["a.mp3", "b.mp3"])           # b still cached
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a"])  # not planned
+        self.assertEqual(self.manifest()["kept_after_removal"], 1)
+        self.assertEqual(self.grace_run(server, now=2)["removed"], 0)  # not re-counted
+        server.songs = [song("a"), song("b")]           # re-starred on day 3
+        server.downloads.clear()
+        self.grace_run(server, now=3)
+        self.assertEqual(server.downloads, [])                         # reused, no download
+        self.assertEqual(sorted(t["id"] for t in self.manifest()["tracks"]), ["a", "b"])
+
+    def test_kept_track_deleted_after_grace_period(self):
+        server = FakeServer(songs=[song("a"), song("b")])
+        self.grace_run(server, now=0)
+        server.songs = [song("a")]
+        self.grace_run(server, days=7, now=1)
+        self.grace_run(server, days=7, now=7.9)
+        self.assertIn("b.mp3", self.files())
+        self.grace_run(server, days=7, now=8.1)
+        self.assertEqual(self.files(), ["a.mp3"])
+
+    def test_low_disk_deletes_oldest_kept_first(self):
+        server = FakeServer(songs=[song("a"), song("b"), song("c")])
+        self.grace_run(server, now=0)
+        server.songs = [song("a"), song("c")]           # b leaves on day 1
+        self.grace_run(server, now=1)
+        server.songs = [song("a")]                      # c leaves on day 2
+        self.grace_run(server, now=2)
+        usage = {"calls": 0}
+
+        def disk(path):
+            usage["calls"] += 1
+            free = 0.20 if usage["calls"] == 1 else 0.30
+            return Usage(100e9, 100e9 * (1 - free), 100e9 * free)
+        self.grace_run(server, now=3, disk_usage=disk)
+        self.assertEqual(self.files(), ["a.mp3", "c.mp3"])   # oldest (b) went first
+
+    def test_kept_tracks_make_room_for_new_music(self):
+        server = FakeServer(songs=[song("a")])
+        self.grace_run(server, now=0)
+        with open(os.path.join(self.cache, "tracks", "a.mp3"), "ab") as f:
+            f.write(b"x" * 10_000)                       # a really takes space
+        server.songs = [song("b", size=10)]             # a leaves, b arrives
+        cfg = config(max_gb=0.000005)                    # 5 KB cache limit
+        cfg["sync"]["removal_grace_days"] = 7
+        summary = self.run_prepare(server, cfg, clock=lambda: dock_prepare.DAY)
+        self.assertEqual(summary["added"], 1)
+        self.assertEqual(self.files(), ["b.mp3"])
 
     def test_one_failed_track_doesnt_block_others(self):
         server = FakeServer(songs=[song("a"), song("bad"), song("c")],
@@ -501,6 +564,16 @@ class ConfigTests(unittest.TestCase):
         for bad in ('targets="starred"', 'targets=[]', 'targets=["favorites"]',
                     'targets=["playlist:"]'):
             with self.assertRaisesRegex(dock_config.ConfigError, "targets"):
+                dock_config.load(self.write(base + bad + "\n"))
+
+    def test_grace_days_validated(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
+        self.assertEqual(dock_config.load(self.write(base))["sync"]["removal_grace_days"], 7)
+        self.assertEqual(dock_config.load(self.write(base + "removal_grace_days=0\n"))
+                         ["sync"]["removal_grace_days"], 0)
+        for bad in ("removal_grace_days=31", "removal_grace_days=-1",
+                    'removal_grace_days="7"', "removal_grace_days=2.5"):
+            with self.assertRaisesRegex(dock_config.ConfigError, "removal_grace_days"):
                 dock_config.load(self.write(base + bad + "\n"))
 
     def test_workers_validated(self):

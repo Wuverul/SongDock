@@ -93,6 +93,8 @@ def audio_options(device_cfg):
         return ["-c:a", "alac"]
     return ["-c:a", "aac", "-b:a", device_cfg["aac_bitrate"]]
 MAX_DISK_FRACTION = 0.80     # keep the SD card under 80% full (CLAUDE.md)
+MIN_FREE_FOR_KEPT = 0.25     # below 25% free, kept (removed) tracks go first
+DAY = 86400
 DRAW_OVER = "none,idle,preparing"     # never over syncing/safe/failed/boot
 
 
@@ -482,8 +484,63 @@ def read_manifest(cache_dir):
 
 
 # --------------------------------------------------------------- prepare ----
+class KeptTracks:
+    """Tracks that left every target but stay cached for the grace period
+    (removal_grace_days), in case they're re-added. Stored in retired.json:
+    {cache file name: {"since": epoch, **its last manifest entry}}.
+    They're not in the plan, so the next sync still removes them from the
+    player; re-adding one within the grace period reuses the file."""
+
+    def __init__(self, cache_dir, tracks_dir, clock=time.time):
+        self.path = os.path.join(cache_dir, "retired.json")
+        self.tracks_dir = tracks_dir
+        self.clock = clock
+        try:
+            with open(self.path) as f:
+                self.items = json.load(f)
+        except (OSError, ValueError):
+            self.items = {}
+        self.dirty = False
+
+    def keep(self, name, entry):
+        if name not in self.items:
+            self.items[name] = {**(entry or {}), "since": self.clock()}
+            self.dirty = True
+            return True
+        return False
+
+    def reuse(self, name):
+        if self.items.pop(name, None) is not None:
+            self.dirty = True
+            return True
+        return False
+
+    def drop(self, name, why):
+        info = self.items.pop(name, {})
+        self.dirty = True
+        path = os.path.join(self.tracks_dir, name)
+        if os.path.exists(path):
+            os.remove(path)
+        log.info("Deleting kept track (%s): %s - %s", why, info.get("artist"),
+                 info.get("title") or name)
+
+    def oldest(self):
+        return min(self.items, key=lambda n: self.items[n]["since"]) if self.items else None
+
+    def expire(self, grace_days):
+        for name in sorted(self.items, key=lambda n: self.items[n]["since"]):
+            if self.clock() - self.items[name]["since"] >= grace_days * DAY:
+                self.drop(name, f"grace period of {grace_days} days over"
+                          if grace_days else "no grace period")
+
+    def save(self):
+        if self.dirty:
+            write_json_atomic(self.path, self.items)
+            self.dirty = False
+
+
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
-            dry_run=False, disk_usage=shutil.disk_usage):
+            dry_run=False, disk_usage=shutil.disk_usage, clock=time.time):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -506,11 +563,14 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         cfg["sync"].get("playlist_tag", ""), previously_tagged)
     wanted = {output_name(t, device, fmt): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
-    to_remove = sorted(existing - wanted.keys())
+    to_remove = sorted(existing - wanted.keys())     # includes tracks kept earlier
 
     # Cached conversions made with different settings get re-done. Entries
     # from before encodings were recorded are assumed current.
+    kept = KeptTracks(cache_dir, tracks_dir, clock)
+    newly_removed = [n for n in to_remove if n not in kept.items]
     made_with = {t["id"]: t.get("encoding") for t in previous.get("tracks", [])}
+    made_with.update({e["id"]: e.get("encoding") for e in kept.items.values() if "id" in e})
     stale = {name for name, t in wanted.items()
              if name in existing and needs_conversion(t.get("suffix"), device)
              and made_with.get(t["id"]) not in (None, current)}
@@ -519,12 +579,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
 
     log.info("Target: %d tracks; %d cached, %d to get (%d to re-convert as %s), "
              "%d to remove", len(wanted), len(wanted) - len(missing), len(missing),
-             len(stale), current, len(to_remove))
+             len(stale), current, len(newly_removed))
     if dry_run:
         for name, t in missing:
             how = "convert" if needs_conversion(t.get("suffix"), device) else "copy"
             log.info("  would get (%s, %s): %s", t.get("suffix"), how, label(t))
-        for name in to_remove:
+        for name in newly_removed:
             log.info("  would remove: %s", name)
         return {"total": len(wanted), "ready": len(wanted) - len(missing),
                 "added": 0, "removed": 0, "skipped": []}
@@ -533,20 +593,39 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     shutil.rmtree(tmp_dir, ignore_errors=True)    # leftovers from a cut-off run
     os.makedirs(tmp_dir)
 
-    # Name songs in the log, not just cache file names (the previous plan
-    # still has their artist/title).
-    known_names = {t["file"].split("/", 1)[-1]: f"{t.get('artist')} - {t.get('title')}"
-                   for t in previous.get("tracks", [])}
+    # Tracks that left every target: kept for the grace period (re-adding
+    # one reuses the file), then deleted; sooner if space is short.
+    grace = int(cfg["sync"].get("removal_grace_days", 7))
+    prev_entries = {t["file"].split("/", 1)[-1]: t for t in previous.get("tracks", [])}
+    wanted_stems = {os.path.splitext(n)[0] for n in wanted}
     for name in to_remove:
-        log.info("Removing from the cache (no longer targeted): %s",
-                 known_names.get(name, name))
-        os.remove(os.path.join(tracks_dir, name))
+        if os.path.splitext(name)[0] in wanted_stems and name not in kept.items:
+            # Same song, old format (e.g. .m4a after switching to MP3): it'll
+            # never be reused, so no grace period.
+            os.remove(os.path.join(tracks_dir, name))
+            log.info("Deleted old format of a still-wanted track: %s", name)
+            continue
+        entry = prev_entries.get(name)
+        if kept.keep(name, entry) and grace:
+            log.info("No longer targeted, kept %d days in case it's re-added: %s - %s",
+                     grace, (entry or {}).get("artist"), (entry or {}).get("title") or name)
+    for name in wanted:
+        if kept.reuse(name):
+            log.info("Re-added within the grace period, reusing: %s", label(wanted[name]))
+    kept.expire(grace)
+    while kept.items:
+        usage = disk_usage(cache_dir)
+        if usage.free / usage.total >= MIN_FREE_FOR_KEPT:
+            break
+        kept.drop(kept.oldest(), "SD card below 25% free")
+    kept.save()
 
     # Shrink covers on tracks cached before covers were checked (one-time pass;
     # each file is edited in tmp/ and swapped in whole).
     cover_cache, covers = {}, {}
-    checked = {t["id"]: t.get("cover") for t in previous.get("tracks", [])
-               if t.get("cover_max") == COVER_MAX}
+    checked = {t["id"]: t.get("cover")
+               for t in list(previous.get("tracks", [])) + list(kept.items.values())
+               if t.get("cover_max") == COVER_MAX and "id" in t}
     missing_names = {n for n, _ in missing}
     unchecked = [(n, t) for n, t in wanted.items()
                  if n in existing and n not in missing_names and t["id"] not in checked]
@@ -628,6 +707,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             need = int(t.get("size") or 0) * (2 if conv else 1)
             with lock:
                 reason = no_room(cache_dir, need + progress["reserved"], max_bytes, disk_usage)
+                while reason and kept.items:        # kept tracks never block new music
+                    kept.drop(kept.oldest(), "making room for new music")
+                    reason = no_room(cache_dir, need + progress["reserved"], max_bytes,
+                                     disk_usage)
                 if not reason:
                     progress["reserved"] += need
             if reason:
@@ -639,6 +722,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             futures.append(pool.submit(prepare_one, name, t, need))
         for f in futures:
             f.result()
+    kept.save()
     added = progress["added"]
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -665,6 +749,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         "targets": cfg["sync"]["targets"], "device": device,
         "playlist_tag": cfg["sync"].get("playlist_tag", ""),
         "tracks": ready, "playlists": playlists, "skipped": skipped,
+        "kept_after_removal": len(kept.items),
     }
     # Runs every 15 minutes: only write the plan when it changed (spares the
     # SD card; "generated" then says when the plan last changed).
@@ -672,7 +757,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         manifest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         write_json_atomic(os.path.join(cache_dir, "manifest.json"), manifest)
     return {"total": len(wanted), "ready": len(ready), "added": added,
-            "removed": len(to_remove), "skipped": skipped}
+            "removed": len(newly_removed), "skipped": skipped}
 
 
 def show_plan(manifest):
@@ -696,6 +781,9 @@ def show_plan(manifest):
         lines.append(f"    {n:4d} from {key}")
     if manifest.get("skipped"):
         lines.append(f"  {len(manifest['skipped'])} not ready (see manifest 'skipped')")
+    if manifest.get("kept_after_removal"):
+        lines.append(f"  {manifest['kept_after_removal']} removed track(s) still cached "
+                     f"for the grace period")
     for pl in manifest.get("playlists", []):
         ids = pl["song_ids"]
         albums = []

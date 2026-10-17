@@ -229,9 +229,13 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   e-ink wear (bistable; wear comes from refreshes, not colour). `dock_status`
   reads `[display]` straight from the config (`MUSICDOCK_CONFIG`, set in every
   unit), so screens work before server settings exist.
-- **Cache pruning is immediate:** a track that leaves every target is deleted
-  from the cache at the next prepare check; re-adding it means re-download and
-  re-convert. (Possible later: keep pruned files a few days as a grace period.)
+- **Removal grace period:** `[sync] removal_grace_days` (0-30, default 7). A
+  track that leaves every target leaves the plan at once (so the next sync
+  removes it from the player) but its cache file is kept that long
+  (`retired.json`, `KeptTracks`); re-adding it reuses the file. Kept files are
+  deleted oldest-first when the SD card is below 25% free or when they'd block
+  new music (cache limit). An old format of a still-wanted song (e.g. .m4a
+  after switching to MP3) is deleted at once.
 - **Back to DOCK READY after a sync:** `dock_status.py --rest` swaps SAFE (and
   FAILED, on unplug only) for `idle` with "Last synced 3:02 PM (+79 -0, 5
   plays)" / "Last sync failed ...". Triggered by the udev `remove` rule for the

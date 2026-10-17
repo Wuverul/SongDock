@@ -17,7 +17,7 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
-             "playlist_tag": "#ipod", "workers": "auto",
+             "playlist_tag": "#ipod", "workers": "auto", "removal_grace_days": 7,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False},
@@ -94,6 +94,9 @@ def load(path=None):
                         str(cfg["device"]["mp3_quality"]).lower()):
         raise ConfigError(f"{path}: mp3_quality must be v0-v9 (variable) or a "
                           "constant rate: 128k, 160k, 192k, 224k, 256k, 320k")
+    g = cfg["sync"]["removal_grace_days"]
+    if not (isinstance(g, int) and not isinstance(g, bool) and 0 <= g <= 30):
+        raise ConfigError(f"{path}: removal_grace_days must be a whole number from 0 to 30")
     w = cfg["sync"]["workers"]
     if not (w == "auto" or (isinstance(w, int) and not isinstance(w, bool) and w >= 1)):
         raise ConfigError(f'{path}: workers must be "auto" or a whole number >= 1')
