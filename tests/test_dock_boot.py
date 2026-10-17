@@ -13,7 +13,7 @@ def reading(ip=None, wifi="off", clock=False):
     return {"ip": ip, "wifi": wifi, "clock": clock}
 
 
-ONLINE = reading(ip="192.168.1.40", wifi=-58, clock=True)
+ONLINE = reading(ip="192.168.1.20", wifi=-58, clock=True)
 
 
 class FakeClock:
@@ -63,7 +63,7 @@ class StartingPhaseTests(unittest.TestCase):
         return result, shown
 
     def test_waits_for_clock_not_just_wifi(self):
-        steps = [reading(), reading(ip="192.168.1.40", wifi=-60), ONLINE]
+        steps = [reading(), reading(ip="192.168.1.20", wifi=-60), ONLINE]
         (result, gave_up), shown = self.run_phase(steps)
         self.assertEqual([r for _, r in shown], steps)
         self.assertFalse(gave_up)

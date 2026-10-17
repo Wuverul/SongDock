@@ -157,8 +157,8 @@ class WorkTests(unittest.TestCase):
     def test_sysinfo_guid_for_fake_devices(self):
         os.makedirs(os.path.join(self.tmp.name, "iPod_Control", "Device"))
         with open(os.path.join(self.tmp.name, "iPod_Control", "Device", "SysInfo"), "w") as f:
-            f.write("ModelNumStr: xB903\nFirewireGuid: 0x000a2700000000ab\n")
-        self.assertEqual(dock_sync.sysinfo_guid(self.tmp.name), "000A2700000000AB")
+            f.write("ModelNumStr: xB903\nFirewireGuid: 0x000a270000000002\n")
+        self.assertEqual(dock_sync.sysinfo_guid(self.tmp.name), "000A270000000002")
 
 
 class RestTimerTests(unittest.TestCase):

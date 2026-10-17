@@ -10,7 +10,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from dock_record import Record  # noqa: E402
 
-GUID = "000A2700000000AB"
+GUID = "000A270000000002"
 
 
 def play(dbid, seq=0, at=1792100000, nid="song1", **kw):

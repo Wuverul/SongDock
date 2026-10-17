@@ -1,11 +1,13 @@
-# Copy to ~/.config/musicdock/config.toml on the Pi and run:
-#   chmod 600 ~/.config/musicdock/config.toml
-# Never commit the real file.
+# Music Dock settings. The installer copies this to
+# ~/.config/musicdock/config.toml on the Pi (readable only by you); edit that
+# copy with:  nano ~/.config/musicdock/config.toml
+# Changes take effect at the next check (within 5 minutes) or dock.
 
 [server]
-url = "https://navidrome.example.com"   # internal hostname; resolves on the LAN only
+url = "http://192.168.1.50:4533"   # your Navidrome address, as reachable from the dock.
+                                   # https needs a properly signed certificate.
 username = "your-navidrome-username"
-password = "your-navidrome-password"  # used only to compute Subsonic auth tokens
+password = "your-navidrome-password"  # only used to sign requests; never sent as is
 
 [sync]
 targets = ["starred"]              # what to sync: "starred" and/or "playlist:<name>",
@@ -15,14 +17,15 @@ favorites_playlist = "Favorites"   # player playlist made from "starred" ("" = n
 playlist_tag = "#ipod"             # also sync any playlist whose Navidrome comment has
                                    # this tag (any case). "" = off. Remove the tag to unsync.
 cache_dir = "~/musicdock/cache"
-max_cache_gb = 20                  # the job also stops at 80% of the SD card
+max_cache_gb = 20                  # music cached on the dock (about 2 MB per minute);
+                                   # up to ~35 on a 64 GB card. Also stops at 80% full.
 workers = "auto"                   # parallel conversions: "auto" = CPU cores - 1 (min 1)
 removal_grace_days = 7             # 0-30: keep tracks that left every list cached this
                                    # long (re-adding is instant); deleted oldest-first
                                    # sooner if the SD card drops below 25% free
 
 [device]
-type = "stock_ipod"                # or "rockbox" once the modded iPod exists
+type = "stock_ipod"                # stock Apple firmware (the only kind supported)
 convert_to = "mp3"                 # stock iPod can't play FLAC. mp3 = LAME V0 (recommended);
                                    # alac = lossless, ~3x larger; aac = ffmpeg's encoder (artifacts)
 mp3_quality = "v0"                 # v0 = variable, best (~260k avg); or constant "320k", "256k".
