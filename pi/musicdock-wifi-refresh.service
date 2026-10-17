@@ -16,6 +16,8 @@ ExecStartPre=/bin/sleep 5
 ExecStart=/usr/bin/python3 @APP_DIR@/dock_status.py --refresh
 Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
 Environment=PYTHONUNBUFFERED=1
+# The login user's config ([display] invert, etc.).
+Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
 # Waits on the panel lock if another job is drawing (the boot burst can hold
 # it for up to 5 minutes).
 TimeoutStartSec=10min

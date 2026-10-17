@@ -14,4 +14,6 @@ WorkingDirectory=/var/lib/musicdock
 ExecStart=/usr/bin/python3 @APP_DIR@/dock_status.py --rest --mode %i
 Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
 Environment=PYTHONUNBUFFERED=1
+# The login user's config ([display] invert, etc.).
+Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
 TimeoutStartSec=10min

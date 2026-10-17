@@ -21,6 +21,8 @@ User=@USER@
 ExecStart=@HOME@/musicdock/venv/bin/python @APP_DIR@/dock_prepare.py
 Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
 Environment=PYTHONUNBUFFERED=1
+# The login user's config ([display] invert, etc.).
+Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
 # Lowest priority so a sync (or anything else) always wins the CPU and disk.
 Nice=19
 IOSchedulingClass=idle

@@ -44,6 +44,7 @@ import socket
 import sys
 import tempfile
 import time
+import tomllib
 from datetime import datetime
 
 from PIL import Image, ImageDraw, ImageFont
@@ -393,7 +394,30 @@ def render(screen, args):
             d.text((8, 106), f"IP {ip}", font=small_f, fill=0)
 
     wifi_indicator(args.wifi if args.wifi is not None else read_wifi())
+    if display_settings().get("invert"):
+        # Dark mode: white on black, to suit a dark enclosure. E-ink holds
+        # either colour without power, so this adds no wear.
+        img = Image.eval(img, lambda p: 255 - p)
     return img
+
+
+_display = None
+
+
+def display_settings():
+    """[display] from config.toml (e.g. invert = true). Read directly so the
+    screen works even before the server settings are filled in; root-run
+    services find the file via MUSICDOCK_CONFIG."""
+    global _display
+    if _display is None:
+        path = os.path.expanduser(
+            os.environ.get("MUSICDOCK_CONFIG", "~/.config/musicdock/config.toml"))
+        try:
+            with open(path, "rb") as f:
+                _display = tomllib.load(f).get("display", {})
+        except (OSError, tomllib.TOMLDecodeError):
+            _display = {}
+    return _display
 
 
 # --------------------------------------------------------------- display ----

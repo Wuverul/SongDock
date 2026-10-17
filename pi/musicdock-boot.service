@@ -15,6 +15,8 @@ WorkingDirectory=/var/lib/musicdock
 ExecStart=/usr/bin/python3 @APP_DIR@/dock_boot.py
 Environment=EPD_LIB=@HOME@/e-Paper/RaspberryPi_JetsonNano/python/lib
 Environment=PYTHONUNBUFFERED=1
+# The login user's config ([display] invert, etc.).
+Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
 # Without Wi-Fi this keeps waiting (OFFLINE screen) until the network works,
 # so no time limit. Syncs are ordered after it and wait too.
 TimeoutStartSec=infinity

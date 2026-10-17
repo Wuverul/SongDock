@@ -86,6 +86,22 @@ class WifiRefreshTests(unittest.TestCase):
 
 
 @unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+class DarkModeTests(unittest.TestCase):
+    def render(self, invert):
+        args = dock_status.build_parser().parse_args(
+            ["safe", "--added", "3", "--wifi", "-50", "--at", "1792195000"])
+        with mock.patch.object(dock_status, "display_settings",
+                               return_value={"invert": invert}):
+            return dock_status.render("safe", args)
+
+    def test_dark_mode_is_the_exact_inverse(self):
+        light, dark = self.render(False), self.render(True)
+        self.assertEqual(light.size, dark.size)
+        self.assertTrue(all(a != b for a, b in zip(light.getdata(), dark.getdata())))
+        self.assertEqual(dark.getpixel((125, 60)), 0)       # background now black
+
+
+@unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
 class SyncingBarTests(unittest.TestCase):
     def progress(self, *argv):
         return dock_status.syncing_progress(dock_status.build_parser().parse_args(

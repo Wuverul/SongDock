@@ -224,6 +224,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.
+- **Dark mode:** `[display] invert = true` (user's Pi: on, for a black PETG
+  case) inverts every rendered frame as the last step of `render()`. No extra
+  e-ink wear (bistable; wear comes from refreshes, not colour). `dock_status`
+  reads `[display]` straight from the config (`MUSICDOCK_CONFIG`, set in every
+  unit), so screens work before server settings exist.
+- **Cache pruning is immediate:** a track that leaves every target is deleted
+  from the cache at the next prepare check; re-adding it means re-download and
+  re-convert. (Possible later: keep pruned files a few days as a grace period.)
 - **Back to DOCK READY after a sync:** `dock_status.py --rest` swaps SAFE (and
   FAILED, on unplug only) for `idle` with "Last synced 3:02 PM (+79 -0, 5
   plays)" / "Last sync failed ...". Triggered by the udev `remove` rule for the

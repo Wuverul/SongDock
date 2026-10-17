@@ -21,6 +21,7 @@ DEFAULTS = {
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False},
+    "display": {"invert": False},
 }
 
 
@@ -83,6 +84,8 @@ def load(path=None):
                           f'["starred", "playlist:Road Trip"]')
     if cfg["device"]["type"] not in ("stock_ipod", "rockbox"):
         raise ConfigError(f"{path}: device type must be stock_ipod or rockbox")
+    if not isinstance(cfg["display"]["invert"], bool):
+        raise ConfigError(f"{path}: [display] invert must be true or false")
     if not isinstance(cfg["device"]["write"], bool):
         raise ConfigError(f"{path}: [device] write must be true or false")
     if cfg["device"]["convert_to"] not in ("mp3", "alac", "aac"):
