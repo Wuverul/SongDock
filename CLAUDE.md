@@ -430,9 +430,13 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   artwork now starts at 100; the first 3 covers keep low IDs, so the icons stay
   replaced. **User doesn't use the games and accepts this (2026-10-16): no
   re-numbering needed.** Purely cosmetic; nothing else looks art up by ID.
-- **Real-use checks still pending** (all tested on fake iPods / fake servers):
-  removals on the real Nano, plays queued while Navidrome is down, the unplug
-  -> DOCK READY path, docking during boot or during a prepare run.
+- **Confirmed in real use (2026-10-16):** prepare picked up 19 new tracks on
+  its own; the dock synced them + 12 plays and created MediaDock.txt on the
+  Nano; a prepare run that started mid-sync waited for it; unplug -> DOCK
+  READY with the summary; 5-min checks don't rewrite the manifest.
+- **Real-use checks still pending** (tested on fake iPods / fake servers):
+  removals on the real Nano, plays queued while Navidrome is down, docking
+  during boot, wifi.txt on a real network.
 - **Manual test with 3 tracks passed on the Nano (2026-10-16):** MP3s
   (2 converted V0, 1 original 320k with a 4000x4000 cover) played cleanly,
   showed art, and sorted correctly. Not yet tested on the Pi itself.
