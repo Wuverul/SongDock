@@ -21,7 +21,7 @@ cp README.md INSTALL.md config.example.toml status.sh "$OUT/"
 cp dock_*.py ipod_handler.py subsonic.py "$OUT/"
 mkdir -p "$OUT/pi"
 cp pi/install.sh pi/requirements.txt pi/99-musicdock.rules pi/90-musicdock-wifi \
-   pi/*.service pi/*.timer "$OUT/pi/"
+   pi/*.service pi/*.timer pi/*.path "$OUT/pi/"
 cp -R vendor "$OUT/vendor"
 find "$OUT" -name '__pycache__' -prune -exec rm -rf {} + -o -name '.DS_Store' -delete
 chmod +x "$OUT/pi/install.sh" "$OUT/pi/90-musicdock-wifi"

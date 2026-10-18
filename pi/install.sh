@@ -133,7 +133,8 @@ else
   rm -f /var/lib/musicdock/dock_status.frame.png       # older versions kept it here
   for unit in musicdock-sync@.service musicdock-boot.service \
               musicdock-prepare.service musicdock-prepare.timer \
-              musicdock-wifi-refresh.service musicdock-rest@.service; do
+              musicdock-wifi-refresh.service musicdock-rest@.service \
+              musicdock-resync.service musicdock-resync.path; do
     sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@HOME@|$USER_HOME|g" \
         -e "s|@USER@|$LOGIN_USER|g" \
       "$APP_DIR/pi/$unit" > "/etc/systemd/system/$unit"
@@ -153,6 +154,7 @@ EOF
   systemctl daemon-reload
   systemctl enable musicdock-boot.service
   systemctl enable --now musicdock-prepare.timer
+  systemctl enable --now musicdock-resync.path
   udevadm control --reload
 fi
 

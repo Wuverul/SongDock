@@ -1,0 +1,12 @@
+# Re-plug a docked iPod when the prepare job has new music for it.
+# The prepare job (login user) can't touch USB, so it leaves a request file;
+# this starts musicdock-resync.service (root) when one appears.
+
+[Unit]
+Description=Music Dock: sync a docked iPod when new music is ready
+
+[Path]
+PathExists=/var/lib/musicdock/resync.request
+
+[Install]
+WantedBy=multi-user.target

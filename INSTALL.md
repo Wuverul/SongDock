@@ -169,6 +169,9 @@ and album art.
 - **DOCK READY** shows what the next sync will do. For more detail, run
   `musicdock-status` on the Pi (see Troubleshooting).
 - If Navidrome is offline, music still syncs and plays are sent later.
+- An iPod left on the dock syncs again by itself when new music has been
+  prepared (it briefly reconnects; playback stops until the sync is done).
+  To turn that off: `auto_resync = false` in the `[device]` settings.
 - Songs removed from your lists stay cached on the dock for 7 days, so
   re-adding one is instant (`removal_grace_days` in the settings).
 
@@ -237,7 +240,8 @@ cd ~/musicdock/music-dock && sudo ./pi/install.sh
 ## Uninstalling
 
 ```sh
-sudo systemctl disable --now musicdock-prepare.timer musicdock-boot.service
+sudo systemctl disable --now musicdock-prepare.timer musicdock-boot.service \
+        musicdock-resync.path
 sudo rm /etc/systemd/system/musicdock-* /etc/udev/rules.d/99-musicdock.rules \
         /etc/systemd/journald.conf.d/50-musicdock-persistent.conf \
         /etc/tmpfiles.d/musicdock.conf \

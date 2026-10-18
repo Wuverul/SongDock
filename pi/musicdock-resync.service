@@ -1,0 +1,13 @@
+# Re-plug a docked (ejected) iPod so the normal sync runs. Started by
+# musicdock-resync.path. install.sh fills in @APP_DIR@.
+
+[Unit]
+Description=Music Dock: re-plug a docked iPod for a sync
+After=musicdock-boot.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/lib/musicdock
+ExecStart=/usr/bin/python3 @APP_DIR@/dock_resync.py
+Environment=PYTHONUNBUFFERED=1
+TimeoutStartSec=1min

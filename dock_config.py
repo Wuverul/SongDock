@@ -20,7 +20,7 @@ DEFAULTS = {
              "playlist_tag": "#ipod", "workers": "auto", "removal_grace_days": 7,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
-               "aac_bitrate": "256k", "write": False},
+               "aac_bitrate": "256k", "write": False, "auto_resync": True},
     "display": {"invert": False},
 }
 
@@ -88,6 +88,8 @@ def load(path=None):
         raise ConfigError(f"{path}: [display] invert must be true or false")
     if not isinstance(cfg["device"]["write"], bool):
         raise ConfigError(f"{path}: [device] write must be true or false")
+    if not isinstance(cfg["device"]["auto_resync"], bool):
+        raise ConfigError(f"{path}: [device] auto_resync must be true or false")
     if cfg["device"]["convert_to"] not in ("mp3", "alac", "aac"):
         raise ConfigError(f"{path}: convert_to must be mp3, alac, or aac")
     if not re.fullmatch(r"v[0-9]|(128|160|192|224|256|320)k",

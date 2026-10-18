@@ -263,6 +263,16 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (from starred-album reads, else one `getAlbum` per disagreeing album).
   `fill_missing_names` also moves tracks already on the player to the
   plan's album name (iTunesDB only, no re-copy).
+- **Auto re-sync of a docked iPod (2026-10-18, user: "right away"):** after
+  eject the Nano stays on USB (charging; block device size 0). When a
+  prepare run changes the plan and the last-synced player has pending
+  changes, it writes `/var/lib/musicdock/resync.request`;
+  `musicdock-resync.path` runs `dock_resync.py` as root, which deletes the
+  request, skips if a sync runs, and for Apple USB devices whose serial is a
+  synced player's GUID and whose disk is ejected writes `authorized` 0 then
+  1 (2 s apart). udev then starts the normal sync. `[device] auto_resync`
+  (default true) turns it off. Interrupts playback while docked. Detection
+  verified on the real docked Nano; the re-plug itself not yet.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

@@ -33,6 +33,8 @@ mp3_quality = "v0"                 # v0 = variable, best (~260k avg); or constan
 aac_bitrate = "256k"               # only used by convert_to = "aac"
 write = false                      # false: read-only check (plays still logged);
                                    # true: full sync - copy tracks, playlists, removals
+auto_resync = true                 # an iPod left docked syncs again by itself when new
+                                   # music is ready (interrupts playback while docked)
 
 [display]
 invert = false                     # true: dark mode (white on black) for a dark case;

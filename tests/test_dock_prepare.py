@@ -665,6 +665,12 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(dock_config.ConfigError, "write"):
             dock_config.load(path)
 
+    def test_auto_resync_defaults_on_and_must_be_boolean(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n'
+        self.assertIs(dock_config.load(self.write(base))["device"]["auto_resync"], True)
+        with self.assertRaisesRegex(dock_config.ConfigError, "auto_resync"):
+            dock_config.load(self.write(base + '[device]\nauto_resync="no"\n'))
+
     def test_mp3_quality_validated(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[device]\n'
         self.assertEqual(dock_config.load(self.write(base + 'mp3_quality="320K"\n'))

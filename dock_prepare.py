@@ -962,6 +962,12 @@ def pending_args(manifest):
         return []
 
 
+def has_pending(idle_args):
+    """True if DOCK READY's arguments say the next sync changes something."""
+    a = dict(zip(idle_args[1::2], idle_args[2::2]))
+    return int(a.get("--pending-add", 0)) + int(a.get("--pending-remove", 0)) > 0
+
+
 def sync_running():
     """True while a sync (musicdock-sync@*) is running: the iPod comes first."""
     r = subprocess.run(["systemctl", "list-units", "--type=service", "--no-legend",
@@ -1088,6 +1094,16 @@ def main(argv=None):
     log.info("Done: %d/%d ready (%d added, %d removed, %d skipped)",
              summary["ready"], summary["total"], summary["added"],
              summary["removed"], len(summary["skipped"]))
+    if changed and not args.dry_run and not args.preview_dir and \
+            cfg["device"].get("auto_resync", True) and has_pending(idle):
+        # A docked (ejected) iPod gets the new music without being re-plugged
+        # by hand: musicdock-resync (root) re-plugs it if one is there.
+        try:
+            import dock_resync
+            dock_resync.request()
+            log.info("New changes for the iPod: a docked iPod will sync now")
+        except OSError as e:
+            log.warning("Couldn't ask for a sync of a docked iPod: %s", e)
     # Exit non-zero on real errors so `systemctl --failed` shows them; running
     # out of room is a limit, not an error.
     return 1 if any(s["error"] for s in summary["skipped"]) else 0
