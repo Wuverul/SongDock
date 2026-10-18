@@ -181,5 +181,103 @@ class RestScreenTests(WifiRefreshTests):
         self.assertEqual(self.draws, [])
 
 
+class FakeEPD:
+    """Records what draw_on_panel asks of the Waveshare driver."""
+
+    def __init__(self, log, fail=False):
+        self.log, self.fail = log, fail
+
+    def getbuffer(self, img):
+        return img.tobytes()
+
+    def init(self):
+        self.log.append("init")
+
+    def send_command(self, c):
+        self.log.append(f"cmd {c:#x}")
+
+    def send_data2(self, data):
+        self.log.append(("data", bytes(data)))
+
+    def display(self, buf):
+        if self.fail:
+            raise OSError("SPI error")
+        self.log.append("full")
+
+    def displayPartial(self, buf):
+        self.log.append("partial")
+
+    def sleep(self):
+        self.log.append("sleep")
+
+
+@unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+class PartialRefreshTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.log = []
+        self.fail = False
+        for p in (
+            mock.patch.object(dock_status, "STATE_FILE", os.path.join(tmp.name, "state.json")),
+            mock.patch.object(dock_status, "open_panel",
+                              lambda: FakeEPD(self.log, self.fail)),
+            mock.patch.object(dock_status, "read_wifi", lambda: -50),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def frame(self, n):
+        from PIL import Image, ImageDraw
+        img = Image.new("1", (250, 122), 1)
+        ImageDraw.Draw(img).rectangle((0, 0, n, 10), fill=0)
+        return img
+
+    def steps(self):
+        return [e for e in self.log if isinstance(e, str) and e != "init"]
+
+    def test_first_draw_is_full_then_partial_from_saved_frame(self):
+        dock_status.draw_on_panel(self.frame(5), full_refresh=False)
+        self.assertEqual(self.steps(), ["full", "sleep"])      # nothing saved yet
+        self.log.clear()
+        dock_status.draw_on_panel(self.frame(50), full_refresh=False)
+        self.assertEqual(self.steps(), ["cmd 0x26", "partial", "sleep"])
+        old = dock_status.panel_buffer(FakeEPD([]), self.frame(5))
+        self.assertIn(("data", bytes(old)), self.log)          # 0x26 = what's shown
+
+    def test_full_refresh_when_asked(self):
+        dock_status.draw_on_panel(self.frame(5), full_refresh=False)
+        self.log.clear()
+        dock_status.draw_on_panel(self.frame(50), full_refresh=True)
+        self.assertEqual(self.steps(), ["full", "sleep"])
+
+    def test_failed_draw_forgets_the_frame(self):
+        dock_status.draw_on_panel(self.frame(5), full_refresh=False)
+        self.fail = True
+        with self.assertRaises(OSError):
+            dock_status.draw_on_panel(self.frame(50), full_refresh=True)
+        self.assertIn("sleep", self.log)                       # still put to sleep
+        self.assertIsNone(dock_status.load_frame((250, 122)))  # panel state unknown
+        self.fail = False
+        self.log.clear()
+        dock_status.draw_on_panel(self.frame(60), full_refresh=False)
+        self.assertEqual(self.steps(), ["full", "sleep"])
+
+    def test_sync_progress_flashes_only_on_screen_change_and_every_n(self):
+        draws = []
+        real = dock_status.draw_on_panel
+        with mock.patch.object(dock_status, "draw_on_panel",
+                               lambda img, full_refresh: (draws.append(full_refresh),
+                                                          real(img, full_refresh))):
+            with mock.patch.object(dock_status, "MIN_PROGRESS_INTERVAL", 0):
+                for n in range(dock_status.FULL_REFRESH_EVERY + 2):
+                    dock_status.main(["syncing", "--step", "5", "--total", "6",
+                                      "--detail", f"Copying {n}/40"])
+        self.assertTrue(draws[0])                              # new screen: full
+        self.assertEqual(draws[1:dock_status.FULL_REFRESH_EVERY], [False] *
+                         (dock_status.FULL_REFRESH_EVERY - 1))
+        self.assertTrue(draws[dock_status.FULL_REFRESH_EVERY])  # anti-ghost
+
+
 if __name__ == "__main__":
     unittest.main()

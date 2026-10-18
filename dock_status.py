@@ -65,7 +65,7 @@ STATE_FILE = os.environ.get("DOCK_STATE_FILE") or (
     if os.path.isdir(SHARED_STATE_DIR)
     else os.path.expanduser("~/.cache/dock_status.json"))
 MIN_PROGRESS_INTERVAL = 30          # seconds between progress-only redraws
-FULL_REFRESH_EVERY = 10             # fast refreshes before a full anti-ghost refresh
+FULL_REFRESH_EVERY = 20             # partial (flash-free) updates before a full anti-ghost refresh
 
 PROGRESS_SCREENS = {"syncing", "preparing"}   # rate-limited when repeated
 PREPARE_SCREENS = {"idle", "preparing"}       # drawn by the prepare job
@@ -464,10 +464,12 @@ class PartialUpdates:
             img.save(os.path.join(self.preview_dir, f"{self.frames:02d}-{name}.png"))
             return
         buf = panel_buffer(self.epd, img)
+        forget_frame()
         if self.frames == 1:
             self.epd.displayPartBaseImage(buf)
         else:
             self.epd.displayPartial(buf)
+        save_frame(img)
 
     def __exit__(self, *exc):
         try:
@@ -478,20 +480,63 @@ class PartialUpdates:
                 self._lock.__exit__(None, None, None)
 
 
+def frame_path():
+    """The last image sent to the panel, kept next to the state file so the
+    next short-lived process can do a partial (flash-free) update from it."""
+    return os.path.splitext(STATE_FILE)[0] + ".frame.png"
+
+
+def save_frame(img):
+    folder = os.path.dirname(frame_path())
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".frame.", suffix=".png")
+    os.close(fd)
+    img.convert("1").save(tmp)
+    os.chmod(tmp, 0o644)               # root's sync and the login user share it
+    os.replace(tmp, frame_path())
+
+
+def load_frame(size):
+    """The image on the panel now, or None if unknown (then: full refresh)."""
+    try:
+        with Image.open(frame_path()) as f:
+            img = f.convert("1")
+        return img if img.size == size else None
+    except (OSError, ValueError):
+        return None
+
+
+def forget_frame():
+    try:
+        os.remove(frame_path())
+    except OSError:
+        pass
+
+
 def draw_on_panel(img, full_refresh):
+    """Draw `img`. A full refresh flashes the panel and clears ghosting;
+    otherwise only the changed pixels update (no flash), starting from the
+    saved last frame. Without a saved frame it falls back to a full refresh.
+
+    A partial update compares the panel's "old" RAM (0x26) with the new
+    image (0x24); deep sleep doesn't keep a trustworthy copy across
+    processes, so the saved frame is written into 0x26 first.
+    """
+    previous = None if full_refresh else load_frame(img.size)
     epd = open_panel()
     buf = panel_buffer(epd, img)
-
-    fast = not full_refresh and hasattr(epd, "init_fast") and hasattr(epd, "display_fast")
+    forget_frame()                     # unknown if the draw fails midway
     try:
-        if fast:
-            epd.init_fast()
-            epd.display_fast(buf)
+        epd.init()
+        if previous is not None:
+            epd.send_command(0x26)
+            epd.send_data2(panel_buffer(epd, previous))
+            epd.displayPartial(buf)
         else:
-            epd.init()
             epd.display(buf)
     finally:
         epd.sleep()  # never leave the panel powered; it can be damaged
+    save_frame(img)
 
 
 # ------------------------------------------------------------------ main ----

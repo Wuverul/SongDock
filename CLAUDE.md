@@ -284,6 +284,15 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   prepare job (60 of 82 shrunk; cache 773 -> 624 MB). Re-run with shrunk
   covers: 82 tracks in 7.8 min (5.7 s/track, slowest 6.5 s), peak memory
   28 MB. USB write speed to the real iPod not yet measured.
+- **Flash-free progress updates:** repeated draws of the same screen are
+  partial refreshes (only changed pixels, no flash), even from a fresh
+  process: `draw_on_panel` writes the saved last frame
+  (`dock_status.frame.png` next to the state file) into the panel's old-image
+  RAM (0x26), then `displayPartial`. Full refresh on a screen change, every
+  `FULL_REFRESH_EVERY` (20) draws against ghosting, or when the frame is
+  unknown (deleted before each draw, saved after, so a failed draw forces a
+  full one). Progress redraws stay rate-limited to one per 30 s. Not yet
+  verified on hardware (2026-10-18).
 - Panel access is serialized by `dock_status.panel_lock()` (flock next to the
   state file); the screen-state check and draw happen under it.
 - `tests/`: `python3 -m unittest discover -s tests -v`.
