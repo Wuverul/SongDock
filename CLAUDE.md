@@ -1,5 +1,8 @@
 # Music Dock
 
+> The developer's own hosts, addresses and device IDs are in
+> `CLAUDE.local.md` (git-ignored, never published).
+
 A Raspberry Pi dock that keeps an iPod's music in sync with a Navidrome server:
 it uploads what was played, pulls the current weekly playlists, and charges the
 player overnight. An e-ink screen shows whether it's safe to unplug.
@@ -232,7 +235,8 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   the record is saved on the player at `iPod_Control/musicdock/dock.db`.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
-- **`wifi.txt` verified on a real network change (2026-10-18:** HomeWiFi -> NewNetwork). WI-FI CHANGED now shows the new IP at the bottom (no
+- **`wifi.txt` verified on a real network change (2026-10-18,** between two
+  of the user's SSIDs). WI-FI CHANGED now shows the new IP at the bottom (no
   "Safe to remove" line), so the dock can be found again.
 - **`wifi.txt` on an opted-in iPod** (`dock_wifi.py`; write mode only, after
   the music): `SSID=` / `Password=` / optional `Hidden=yes`. The password goes
@@ -472,16 +476,16 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   know the Nano's thumbnail sizes (unverified on the Nano 4G).
 - The user's Nano (inspected on the Mac 2026-10-15, after a factory restore on
   Windows): USB product ID 0x1263 (Nano 4G), **FAT32** on an MBR partition
-  (`disk6s1`, label `MY IPOD`, 16.2 GB), so Linux can write it. `iTunesDB`
+  (16.2 GB), so Linux can write it. `iTunesDB`
   is version 0x75 and **signed (hash58)** - any DB writer must re-sign it, or
   the iPod shows no music. hash58 needs the FireWire GUID, which is the USB
-  serial number (`000A2700000000AB`; read it at dock time from udev
+  serial number (the user's is in CLAUDE.local.md; read it at dock time from udev
   `ID_SERIAL_SHORT` rather than hard-coding). `iPod_Control/Device/SysInfo` is
   empty and there's no `SysInfoExtended` or `Artwork/` yet; libgpod
   conventionally expects `FirewireGuid` in SysInfo.
 - **pygpod manual test (2026-10-16, on the Mac): passed.** pygpod 0.0.6
   (PyPI, pure Python) identified the Nano as Nano 4G / hash58 once `SysInfo`
-  had `ModelNumStr: xB903` and `FirewireGuid: 0x000A2700000000AB`, reproduced
+  had `ModelNumStr: xB903` and `FirewireGuid: 0x<the GUID>`, reproduced
   iTunes' own signature exactly, added a track with artwork (6 thumbnail
   sizes), and the iPod played it and recorded 1 play in `Play Counts`. Without
   a model in SysInfo, pygpod assumes no signature and writes an unsigned

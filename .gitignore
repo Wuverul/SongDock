@@ -1,5 +1,8 @@
 # Credentials and local config - never commit
 config.toml
+# The developer's own hosts and device IDs (see CLAUDE.md)
+CLAUDE.local.md
+.personal-patterns
 *.local.toml
 .env
 

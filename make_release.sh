@@ -29,11 +29,15 @@ printf 'Music Dock %s (%s)\n' "$STAMP" "$(git rev-parse --short HEAD 2>/dev/null
   > "$OUT/VERSION"
 
 echo "== Checking for personal data"
-# Anything specific to the developer's own setup. Extend as needed.
-PERSONAL='example|pi|192\.168\.1\.|000A2700000000AB|HomeWiFi|user|user|mac|example|user'
-if grep -rnIiE "$PERSONAL" "$OUT"; then
-  echo "Refusing to build: personal data found above." >&2
-  exit 1
+# The developer's own hosts, IDs and names live in .personal-patterns (one
+# extended regex per line; git-ignored, so the list itself stays private).
+if [ -f .personal-patterns ]; then
+  if grep -rnIiE -f <(grep -vE '^\s*(#|$)' .personal-patterns) "$OUT"; then
+    echo "Refusing to build: personal data found above." >&2
+    exit 1
+  fi
+else
+  echo "   note: no .personal-patterns file; skipping the personal-data check"
 fi
 if grep -rlI -e "-----BEGIN [A-Z ]*PRIVATE KEY-----" "$OUT"; then
   echo "Refusing to build: private key found." >&2

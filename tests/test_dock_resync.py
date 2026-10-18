@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import dock_prepare  # noqa: E402
 import dock_resync  # noqa: E402
 
-GUID = "000A2700000000AB"
+GUID = "000A2700000000AB"            # not a real device
 
 
 class FakeSys:
