@@ -206,7 +206,10 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   out each run (1 on the Zero W, 3 on a Zero 2 W - no reinstall after a board
   swap). A thread pool of workers+1 overlaps the next download with current
   conversions; `ConversionSlots` caps concurrent ffmpeg runs and drops to one
-  at a time above 75 C. Space is reserved per track before it starts. No CPU
+  at a time above 75 C. Space is reserved per track when it starts, and
+  only workers+1 tracks are handed to the pool at a time (queueing the whole
+  batch reserved space for all of it: 432 queued FLACs tripped the cache
+  limit at 4.7 GB on 2026-10-17). No CPU
   pinning or systemd CPUQuota: the worker count leaves a core's worth free,
   and nice 19 lets a sync preempt.
 - `dock_record.py`: the SQLite record (`/var/lib/musicdock/dock.db`; players,

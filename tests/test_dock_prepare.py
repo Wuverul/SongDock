@@ -401,6 +401,17 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(summary["ready"], 0)
         self.assertIn("max_cache_gb", summary["skipped"][0]["reason"])
 
+    def test_queued_tracks_dont_count_against_the_cache_limit(self):
+        # Each FLAC reserves 2x 300 KB while it's being prepared. Ten of them
+        # reserved at once (6 MB) would pass the 2 MB limit, but only the
+        # ones in progress hold space, and the finished files are tiny.
+        server = FakeServer(songs=[song(f"t{i}", size=300_000) for i in range(10)])
+        cfg = config(max_gb=0.002)
+        cfg["sync"]["workers"] = 1
+        summary = self.run_prepare(server, cfg)
+        self.assertEqual(summary["skipped"], [])
+        self.assertEqual(summary["added"], 10)
+
     def test_dry_run_touches_nothing(self):
         server = FakeServer(songs=[song("a")])
         self.run_prepare(server, dry_run=True)

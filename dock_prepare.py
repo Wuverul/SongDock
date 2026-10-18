@@ -719,11 +719,31 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             with lock:
                 progress["reserved"] -= need
 
+    # Only tracks actually in progress hold reserved space: hand the pool a new
+    # track when a thread frees up, rather than queueing (and reserving for)
+    # the whole batch at once - 432 queued FLACs reserved ~47 GB and tripped
+    # the cache limit with the cache at 4.7 GB (2026-10-17).
+    in_flight = threading.BoundedSemaphore(workers + 1)
+
+    def run_one(name, t, need):
+        try:
+            prepare_one(name, t, need)
+        finally:
+            in_flight.release()
+
     with ThreadPoolExecutor(max_workers=workers + 1) as pool:
         futures = []
         for i, (name, t) in enumerate(missing):
             conv = needs_conversion(t.get("suffix"), device)
             need = int(t.get("size") or 0) * (2 if conv else 1)
+            in_flight.acquire()
+            if progress["offline"]:
+                in_flight.release()
+                with lock:
+                    skipped += [{"id": t2["id"], "title": label(t2),
+                                 "reason": "server unreachable", "error": False}
+                                for _, t2 in missing[i:]]
+                break
             with lock:
                 reason = no_room(cache_dir, need + progress["reserved"], max_bytes, disk_usage)
                 while reason and kept.items:        # kept tracks never block new music
@@ -733,12 +753,13 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 if not reason:
                     progress["reserved"] += need
             if reason:
+                in_flight.release()
                 log.warning("Stopping early: %s", reason)
                 with lock:
                     skipped += [{"id": t2["id"], "title": label(t2), "reason": reason,
                                  "error": False} for _, t2 in missing[i:]]
                 break
-            futures.append(pool.submit(prepare_one, name, t, need))
+            futures.append(pool.submit(run_one, name, t, need))
         for f in futures:
             f.result()
     kept.save()
