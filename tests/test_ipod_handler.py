@@ -202,6 +202,28 @@ class HandlerTests(unittest.TestCase):
         self.apply(self.manifest([a]))
         self.assertEqual(self.db().tracks[0].album, "Inertia (deluxe digital)")
 
+    def untagged(self, nid, title):
+        path = os.path.join(self.cache, "tracks", f"{nid}.mp3")
+        with open(path, "wb") as f:
+            f.write(fx.FRAME * int(2 * fx.FRAMES_PER_SECOND))
+        return dict(self.song(nid, title), artist="LEASHES")
+
+    def test_untagged_file_named_from_navidrome(self):
+        self.apply(self.manifest([self.untagged("sFqzz", "FERAL")]))
+        t = self.db().tracks[0]
+        self.assertEqual((t.title, t.artist), ("FERAL", "LEASHES"))   # not "sFqzz"
+
+    def test_untagged_track_already_on_player_is_renamed(self):
+        a = self.untagged("sFqzz", "FERAL")
+        with mock.patch.object(h, "fill_missing_names", lambda track, t: False):
+            self.apply(self.manifest([a]))                 # added the old way
+        self.assertEqual(self.db().tracks[0].title, "sFqzz")
+        summary = self.apply(self.manifest([a]))
+        self.assertEqual((summary["renamed"], summary["added"]), (1, 0))  # no re-copy
+        t = self.db().tracks[0]
+        self.assertEqual((t.title, t.artist), ("FERAL", "LEASHES"))
+        self.assertEqual(self.apply(self.manifest([a]))["renamed"], 0)
+
     def test_orphan_files_removed(self):
         stray = os.path.join(self.mount, "iPod_Control", "Music", "F01", "old.m4a")
         with open(stray, "wb") as f:

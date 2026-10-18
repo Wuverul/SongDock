@@ -92,6 +92,14 @@ def audio_options(device_cfg):
     if target == "alac":
         return ["-c:a", "alac"]
     return ["-c:a", "aac", "-b:a", device_cfg["aac_bitrate"]]
+# Ogg/Opus keep their tags on the audio stream, not in the file's global
+# metadata, so ffmpeg's -map_metadata 0 drops them (2026-10-18: Leashes
+# tracks reached the iPod titled by their Navidrome ID, artist unknown).
+OGG_SUFFIXES = {"ogg", "oga", "opus"}
+# Tags filled in from Navidrome when a prepared file has none:
+# (mutagen "easy" key, Navidrome song field).
+TAG_FIELDS = (("title", "title"), ("artist", "artist"), ("album", "album"),
+              ("tracknumber", "track"), ("discnumber", "discNumber"), ("date", "year"))
 MAX_DISK_FRACTION = 0.80     # keep the SD card under 80% full (CLAUDE.md)
 MIN_FREE_FOR_KEPT = 0.25     # below 25% free, kept (removed) tracks go first
 DAY = 86400
@@ -428,8 +436,9 @@ def convert(src, dst, options, duration=None):
     If the cover art can't be carried over, retries without it rather than
     failing the track.
     """
+    from_stream = os.path.splitext(src)[1].lstrip(".").lower() in OGG_SUFFIXES
     base = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", src, *options, "-map_metadata", "0"]
+            "-i", src, *options, "-map_metadata", "0:s:a:0" if from_stream else "0"]
     attempts = [(["-c:v", "copy", "-disposition:v", "attached_pic"], "with cover art"),
                 (["-vn"], "without cover art")]
     timeout = max(600, int(duration or 0) * 10)    # the Pi Zero is slow
@@ -443,6 +452,35 @@ def convert(src, dst, options, duration=None):
             return
         log.warning("ffmpeg failed %s: %s", how, r.stderr.strip()[-400:])
     raise PrepareError("conversion failed")
+
+
+def fill_missing_tags(path, t):
+    """Give a prepared file Navidrome's title/artist/album/track/disc/year
+    where it has none, so the player never falls back to the file name (the
+    Navidrome ID). Tags the file already has are left alone. Returns True if
+    the file was changed. Needs mutagen (the venv); without it, does nothing."""
+    try:
+        import mutagen
+        from mutagen.easyid3 import EasyID3
+    except ImportError:
+        return False
+    audio = mutagen.File(path, easy=True)
+    if audio is None:
+        return False
+    if audio.tags is None:
+        audio.add_tags()
+    changed = False
+    for key, field in TAG_FIELDS:
+        value = t.get(field)
+        if value and not audio.tags.get(key):
+            audio.tags[key] = str(value)
+            changed = True
+    if changed:
+        if isinstance(audio.tags, EasyID3):
+            audio.save(v2_version=3)       # ID3v2.3: what old iPods read
+        else:
+            audio.save()
+    return changed
 
 
 def dir_bytes(path):
@@ -650,6 +688,25 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 os.remove(tmp)
     covers.update(checked)
 
+    # Ogg/Opus-sourced tracks converted before tags were read from the audio
+    # stream have no title/artist: fill them in from Navidrome (cheap; only
+    # these few files are checked, and each is written only if incomplete).
+    for name, t in wanted.items():
+        if (name in existing and name not in missing_names
+                and (t.get("suffix") or "").lower() in OGG_SUFFIXES):
+            tmp = os.path.join(tmp_dir, f"tags-{name}")
+            try:
+                shutil.copy2(os.path.join(tracks_dir, name), tmp)
+                if fill_missing_tags(tmp, t):
+                    fsync_file(tmp)
+                    os.replace(tmp, os.path.join(tracks_dir, name))
+                    log.info("Filled in missing tags from Navidrome: %s", label(t))
+            except Exception:
+                log.exception("Couldn't check the tags of %s (left as is)", label(t))
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+
     # Download/convert in parallel: `workers` conversions at once, plus one
     # more thread so the next download overlaps the current conversion (helps
     # even on a single core). Space is reserved per track before it starts.
@@ -695,6 +752,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 covers[t["id"]] = shrink_cover(out, cover_cache)
             except Exception:
                 log.exception("Couldn't shrink the cover of %s (kept as is)", label(t))
+            try:
+                if fill_missing_tags(out, t):
+                    log.info("Filled in missing tags from Navidrome: %s", label(t))
+            except Exception:
+                log.exception("Couldn't check the tags of %s (kept as is)", label(t))
             fsync_file(out)
             os.replace(out, os.path.join(tracks_dir, name))
             with lock:

@@ -362,6 +362,20 @@ def pending_changes(manifest, present_ids):
     return len(ready - set(present_ids)), len(set(present_ids) - targeted_ids(manifest))
 
 
+def fill_missing_names(track, t):
+    """Use Navidrome's title/artist where the file had none: pygpod then
+    titles the track with the file name (the Navidrome ID) and no artist.
+    Returns True if the track changed."""
+    changed = False
+    if t.get("title") and (not track.title or track.title == t["id"]):
+        track.title = t["title"]
+        changed = True
+    if t.get("artist") and not track.artist:
+        track.artist = t["artist"]
+        changed = True
+    return changed
+
+
 def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
                progress=None, save=checked_save, dirty=False):
     """Make the player match the staged plan (prepare job's manifest).
@@ -388,6 +402,17 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
                and wanted[nid].get("encoding") and r["encoding"] != wanted[nid]["encoding"]}
     keep = targeted_ids(manifest)        # a song not cached right now stays put
     removals = [r for nid, r in present.items() if nid not in keep or nid in changed]
+
+    # Tracks already on the player that were added without tags (fixed in
+    # the iTunesDB; no copy needed).
+    renamed = 0
+    for nid, r in present.items():
+        if nid in wanted and nid not in changed and \
+                fill_missing_names(on_player[int(r["dbid"])], wanted[nid]):
+            log_info(f"Named from Navidrome: {wanted[nid].get('artist')} - "
+                     f"{wanted[nid].get('title')}")
+            renamed += 1
+    dirty = dirty or bool(renamed)
     additions = [t for nid, t in wanted.items() if nid not in present or nid in changed]
 
     # Remove from the DB, save, and only then delete the files: if the save
@@ -432,6 +457,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
             # should match what the user sees in Navidrome.
             overrides = {"album": t["album"]} if t.get("album") else {}
             track = db.add_track(path, **overrides)
+            fill_missing_names(track, t)
             track.comment = NAVIDROME_TAG + t["id"]
             batch.append((track, t))
         if batch:
@@ -452,7 +478,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
     playlists_changed = sync_playlists(db, record, guid, manifest)
     if playlists_changed or (dirty and not saved):
         save(db, guid)
-    return {"added": added, "removed": removed, "replaced": len(changed),
+    return {"added": added, "removed": removed, "replaced": len(changed), "renamed": renamed,
             "not_added_full": skipped_full, "playlists_changed": playlists_changed}
 
 

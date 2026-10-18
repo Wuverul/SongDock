@@ -245,6 +245,16 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (record vs manifest via `ipod_handler.pending_changes`), plus "12/19 tracks
   prepared" while converting and "Last sync ... · updated ...". Redrawn only
   when those arguments differ from what's on screen.
+- **Ogg/Opus tags (2026-10-18):** Vorbis comments live on the audio stream,
+  so `-map_metadata 0` dropped them; Leashes' 3 Ogg/Opus tracks reached the
+  Nano titled by their Navidrome ID (pygpod falls back to the file name) with
+  no artist. Now: `-map_metadata 0:s:a:0` for ogg/oga/opus sources;
+  `fill_missing_tags` fills title/artist/album/track/disc/year from Navidrome
+  after every conversion (only empty fields, ID3v2.3); cached Ogg-sourced
+  files are checked each run and repaired in place; `ipod_handler.
+  fill_missing_names` fixes such tracks already on the player in the
+  iTunesDB (no re-copy) and on add. Opus covers carried over already; ffmpeg
+  7.1 doesn't carry Vorbis covers.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

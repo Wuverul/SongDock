@@ -671,5 +671,83 @@ class ClientSecrecyTests(unittest.TestCase):
         self.assertNotIn("hunter2", repr(Client("https://x", "u", "hunter2")))
 
 
+
+class ConvertCommandTests(unittest.TestCase):
+    def ffmpeg_args(self, src):
+        from unittest import mock
+        calls = []
+
+        def run(args, **kw):
+            calls.append(args)
+            return mock.Mock(returncode=0, stderr="")
+        with mock.patch.object(dock_prepare.subprocess, "run", run):
+            dock_prepare.convert(src, "out.mp3", ["-c:a", "libmp3lame"])
+        args = calls[0]
+        return args[args.index("-map_metadata") + 1]
+
+    def test_ogg_and_opus_tags_come_from_the_audio_stream(self):
+        self.assertEqual(self.ffmpeg_args("src-x.opus"), "0:s:a:0")
+        self.assertEqual(self.ffmpeg_args("src-x.OGG"), "0:s:a:0")
+        self.assertEqual(self.ffmpeg_args("src-x.flac"), "0")
+
+
+def have_mutagen():
+    try:
+        import mutagen  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+@unittest.skipUnless(have_mutagen(), "needs mutagen (the Pi venv)")
+class MissingTagTests(unittest.TestCase):
+    FRAME = b"\xff\xfb\x90\x00" + b"\x00" * 413      # one silent MP3 frame
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cache = self.tmp.name
+        self.addCleanup(self.tmp.cleanup)
+
+    def untagged_convert(self, src, dst, options, duration=None):
+        with open(dst, "wb") as f:                    # like ffmpeg dropping Ogg tags
+            f.write(self.FRAME * 40)
+
+    def tags(self, name):
+        from mutagen.id3 import ID3
+        t = ID3(os.path.join(self.cache, "tracks", name))
+        return {k: str(t[k]) for k in ("TIT2", "TPE1", "TALB", "TRCK") if k in t}, t.version
+
+    def test_fills_only_missing_tags(self):
+        from mutagen.id3 import ID3, TIT2
+        path = os.path.join(self.cache, "x.mp3")
+        with open(path, "wb") as f:
+            f.write(self.FRAME * 40)
+        tags = ID3()
+        tags.add(TIT2(encoding=3, text="File title"))
+        tags.save(path, v2_version=3)
+        changed = dock_prepare.fill_missing_tags(
+            path, {"id": "x", "title": "Navidrome title", "artist": "LEASHES"})
+        self.assertTrue(changed)
+        t = ID3(path)
+        self.assertEqual((str(t["TIT2"]), str(t["TPE1"])), ("File title", "LEASHES"))
+        self.assertEqual(t.version[:2], (2, 3))
+        self.assertFalse(dock_prepare.fill_missing_tags(path, {"title": "x", "artist": "y"}))
+
+    def test_converted_ogg_gets_navidrome_tags_and_old_ones_are_repaired(self):
+        server = FakeServer(songs=[song("f", "ogg", title="FERAL", artist="LEASHES",
+                                        album="FERAL", track=3)])
+        prepare(server, config(), self.cache, convert_fn=self.untagged_convert,
+                disk_usage=ROOMY)
+        self.assertEqual(self.tags("f.mp3"),
+                         ({"TIT2": "FERAL", "TPE1": "LEASHES", "TALB": "FERAL",
+                           "TRCK": "3"}, (2, 3, 0)))
+        from mutagen.id3 import ID3
+        ID3(os.path.join(self.cache, "tracks", "f.mp3")).delete()   # an old untagged copy
+        prepare(server, config(), self.cache, convert_fn=self.untagged_convert,
+                disk_usage=ROOMY)
+        self.assertEqual(server.downloads, ["f"])                   # no re-download
+        self.assertEqual(self.tags("f.mp3")[0]["TIT2"], "FERAL")
+
+
 if __name__ == "__main__":
     unittest.main()
