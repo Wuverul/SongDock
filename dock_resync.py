@@ -16,6 +16,7 @@ opted in (MediaDock.txt) is checked by the sync itself, as always.
 """
 
 import glob
+import json
 import logging
 import os
 import sqlite3
@@ -31,11 +32,16 @@ log = logging.getLogger("dock_resync")
 
 SHARED_DIR = "/var/lib/musicdock"
 REQUEST = os.path.join(SHARED_DIR, "resync.request")
+STATE_FILE = os.path.join(SHARED_DIR, "dock_status.json")
+DOCK_STATUS = os.path.join(HERE, "dock_status.py")
 RECORD = os.path.join(SHARED_DIR, "dock.db")
 USB_DEVICES = "/sys/bus/usb/devices"
 BLOCK = "/sys/class/block"
 APPLE = "05ac"
 REPLUG_PAUSE = 2              # seconds between dropping the iPod and taking it back
+SYNC_START_WAIT = 60          # seconds for the sync to take over the screen
+# CONNECTING may replace any resting screen, never SYNCING or the boot screens.
+CONNECTING_OVER = "none,idle,preparing,safe,failed,notsynced,wifi,wififail"
 
 
 def request(path=REQUEST):
@@ -93,6 +99,33 @@ def disk_present(device_dir, block_root=BLOCK):
     return False
 
 
+def draw(*argv):
+    """One screen, in a short-lived dock_status.py (it holds the GPIO pins
+    until it exits). A failed draw is logged; the re-plug goes ahead."""
+    r = subprocess.run([sys.executable, DOCK_STATUS, *argv])
+    if r.returncode != 0:
+        log.warning("Couldn't draw %s (dock_status.py exit %d)", argv[0], r.returncode)
+
+
+def screen_state(path=STATE_FILE):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def wait_for_sync(state=screen_state, sleep=time.sleep, clock=time.monotonic,
+                  timeout=SYNC_START_WAIT):
+    """True once something replaced CONNECTING (normally the sync's SYNCING)."""
+    deadline = clock() + timeout
+    while clock() < deadline:
+        if state().get("screen") != "connecting":
+            return True
+        sleep(2)
+    return state().get("screen") != "connecting"
+
+
 def replug(device_dir, sleep=time.sleep):
     flag = os.path.join(device_dir, "authorized")
     with open(flag, "w") as f:
@@ -103,8 +136,15 @@ def replug(device_dir, sleep=time.sleep):
 
 
 def resync(usb_root=USB_DEVICES, block_root=BLOCK, record=RECORD,
-           sync_running=None, sleep=time.sleep):
-    """Re-plug every eligible docked iPod. Returns how many were re-plugged."""
+           sync_running=None, sleep=time.sleep, show=draw, state=screen_state,
+           clock=time.monotonic):
+    """Re-plug every eligible docked iPod. Returns how many were re-plugged.
+
+    Shows CONNECTING first, so the dock visibly does something and the
+    unplug rule (which fires as the iPod drops off USB) doesn't redraw
+    DOCK READY in between. If no sync takes over within a minute (the iPod
+    didn't come back), the previous screen is put back with its own time.
+    """
     if sync_running is None:
         from dock_prepare import sync_running
     if sync_running():
@@ -119,8 +159,16 @@ def resync(usb_root=USB_DEVICES, block_root=BLOCK, record=RECORD,
             log.info("iPod %s: its disk is already up; leaving it alone", serial)
         else:
             log.info("iPod %s is docked and new music is ready: re-plugging it", serial)
+            before = state()
+            show("connecting", "--only-over", CONNECTING_OVER)
             replug(device_dir, sleep)
             replugged += 1
+            if not wait_for_sync(state, sleep, clock):
+                log.warning("iPod %s didn't come back for a sync; restoring the screen",
+                            serial)
+                argv = before.get("argv") or ["idle"]
+                at = ["--at", str(before["drawn_at"])] if before.get("drawn_at") else []
+                show(*argv, *at, "--only-over", "connecting")
     if not replugged:
         log.info("No docked iPod to sync")
     return replugged

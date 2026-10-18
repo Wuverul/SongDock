@@ -42,6 +42,13 @@ class FakeSys:
 
 
 
+class ShowHelper:
+    @staticmethod
+    def mark(test, argv):
+        if argv[0] == "connecting":
+            test.screen = {"screen": "connecting"}
+
+
 class ResyncTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -56,11 +63,31 @@ class ResyncTests(unittest.TestCase):
         self.request = os.path.join(tmp.name, "resync.request")
         self.running = False
         self.sleeps = []
+        self.shown = []
+        self.screen = {"screen": "safe", "argv": ["safe", "--added", "3"], "drawn_at": 100}
+        self.sync_takes_over = True
+        self.t = 0
+
+    def show(self, *argv):
+        self.shown.append(list(argv))
+        if argv[0] == "connecting":
+            self.screen = {"screen": "connecting", "argv": ["connecting"]}
+
+    def state(self):
+        return dict(self.screen)
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.t += seconds
+        if self.sync_takes_over and self.screen.get("screen") == "connecting" \
+                and self.t >= dock_resync.REPLUG_PAUSE + 4:
+            self.screen = {"screen": "syncing"}          # udev started the sync
 
     def resync(self):
         return dock_resync.resync(self.sys.usb, self.sys.block, self.record,
                                   sync_running=lambda: self.running,
-                                  sleep=self.sleeps.append)
+                                  sleep=self.sleep, show=self.show, state=self.state,
+                                  clock=lambda: self.t)
 
     def authorized(self, real):
         with open(os.path.join(real, "authorized")) as f:
@@ -70,7 +97,38 @@ class ResyncTests(unittest.TestCase):
         real = self.sys.device("1-1", disk_size=0)          # ejected: disk size 0
         self.assertEqual(self.resync(), 1)
         self.assertEqual(self.authorized(real), "1")         # taken back afterwards
-        self.assertEqual(self.sleeps, [dock_resync.REPLUG_PAUSE])
+        self.assertEqual(self.sleeps[0], dock_resync.REPLUG_PAUSE)
+
+    def test_connecting_shown_first_and_left_to_the_sync(self):
+        real = self.sys.device("1-1", disk_size=0)
+        order = []
+        real_replug = dock_resync.replug
+        dock_resync.replug = lambda d, sleep: order.append("replug")
+        self.addCleanup(setattr, dock_resync, "replug", real_replug)
+        self.show = lambda *argv: (order.append(argv[0]), ShowHelper.mark(self, argv))
+        self.screen = {"screen": "safe"}
+        self.sync_takes_over = True
+        dock_resync.resync(self.sys.usb, self.sys.block, self.record,
+                           sync_running=lambda: False, sleep=self.sleep,
+                           show=self.show, state=self.state, clock=lambda: self.t)
+        self.assertEqual(order, ["connecting", "replug"])   # nothing redrawn after
+        self.assertTrue(real)
+
+    def test_connecting_never_covers_syncing(self):
+        self.sys.device("1-1", disk_size=0)
+        self.resync()
+        argv = self.shown[0]
+        allowed = argv[argv.index("--only-over") + 1].split(",")
+        self.assertNotIn("syncing", allowed)
+        self.assertIn("safe", allowed)
+
+    def test_previous_screen_restored_if_ipod_doesnt_come_back(self):
+        self.sys.device("1-1", disk_size=0)
+        self.sync_takes_over = False
+        self.resync()
+        self.assertEqual(self.shown[-1], ["safe", "--added", "3", "--at", "100",
+                                          "--only-over", "connecting"])
+        self.assertGreaterEqual(self.t, dock_resync.SYNC_START_WAIT)
 
     def test_replug_drops_then_restores(self):
         real = self.sys.device("1-1", disk_size=0)
@@ -86,7 +144,7 @@ class ResyncTests(unittest.TestCase):
         self.sys.device("1-1", disk_size=0)
         self.running = True
         self.assertEqual(self.resync(), 0)
-        self.assertEqual(self.sleeps, [])
+        self.assertEqual((self.sleeps, self.shown), ([], []))
 
     def test_unknown_ipod_and_other_devices_left_alone(self):
         self.sys.device("1-1", serial="000A270000000002", disk_size=0)   # someone else's

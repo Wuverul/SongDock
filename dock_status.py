@@ -266,6 +266,16 @@ def render(screen, args):
         if total:
             progress_bar(done, total)
 
+    elif screen == "connecting":
+        # dock_resync.py re-plugging a docked iPod for new music; the sync's
+        # SYNCING (drawn with --force) replaces it moments later.
+        dots = "\u2026" if has_glyphs else "..."
+        header(f"CONNECTING{dots}", inverted=True)
+        lines([("Do not remove player", body_f),
+               ("New music ready", body_f),
+               (fit(args.detail or "Reconnecting to the iPod", body_f), body_f),
+               (f"Started {now}", small_f)])
+
     elif screen == "safe":
         header(f"{check}SAFE TO REMOVE", inverted=False)
         minus = "\u2212" if has_glyphs else "-"
@@ -549,7 +559,8 @@ def draw_on_panel(img, full_refresh):
 def build_parser():
     p = argparse.ArgumentParser(description="Dock e-ink status screen")
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
-                                      "failed", "starting", "offline", "notsynced", "wifi", "wififail"])
+                                      "failed", "starting", "offline", "notsynced", "wifi", "wififail",
+                                      "connecting"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
                    help="syncing: items done within this step (fills the bar)")

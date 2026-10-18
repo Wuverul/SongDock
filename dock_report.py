@@ -27,7 +27,7 @@ SCREEN_NAMES = {
     "idle": "DOCK READY", "preparing": "PREPARING", "syncing": "SYNCING",
     "safe": "SAFE TO REMOVE", "failed": "SYNC FAILED", "starting": "STARTING UP",
     "offline": "NO WI-FI", "notsynced": "NOT SYNCED",
-    "wifi": "WI-FI CHANGED", "wififail": "WI-FI UNCHANGED",
+    "wifi": "WI-FI CHANGED", "wififail": "WI-FI UNCHANGED", "connecting": "CONNECTING",
 }
 # Messages that mean "the server (or network) was down", not a dock problem.
 NETWORK_HINTS = ("can't reach server", "Server unreachable", "name resolution")

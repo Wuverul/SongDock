@@ -270,9 +270,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   `musicdock-resync.path` runs `dock_resync.py` as root, which deletes the
   request, skips if a sync runs, and for Apple USB devices whose serial is a
   synced player's GUID and whose disk is ejected writes `authorized` 0 then
-  1 (2 s apart). udev then starts the normal sync. `[device] auto_resync`
-  (default true) turns it off. Interrupts playback while docked. Detection
-  verified on the real docked Nano; the re-plug itself not yet.
+  1 (2 s apart). It first draws `connecting` ("CONNECTING... New music
+  ready", --only-over resting screens), which also stops the unplug rule
+  (fired by the drop) from redrawing DOCK READY - that redraw delayed
+  SYNCING by ~12 s in the first test. The sync's forced SYNCING replaces it;
+  if none does within 60 s, the previous screen is restored (`--at`).
+  udev then starts the normal sync. `[device] auto_resync`
+  (default true) turns it off. Interrupts playback while docked. Verified on
+  the real Nano 2026-10-18 (re-plug -> sync in 6 s).
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

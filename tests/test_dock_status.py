@@ -278,6 +278,11 @@ class PartialRefreshTests(unittest.TestCase):
                                       os.path.join(shared, "dock_status.json")):
                 self.assertTrue(dock_status.frame_path().startswith(shared))  # fallback
 
+    def test_connecting_screen_renders(self):
+        args = dock_status.build_parser().parse_args(["connecting", "--wifi", "-50"])
+        img = dock_status.render("connecting", args)
+        self.assertEqual(img.size, (250, 122))
+
     def test_sync_progress_flashes_only_on_screen_change_and_every_n(self):
         draws = []
         real = dock_status.draw_on_panel
