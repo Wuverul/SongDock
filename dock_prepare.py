@@ -111,12 +111,16 @@ class PrepareError(Exception):
 
 
 # --------------------------------------------------------------- targets ----
-def starred_songs(client):
-    """Starred songs plus every track of a starred album."""
+def starred_songs(client, album_names=None):
+    """Starred songs plus every track of a starred album. Fills
+    `album_names` ({album id: name}) from the albums it reads."""
     starred = client.call("getStarred2").get("starred2", {})
     songs = list(starred.get("song", []))
     for album in starred.get("album", []):
-        songs += client.call("getAlbum", id=album["id"]).get("album", {}).get("song", [])
+        info = client.call("getAlbum", id=album["id"]).get("album", {})
+        if album_names is not None and info.get("name"):
+            album_names[album["id"]] = info["name"]
+        songs += info.get("song", [])
     if starred.get("artist"):
         log.info("Ignoring %d starred artist(s): only songs and albums are synced",
                  len(starred["artist"]))
@@ -187,6 +191,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     """
     known_playlists = known_playlists or {}
     tracks, sources, playlists = {}, {}, []
+    album_names = {}
     listing = None
     if tag:
         listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
@@ -226,7 +231,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             add(key, songs)
             continue
         if target == "starred":
-            songs = starred_songs(client)
+            songs = starred_songs(client, album_names)
             if favorites_name:
                 playlists.append({"target": target, "id": None, "name": favorites_name,
                                   "via": "starred",
@@ -247,7 +252,41 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             raise PrepareError(f"unknown target {target!r} "
                                "(use \"starred\" or \"playlist:<name>\")")
         add(target, songs)
+    unify_album_names(client, tracks.values(), album_names)
     return sorted(tracks.values(), key=library_order), sources, playlists
+
+
+def unify_album_names(client, songs, album_names):
+    """Give every song of one Navidrome album the album's own name.
+
+    Navidrome groups an album by its ID, but a song's `album` field comes
+    from that file's tags and can differ (2026-10-18: one track of "Hold
+    Your Colour (2007 re-release)" said "Hold Your Colour"). The iPod groups
+    by name, so that song landed in an album of its own. Only albums whose
+    songs disagree are looked up; `album_names` holds names already known.
+    """
+    names = {}
+    for s in songs:
+        if s.get("albumId"):
+            names.setdefault(s["albumId"], set()).add(s.get("album"))
+    for album_id, seen in names.items():
+        if len(seen) < 2:
+            continue
+        name = album_names.get(album_id)
+        if not name:
+            try:
+                name = client.call("getAlbum", id=album_id).get("album", {}).get("name")
+            except SubsonicError as e:
+                log.warning("Couldn't look up album %s (%s); names left as they are",
+                            album_id, e)
+                continue
+        if not name:
+            continue
+        for s in songs:
+            if s.get("albumId") == album_id and s.get("album") != name:
+                log.info("Album name from Navidrome's album: %s - %s: %r -> %r",
+                         s.get("artist"), s.get("title"), s.get("album"), name)
+                s["album"] = name
 
 
 def needs_conversion(suffix, device_type):

@@ -31,9 +31,11 @@ def song(id, suffix="flac", size=1000, **kw):
 class FakeServer:
     """Stands in for subsonic.Client."""
 
-    def __init__(self, songs=(), albums=None, fail_download=(), playlists=None):
+    def __init__(self, songs=(), albums=None, fail_download=(), playlists=None,
+                 album_names=None):
         self.songs = list(songs)
         self.albums = albums or {}            # album id -> [songs]
+        self.album_names = album_names or {}  # album id -> the album's own name
         self.playlists = playlists or {}      # playlist id -> (name, [songs][, comment])
         self.fail_download = set(fail_download)
         self.downloads = []
@@ -43,7 +45,9 @@ class FakeServer:
             return {"starred2": {"song": self.songs,
                                  "album": [{"id": a} for a in self.albums]}}
         if endpoint == "getAlbum":
-            return {"album": {"song": self.albums[params["id"]]}}
+            self.album_lookups = getattr(self, "album_lookups", []) + [params["id"]]
+            return {"album": {"name": self.album_names.get(params["id"]),
+                              "song": self.albums.get(params["id"], [])}}
         if endpoint == "getPlaylists":
             return {"playlists": {"playlist": [
                 {"id": pid, "name": v[0], **({"comment": v[2]} if len(v) > 2 else {})}
@@ -107,6 +111,26 @@ class PrepareTests(unittest.TestCase):
         summary = self.run_prepare(server)
         self.assertEqual(summary["total"], 2)
         self.assertEqual(self.files(), ["a1.mp3", "a2.mp3"])
+
+    def test_one_album_gets_one_name(self):
+        # Navidrome groups by album ID; a song's own album field can differ.
+        re = "Hold Your Colour (2007 re-release)"
+        songs = [song("p1", album=re, albumId="hyc", track=1),
+                 song("p10", album="Hold Your Colour", albumId="hyc", track=10)]
+        server = FakeServer(albums={"hyc": songs}, album_names={"hyc": re})
+        self.run_prepare(server)
+        self.assertEqual({t["album"] for t in self.manifest()["tracks"]}, {re})
+        self.assertEqual(server.album_lookups, ["hyc"])        # no extra lookup
+
+    def test_album_name_looked_up_only_when_songs_disagree(self):
+        server = FakeServer(songs=[song("a", album="X (deluxe)", albumId="x"),
+                                   song("b", album="X", albumId="x"),
+                                   song("c", album="Y", albumId="y")],
+                            album_names={"x": "X (deluxe)"})
+        self.run_prepare(server)
+        albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
+        self.assertEqual(albums, {"a": "X (deluxe)", "b": "X (deluxe)", "c": "Y"})
+        self.assertEqual(server.album_lookups, ["x"])
 
     def test_formats_for_stock_ipod(self):
         server = FakeServer(songs=[song("f", "flac"), song("m", "mp3"),

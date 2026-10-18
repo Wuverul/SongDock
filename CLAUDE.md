@@ -255,6 +255,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   fill_missing_names` fixes such tracks already on the player in the
   iTunesDB (no re-copy) and on add. Opus covers carried over already; ffmpeg
   7.1 doesn't carry Vorbis covers.
+- **One album, one name (2026-10-18):** Navidrome groups albums by ID, but
+  a song's `album` field comes from its own tags and can differ ("Hold Your
+  Colour" vs "Hold Your Colour (2007 re-release)"; "Inertia" vs "Inertia
+  (deluxe digital)"). The iPod groups by name, so such a song split off.
+  `unify_album_names` gives every song of an album ID the album's own name
+  (from starred-album reads, else one `getAlbum` per disagreeing album).
+  `fill_missing_names` also moves tracks already on the player to the
+  plan's album name (iTunesDB only, no re-copy).
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

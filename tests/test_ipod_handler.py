@@ -224,6 +224,15 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((t.title, t.artist), ("FERAL", "LEASHES"))
         self.assertEqual(self.apply(self.manifest([a]))["renamed"], 0)
 
+    def test_corrected_album_name_reaches_tracks_on_player(self):
+        a = self.song("p10", "Hold Your Colour", album="Hold Your Colour")
+        self.apply(self.manifest([a]))
+        fixed = dict(a, album="Hold Your Colour (2007 re-release)")
+        summary = self.apply(self.manifest([fixed]))
+        self.assertEqual((summary["renamed"], summary["added"]), (1, 0))   # no re-copy
+        self.assertEqual(self.db().tracks[0].album, "Hold Your Colour (2007 re-release)")
+        self.assertEqual(self.apply(self.manifest([fixed]))["renamed"], 0)
+
     def test_orphan_files_removed(self):
         stray = os.path.join(self.mount, "iPod_Control", "Music", "F01", "old.m4a")
         with open(stray, "wb") as f:

@@ -365,8 +365,13 @@ def pending_changes(manifest, present_ids):
 def fill_missing_names(track, t):
     """Use Navidrome's title/artist where the file had none: pygpod then
     titles the track with the file name (the Navidrome ID) and no artist.
+    The album always follows Navidrome (as when the track was added), so a
+    corrected album name in the plan reaches tracks already on the player.
     Returns True if the track changed."""
     changed = False
+    if t.get("album") and track.album != t["album"]:
+        track.album = t["album"]
+        changed = True
     if t.get("title") and (not track.title or track.title == t["id"]):
         track.title = t["title"]
         changed = True
@@ -409,8 +414,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
     for nid, r in present.items():
         if nid in wanted and nid not in changed and \
                 fill_missing_names(on_player[int(r["dbid"])], wanted[nid]):
-            log_info(f"Named from Navidrome: {wanted[nid].get('artist')} - "
-                     f"{wanted[nid].get('title')}")
+            log_info(f"Updated names from Navidrome: {wanted[nid].get('artist')} - "
+                     f"{wanted[nid].get('title')} ({wanted[nid].get('album')})")
             renamed += 1
     dirty = dirty or bool(renamed)
     additions = [t for nid, t in wanted.items() if nid not in present or nid in changed]
