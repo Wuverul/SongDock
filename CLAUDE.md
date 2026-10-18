@@ -171,6 +171,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   wait for the network too. `--preview-dir` saves every frame as a PNG.
 - `pi/`: udev rule, `musicdock-sync@.service` template (ordered after the boot
   service), `musicdock-boot.service`, `install.sh`.
+- **Persistent journal:** Raspberry Pi OS ships `Storage=volatile`
+  (`/usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf`), which
+  lost the logs of the 2026-10-17 outage. install.sh adds
+  `/etc/systemd/journald.conf.d/50-musicdock-persistent.conf`
+  (`Storage=persistent`, `SystemMaxUse=50M`); `journalctl -b -1` then shows
+  the previous boot.
+- **2026-10-17 "freeze" was a Wi-Fi problem, not a crash:** the Pi roamed to an access point that associated it but passed no traffic (DHCP never completed; NetworkManager gave up after 45 s and retried the same one).
+  A Pi Zero's green LED is solid when idle, so it isn't a hang sign.
 - `deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
   on the Pi (cache stays in `~/musicdock/cache`).
 - `dock_report.py`: read-only status report, installed as

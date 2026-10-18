@@ -70,6 +70,27 @@ else
   say "SPI: enabled"
 fi
 
+# 3b. Keep the logs across restarts -----------------------------------------------
+# Raspberry Pi OS keeps the journal in memory only (Storage=volatile), so a
+# freeze or power cut wipes the evidence of what went wrong. Keep it on the SD
+# card, capped at 50 MB; journald writes in batches, so wear stays low.
+JOURNAL_CONF=/etc/systemd/journald.conf.d/50-musicdock-persistent.conf
+JOURNAL_WANT="$(printf '%s\n' "# Installed by Music Dock: keep logs across restarts (capped)." \
+  "[Journal]" "Storage=persistent" "SystemMaxUse=50M")"
+if [ "$(cat "$JOURNAL_CONF" 2>/dev/null)" != "$JOURNAL_WANT" ]; then
+  say "Keeping logs across restarts (up to 50 MB on the SD card)"
+  if [ $CHECK = 1 ]; then plan "write $JOURNAL_CONF and restart journald"; else
+    install -d -m 755 /etc/systemd/journald.conf.d
+    printf '%s\n' "$JOURNAL_WANT" > "$JOURNAL_CONF"
+    install -d -m 2755 -g systemd-journal /var/log/journal
+    systemd-tmpfiles --create --prefix /var/log/journal >/dev/null 2>&1 || true
+    systemctl restart systemd-journald
+    journalctl --flush >/dev/null 2>&1 || true
+  fi
+else
+  say "Logs: kept across restarts"
+fi
+
 # 4. Python packages not in apt (pygpod, mutagen) in a venv --------------------
 # The venv also sees apt's Pillow/gpiozero (--system-site-packages).
 # Raspberry Pi OS blocks system-wide pip installs.

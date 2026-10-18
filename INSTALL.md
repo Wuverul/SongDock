@@ -90,8 +90,9 @@ sudo ./pi/install.sh
 ```
 
 This installs what the dock needs (ffmpeg, Python packages, the display
-driver), turns on the display interface, creates your settings file, and sets
-up the dock's background services. It takes a while on a Pi Zero. If it says
+driver), turns on the display interface, creates your settings file, sets up
+the dock's background services, and keeps the logs across restarts (up to
+50 MB) so problems can be traced afterwards. It takes a while on a Pi Zero. If it says
 a reboot is needed:
 
 ```sh
@@ -205,6 +206,8 @@ the password for an open one.
 | **SYNC FAILED** with another reason | Check the log (below). The iPod was restored to how it was before the sync |
 | Nothing happens when docking | Check you're using the Pi's **USB** port (not PWR) with the OTG adapter; check the log |
 | **NO WI-FI** after starting up | The dock can't join its network. Fix it with `wifi.txt`, or re-flash the SD card's Wi-Fi settings with Raspberry Pi Imager |
+| The screen shows Wi-Fi and an IP address, but you can't reach the dock | The dock joined an access point that isn't passing its traffic. Restart that access point, or in your router's settings pin the dock to another one. The dock keeps working offline meanwhile: plays wait and music still syncs |
+| The Pi's green light is on solid | That's normal: on a Pi Zero the light is on when idle and flickers when the SD card is busy. It alone doesn't mean the Pi has frozen |
 | Music doesn't appear | Check `url`, `username` and `password` in the settings, and the log of the prepare job |
 
 **Status report:** `musicdock-status` on the Pi (or
@@ -215,6 +218,7 @@ what the dock is doing and lists anything that needs attention.
 
 ```sh
 journalctl -u 'musicdock-*' --since today        # everything today
+journalctl -b -1 -e                              # the end of the previous run (before the last restart)
 journalctl -u musicdock-prepare -e               # downloads and conversions
 journalctl -u 'musicdock-sync@*' -e              # docking sessions
 ~/musicdock/venv/bin/python ~/musicdock/music-dock/dock_prepare.py --show-plan
@@ -235,6 +239,7 @@ cd ~/musicdock/music-dock && sudo ./pi/install.sh
 ```sh
 sudo systemctl disable --now musicdock-prepare.timer musicdock-boot.service
 sudo rm /etc/systemd/system/musicdock-* /etc/udev/rules.d/99-musicdock.rules \
+        /etc/systemd/journald.conf.d/50-musicdock-persistent.conf \
         /etc/NetworkManager/dispatcher.d/90-musicdock-wifi \
         /usr/local/bin/musicdock-status
 sudo systemctl daemon-reload
