@@ -289,12 +289,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 - **Flash-free progress updates:** repeated draws of the same screen are
   partial refreshes (only changed pixels, no flash), even from a fresh
   process: `draw_on_panel` writes the saved last frame
-  (`dock_status.frame.png` next to the state file) into the panel's old-image
+  (`/run/musicdock/dock_status.frame.png`: RAM, created at boot by
+  `/etc/tmpfiles.d/musicdock.conf` from install.sh; next to the state file
+  off the Pi; a reboot loses it, so the first draw is full) into the panel's old-image
   RAM (0x26), then `displayPartial`. Full refresh on a screen change, every
   `FULL_REFRESH_EVERY` (20) draws against ghosting, or when the frame is
   unknown (deleted before each draw, saved after, so a failed draw forces a
-  full one). Progress redraws stay rate-limited to one per 30 s. Not yet
-  verified on hardware (2026-10-18).
+  full one). Progress redraws stay rate-limited to one per 30 s. Verified
+  on the panel 2026-10-18 (no flash between progress updates).
 - Panel access is serialized by `dock_status.panel_lock()` (flock next to the
   state file); the screen-state check and draw happen under it.
 - `tests/`: `python3 -m unittest discover -s tests -v`.

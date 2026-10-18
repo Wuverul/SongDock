@@ -64,7 +64,8 @@ STATE_FILE = os.environ.get("DOCK_STATE_FILE") or (
     os.path.join(SHARED_STATE_DIR, "dock_status.json")
     if os.path.isdir(SHARED_STATE_DIR)
     else os.path.expanduser("~/.cache/dock_status.json"))
-MIN_PROGRESS_INTERVAL = 30          # seconds between progress-only redraws
+RUNTIME_DIR = "/run/musicdock"      # RAM; cleared at every boot
+MIN_PROGRESS_INTERVAL = 30         # seconds between progress-only redraws
 FULL_REFRESH_EVERY = 20             # partial (flash-free) updates before a full anti-ghost refresh
 
 PROGRESS_SCREENS = {"syncing", "preparing"}   # rate-limited when repeated
@@ -481,8 +482,13 @@ class PartialUpdates:
 
 
 def frame_path():
-    """The last image sent to the panel, kept next to the state file so the
-    next short-lived process can do a partial (flash-free) update from it."""
+    """The last image sent to the panel, so the next short-lived process can
+    do a partial (flash-free) update from it. On the Pi it lives in RAM
+    (/run/musicdock, made at boot by install.sh's tmpfiles rule): it changes
+    every progress update, and after a restart a full refresh is right
+    anyway. Elsewhere (tests, the Mac) it sits next to the state file."""
+    if os.path.dirname(STATE_FILE) == SHARED_STATE_DIR and os.path.isdir(RUNTIME_DIR):
+        return os.path.join(RUNTIME_DIR, "dock_status.frame.png")
     return os.path.splitext(STATE_FILE)[0] + ".frame.png"
 
 

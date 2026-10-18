@@ -120,11 +120,17 @@ fi
 # 6. Services, udev rule, Wi-Fi hook -------------------------------------------
 say "Installing services"
 if [ $CHECK = 1 ]; then
-  plan "install systemd units, the udev rule, the NetworkManager hook and musicdock-status"
+  plan "install systemd units, the udev rule, the NetworkManager hook, musicdock-status and /run/musicdock"
 else
   # Shared screen state for every job. Owned by the login user so manual runs
   # and the prepare job can write it; root (sync, boot) can write it anyway.
   install -d -o "$LOGIN_USER" -g "$USER_GROUP" -m 755 /var/lib/musicdock
+  # Scratch files that change often (the last screen image) live in RAM, not
+  # on the SD card. /run is emptied at boot, so systemd recreates the folder.
+  printf 'd /run/musicdock 0755 %s %s -\n' "$LOGIN_USER" "$USER_GROUP" \
+    > /etc/tmpfiles.d/musicdock.conf
+  systemd-tmpfiles --create /etc/tmpfiles.d/musicdock.conf
+  rm -f /var/lib/musicdock/dock_status.frame.png       # older versions kept it here
   for unit in musicdock-sync@.service musicdock-boot.service \
               musicdock-prepare.service musicdock-prepare.timer \
               musicdock-wifi-refresh.service musicdock-rest@.service; do

@@ -263,6 +263,21 @@ class PartialRefreshTests(unittest.TestCase):
         dock_status.draw_on_panel(self.frame(60), full_refresh=False)
         self.assertEqual(self.steps(), ["full", "sleep"])
 
+    def test_frame_lives_in_ram_folder_on_the_pi(self):
+        with tempfile.TemporaryDirectory() as shared, tempfile.TemporaryDirectory() as run:
+            with mock.patch.object(dock_status, "SHARED_STATE_DIR", shared), \
+                    mock.patch.object(dock_status, "RUNTIME_DIR", run), \
+                    mock.patch.object(dock_status, "STATE_FILE",
+                                      os.path.join(shared, "dock_status.json")):
+                dock_status.draw_on_panel(self.frame(5), full_refresh=False)
+                self.assertEqual(os.listdir(run), ["dock_status.frame.png"])
+                self.assertEqual(os.listdir(shared), [])      # nothing on the SD card
+            with mock.patch.object(dock_status, "SHARED_STATE_DIR", shared), \
+                    mock.patch.object(dock_status, "RUNTIME_DIR", run + "-missing"), \
+                    mock.patch.object(dock_status, "STATE_FILE",
+                                      os.path.join(shared, "dock_status.json")):
+                self.assertTrue(dock_status.frame_path().startswith(shared))  # fallback
+
     def test_sync_progress_flashes_only_on_screen_change_and_every_n(self):
         draws = []
         real = dock_status.draw_on_panel

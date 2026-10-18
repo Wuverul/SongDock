@@ -240,6 +240,7 @@ cd ~/musicdock/music-dock && sudo ./pi/install.sh
 sudo systemctl disable --now musicdock-prepare.timer musicdock-boot.service
 sudo rm /etc/systemd/system/musicdock-* /etc/udev/rules.d/99-musicdock.rules \
         /etc/systemd/journald.conf.d/50-musicdock-persistent.conf \
+        /etc/tmpfiles.d/musicdock.conf \
         /etc/NetworkManager/dispatcher.d/90-musicdock-wifi \
         /usr/local/bin/musicdock-status
 sudo systemctl daemon-reload
