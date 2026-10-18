@@ -656,13 +656,21 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     workers = resolve_workers(cfg["sync"].get("workers", "auto"))
     slots = ConversionSlots(workers)
     lock, show_lock = threading.Lock(), threading.Lock()
-    progress = {"added": 0, "started": 0, "reserved": 0}
+    progress = {"added": 0, "started": 0, "reserved": 0, "offline": False}
     skipped = []
     if missing:
         log.info("Getting %d tracks with %d conversion worker(s)", len(missing), workers)
 
     def prepare_one(name, t, need):
         conv = needs_conversion(t.get("suffix"), device)
+        if progress["offline"]:
+            # The server dropped out earlier in this run: don't try every
+            # remaining track; the next check (5 min) carries on.
+            with lock:
+                skipped.append({"id": t["id"], "title": label(t),
+                                "reason": "server unreachable", "error": False})
+                progress["reserved"] -= need
+            return
         try:
             with lock:
                 n = progress["started"]
@@ -691,6 +699,17 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             os.replace(out, os.path.join(tracks_dir, name))
             with lock:
                 progress["added"] += 1
+        except SubsonicError as e:
+            with lock:
+                if e.network:
+                    if not progress["offline"]:
+                        log.warning("Server unreachable (%s); stopping this batch, "
+                                    "the next check will carry on", e)
+                    progress["offline"] = True
+                else:
+                    log.warning("Couldn't download %s: %s", label(t), e)
+                skipped.append({"id": t["id"], "title": label(t), "reason": str(e),
+                                "error": not e.network})
         except Exception as e:      # one bad track shouldn't block the rest
             log.exception("Couldn't prepare %s", label(t))
             with lock:
@@ -918,7 +937,14 @@ def main(argv=None):
 
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run)
-    except (SubsonicError, PrepareError) as e:
+    except SubsonicError as e:
+        if e.network:
+            # Wi-Fi or server down: expected now and then, not a failure.
+            log.warning("Server unreachable (%s); trying again at the next check", e)
+            return 0
+        log.error("Prepare failed: %s", e)
+        return 1
+    except PrepareError as e:
         log.error("Prepare failed: %s", e)
         return 1
 

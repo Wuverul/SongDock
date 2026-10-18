@@ -58,6 +58,9 @@ class FakeServer:
 
     def download(self, song_id, dest):
         self.downloads.append(song_id)
+        if song_id in getattr(self, "offline_from", ()):
+            raise SubsonicError("download: can't reach server (name resolution)",
+                                network=True)
         if song_id in self.fail_download:
             raise SubsonicError("download: HTTP 500")
         with open(dest, "wb") as f:
@@ -352,6 +355,19 @@ class PrepareTests(unittest.TestCase):
         summary = self.run_prepare(server, cfg, clock=lambda: dock_prepare.DAY)
         self.assertEqual(summary["added"], 1)
         self.assertEqual(self.files(), ["b.mp3"])
+
+    def test_server_dropping_out_stops_the_batch(self):
+        server = FakeServer(songs=[song(f"t{i}") for i in range(6)])
+        server.offline_from = {f"t{i}" for i in range(2, 6)}   # Wi-Fi drops at t2
+        cfg = config()
+        cfg["sync"]["workers"] = 1
+        summary = self.run_prepare(server, cfg)
+        self.assertEqual(summary["added"], 2)
+        self.assertLessEqual(len(server.downloads), 4)          # didn't try all 6
+        self.assertTrue(all(not s["error"] for s in summary["skipped"]))  # not errors
+        self.assertEqual(len(summary["skipped"]), 4)
+        server.offline_from = set()                              # back online
+        self.assertEqual(self.run_prepare(server, cfg)["added"], 4)
 
     def test_one_failed_track_doesnt_block_others(self):
         server = FakeServer(songs=[song("a"), song("bad"), song("c")],
