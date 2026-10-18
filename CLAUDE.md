@@ -200,7 +200,9 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   albums' tracks → `cache/tracks/<id>.<ext>` (stock iPod: FLAC etc. → AAC;
   MP3/AAC/ALAC kept), prunes unstarred, writes `cache/manifest.json` (the sync
   plan the sync applies): each track's `sources` (targets it came from) and
-  `encoding`, plus `playlists` (id, name, `changed`, ordered `song_ids`) for
+  `encoding`, plus `playlists` (id, name, ordered `song_ids`; no `changed`:
+  Navidrome smart playlists bump it on every read, which rewrote the 600 KB
+  manifest every 5 min, ~55 GB/year of SD writes - fixed 2026-10-18) for
   the sync to recreate on the player. Built in `cache/tmp/`, renamed when
   complete. `--dry-run` shows what a run would do; `--show-plan` prints the
   staged plan (no network). **Covers:** embedded covers over 600px / 300 KB /

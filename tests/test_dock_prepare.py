@@ -52,8 +52,11 @@ class FakeServer:
             if params["id"] not in self.playlists:
                 raise SubsonicError("getPlaylist: not found (code 70)")
             name, songs = self.playlists[params["id"]][:2]
+            # Like a Navidrome smart playlist: "changed" moves on every read.
+            self.reads = getattr(self, "reads", 0) + 1
             return {"playlist": {"id": params["id"], "name": name,
-                                 "changed": "2026-10-16", "entry": songs}}
+                                 "changed": f"2026-10-18T11:{self.reads:02d}",
+                                 "entry": songs}}
         raise AssertionError(endpoint)
 
     def download(self, song_id, dest):
@@ -166,10 +169,10 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(sources["a2"], ["starred", "playlist:Mel Test"])
         self.assertEqual(sources["b1"], ["playlist:Mel Test"])
         self.assertEqual(m["playlists"], [
-            {"target": "starred", "id": None, "name": "Favorites", "changed": None,
+            {"target": "starred", "id": None, "name": "Favorites",
              "via": "starred", "song_ids": ["a1", "a2"]},
             {"target": "playlist:Mel Test", "id": "P1", "name": "Mel Test",
-             "changed": "2026-10-16", "via": "config", "song_ids": ["a2", "b1", "b2"]}])
+             "via": "config", "song_ids": ["a2", "b1", "b2"]}])
         plan = dock_prepare.show_plan(m)
         self.assertIn("iPod playlist 'Favorites': 2 songs from 1 album(s): Album", plan)
         self.assertIn("iPod playlist 'Mel Test' [config]: 3 songs from 2 album(s): "
@@ -285,6 +288,20 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(server)                        # something changed
         self.assertNotEqual(os.stat(path).st_mtime_ns, 1)
         self.assertEqual(len(self.manifest()["tracks"]), 2)
+
+    def test_playlist_read_time_doesnt_rewrite_the_plan(self):
+        # Smart playlists report a new "changed" time on every read; only a
+        # change in songs should rewrite manifest.json (SD card wear).
+        server = FakeServer(playlists={"p1": ("Mix", [song("a")], "#ipod")})
+        cfg = config()
+        cfg["sync"]["playlist_tag"] = "#ipod"
+        self.run_prepare(server, cfg)
+        self.assertEqual([p["name"] for p in self.manifest()["playlists"]],
+                         ["Favorites", "Mix"])
+        path = os.path.join(self.cache, "manifest.json")
+        os.utime(path, ns=(1, 1))
+        self.run_prepare(server, cfg)
+        self.assertEqual(os.stat(path).st_mtime_ns, 1)
 
     def test_unstarred_tracks_are_pruned(self):
         server = FakeServer(songs=[song("a"), song("b")])

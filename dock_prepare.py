@@ -213,7 +213,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             songs = pl.get("entry", [])
             key = f"playlist:{pl['name']}"
             playlists.append({"target": key, "id": pl["id"], "name": pl["name"],
-                              "changed": pl.get("changed"), "via": "tag",
+                              "via": "tag",
                               "song_ids": [s["id"] for s in songs]})
             add(key, songs)
             continue
@@ -221,7 +221,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             songs = starred_songs(client)
             if favorites_name:
                 playlists.append({"target": target, "id": None, "name": favorites_name,
-                                  "changed": None, "via": "starred",
+                                  "via": "starred",
                                   "song_ids": unique_ids(sorted(songs, key=library_order))})
         elif target.startswith("playlist:"):
             if listing is None:
@@ -233,7 +233,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             seen_playlists.add(pl["id"])
             songs = pl.get("entry", [])
             playlists.append({"target": target, "id": pl["id"], "name": pl["name"],
-                              "changed": pl.get("changed"), "via": "config",
+                              "via": "config",
                               "song_ids": [s["id"] for s in songs]})
         else:
             raise PrepareError(f"unknown target {target!r} "
