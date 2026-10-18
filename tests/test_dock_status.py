@@ -283,6 +283,22 @@ class PartialRefreshTests(unittest.TestCase):
         img = dock_status.render("connecting", args)
         self.assertEqual(img.size, (250, 122))
 
+    def test_wifi_changed_screen_shows_the_new_address(self):
+        drawn = []
+        real_text = dock_status.ImageDraw.ImageDraw.text
+
+        def text(self_, xy, t, *a, **kw):
+            drawn.append(t)
+            return real_text(self_, xy, t, *a, **kw)
+        with mock.patch.object(dock_status.ImageDraw.ImageDraw, "text", text):
+            args = dock_status.build_parser().parse_args(
+                ["wifi", "--ssid", "NewNetwork", "--server", "yes",
+                 "--ip", "192.168.20.57", "--wifi", "-61"])
+            dock_status.render("wifi", args)
+        self.assertIn("IP 192.168.20.57", drawn)
+        self.assertIn("Navidrome reachable", drawn)
+        self.assertNotIn("Safe to remove", drawn)
+
     def test_sync_progress_flashes_only_on_screen_change_and_every_n(self):
         draws = []
         real = dock_status.draw_on_panel

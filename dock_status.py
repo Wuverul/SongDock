@@ -289,21 +289,27 @@ def render(screen, args):
     elif screen in ("wifi", "wififail"):
         # Result of a wifi.txt on the player (the sync itself succeeded).
         if screen == "wifi":
+            # The address on the new network goes at the bottom, so the dock
+            # can be found again (the header's check mark says it's done).
             header(f"{check}WI-FI CHANGED", inverted=False)
-            rows = [("Safe to remove", body_f),
-                    (fit(f"Now on \u201c{args.ssid}\u201d", body_f), body_f)]
+            rows = [(fit(f"Now on \u201c{args.ssid}\u201d", body_f), body_f)]
             server = {"yes": "Navidrome reachable",
-                      "no": "Navidrome NOT reachable from here"}.get(args.server)
+                      "no": "Navidrome NOT reachable"}.get(args.server)
             if server:
-                rows.append((fit(server, small_f), small_f))
+                rows.append((fit(server, body_f), body_f))
+            rows.append((f"Synced {now}", small_f))
+            lines(rows)
+            ip = args.ip if args.ip is not None else read_ip()
+            if ip:
+                d.text((8, 106), f"IP {ip}", font=small_f, fill=0)
         else:
             header(f"{warn}WI-FI UNCHANGED", inverted=True)
             who = (f"Couldn't join \u201c{args.ssid}\u201d" if args.ssid
                    else "wifi.txt not used")
             rows = [("Safe to remove", body_f), (fit(who, body_f), body_f),
                     (fit(args.reason or "", small_f), small_f)]
-        rows.append((f"Synced {now}", small_f))
-        lines(rows)
+            rows.append((f"Synced {now}", small_f))
+            lines(rows)
 
     elif screen == "notsynced":
         # A player the dock left alone: not an iPod, or no MediaDock.txt.

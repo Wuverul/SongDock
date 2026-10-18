@@ -59,7 +59,7 @@ the "write tracks / read plays" step differs:
 | Library | `iTunesDB` (signed), via **pygpod** | Plain files + `.m3u8` playlists |
 | Play data | Play-count changes since last sync | `.scrobbler.log`, timestamped |
 | Formats | FLAC → MP3 LAME V0 (`convert_to`, `mp3_quality`: `v0`–`v9` or constant `128k`–`320k`; `alac`/`aac` also supported). The manifest records each track's `encoding`; changing settings re-converts on the next run | FLAC copied as-is |
-| Keep signal | TBD (on-device rating?) | `Keep.m3u8` playlist |
+| Keep signal | Unskipped play count (user, 2026-10-18): played a lot = keep. Plays already reach Navidrome; how keepers are marked there is TBD | `Keep.m3u8` playlist |
 | Album art | Thumbnails in `iPod_Control/Artwork/` (ArtworkDB), made from the embedded cover when each track is added. Ignores art inside the file. | `cover.jpg` (baseline, not progressive JPEG) in the album folder |
 
 pygpod is **pre-alpha** and untested on the Nano 4G, so prove it with a manual
@@ -232,6 +232,8 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   the record is saved on the player at `iPod_Control/musicdock/dock.db`.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
+- **`wifi.txt` verified on a real network change (2026-10-18:** HomeWiFi -> NewNetwork). WI-FI CHANGED now shows the new IP at the bottom (no
+  "Safe to remove" line), so the dock can be found again.
 - **`wifi.txt` on an opted-in iPod** (`dock_wifi.py`; write mode only, after
   the music): `SSID=` / `Password=` / optional `Hidden=yes`. The password goes
   into a root-only NetworkManager keyfile (`/etc/NetworkManager/system-
