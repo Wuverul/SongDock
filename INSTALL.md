@@ -165,7 +165,8 @@ and album art.
 
 - Dock the iPod whenever you like, e.g. overnight to charge. Each dock sends
   your plays and brings the iPod up to date.
-- **DOCK READY** shows what the next sync will do.
+- **DOCK READY** shows what the next sync will do. For more detail, run
+  `musicdock-status` on the Pi (see Troubleshooting).
 - If Navidrome is offline, music still syncs and plays are sent later.
 - Songs removed from your lists stay cached on the dock for 7 days, so
   re-adding one is instant (`removal_grace_days` in the settings).
@@ -206,6 +207,10 @@ the password for an open one.
 | **NO WI-FI** after starting up | The dock can't join its network. Fix it with `wifi.txt`, or re-flash the SD card's Wi-Fi settings with Raspberry Pi Imager |
 | Music doesn't appear | Check `url`, `username` and `password` in the settings, and the log of the prepare job |
 
+**Status report:** `musicdock-status` on the Pi (or
+`ssh yourname@musicdock.local musicdock-status` from your computer) sums up
+what the dock is doing and lists anything that needs attention.
+
 **Logs:**
 
 ```sh
@@ -230,7 +235,8 @@ cd ~/musicdock/music-dock && sudo ./pi/install.sh
 ```sh
 sudo systemctl disable --now musicdock-prepare.timer musicdock-boot.service
 sudo rm /etc/systemd/system/musicdock-* /etc/udev/rules.d/99-musicdock.rules \
-        /etc/NetworkManager/dispatcher.d/90-musicdock-wifi
+        /etc/NetworkManager/dispatcher.d/90-musicdock-wifi \
+        /usr/local/bin/musicdock-status
 sudo systemctl daemon-reload
 rm -rf ~/musicdock ~/.config/musicdock
 sudo rm -rf /var/lib/musicdock

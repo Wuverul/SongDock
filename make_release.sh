@@ -17,7 +17,7 @@ python3 -m unittest discover -s tests -q
 echo "== Assembling $OUT"
 rm -rf "$OUT" "$TARBALL"
 mkdir -p "$OUT"
-cp README.md INSTALL.md config.example.toml "$OUT/"
+cp README.md INSTALL.md config.example.toml status.sh "$OUT/"
 cp dock_*.py ipod_handler.py subsonic.py "$OUT/"
 mkdir -p "$OUT/pi"
 cp pi/install.sh pi/requirements.txt pi/99-musicdock.rules pi/90-musicdock-wifi \

@@ -99,7 +99,7 @@ fi
 # 6. Services, udev rule, Wi-Fi hook -------------------------------------------
 say "Installing services"
 if [ $CHECK = 1 ]; then
-  plan "install systemd units, the udev rule and the NetworkManager hook"
+  plan "install systemd units, the udev rule, the NetworkManager hook and musicdock-status"
 else
   # Shared screen state for every job. Owned by the login user so manual runs
   # and the prepare job can write it; root (sync, boot) can write it anyway.
@@ -115,6 +115,14 @@ else
   # NetworkManager only runs dispatcher hooks owned by root and not writable by others.
   install -o root -g root -m 755 "$APP_DIR/pi/90-musicdock-wifi" \
     /etc/NetworkManager/dispatcher.d/90-musicdock-wifi
+  # Status report command, also usable over SSH: ssh user@dock musicdock-status
+  cat > /usr/local/bin/musicdock-status <<EOF
+#!/bin/sh
+# Music Dock status report (read-only). Installed by $APP_DIR/pi/install.sh.
+MUSICDOCK_CONFIG="\${MUSICDOCK_CONFIG:-$USER_HOME/.config/musicdock/config.toml}" \\
+  exec "$VENV/bin/python" "$APP_DIR/dock_report.py" "\$@"
+EOF
+  chmod 755 /usr/local/bin/musicdock-status
   systemctl daemon-reload
   systemctl enable musicdock-boot.service
   systemctl enable --now musicdock-prepare.timer

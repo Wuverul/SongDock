@@ -71,6 +71,21 @@ music in the background, so syncs are quick.
 After a sync, the screen goes back to DOCK READY when you unplug the iPod, or
 after 10 minutes.
 
+## Checking on the dock
+
+The screen is kept simple on purpose. For the full picture (what the dock is
+doing now, time left on a batch of conversions, the last syncs, plays waiting
+to be sent, disk space, temperature and any problems), run on the Pi:
+
+```sh
+musicdock-status                       # last 24 hours
+musicdock-status --since "3 days ago"
+```
+
+or from your computer, in one go: `ssh yourname@musicdock.local musicdock-status`
+(or `./status.sh yourname@musicdock.local` from this folder on a Mac or Linux).
+It only reads; it never changes anything.
+
 ## Settings
 
 All settings are in `~/.config/musicdock/config.toml` on the Pi. See

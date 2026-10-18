@@ -173,6 +173,17 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   service), `musicdock-boot.service`, `install.sh`.
 - `deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
   on the Pi (cache stays in `~/musicdock/cache`).
+- `dock_report.py`: read-only status report, installed as
+  `/usr/local/bin/musicdock-status` (wrapper sets the venv and
+  `MUSICDOCK_CONFIG`). Dock (uptime, temp, throttling, memory, SD, Wi-Fi),
+  current screen, iPod (last sync, tracks, next sync +/-, plays), plan and
+  cache, activity from the journal (`--since`, default 24 h: checks, batch
+  progress + ETA, sessions, outages counted separately), and Problems
+  (failed units, real ERRORs not explained by an outage, heat, disk, plays
+  stuck > 1 day). Opens the record with `mode=ro`; reads the journal as
+  `-o short-unix` (JSON is ~5x slower on the Zero). Not on the e-ink screen
+  by the user's choice. `status.sh [user@host]` runs it from the Mac
+  (`MUSICDOCK_PI`).
 - `dock_prepare.py`: prepare job (`musicdock-prepare.timer`: 1 min after boot -
   in practice once the boot screens and network are done - then every 5 min
   after the previous run ends (`OnUnitInactiveSec`); only redraws/rewrites the
