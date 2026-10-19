@@ -501,6 +501,66 @@ def shrink_cover(path, cache=None):
     return "none"
 
 
+def add_server_cover(path, t, client, images, cache=None):
+    """Embed Navidrome's cover in a file that has none, then shrink it like
+    any other cover.
+
+    Navidrome also shows covers kept beside the music (e.g. a folder's
+    cover.jpg), which never reach a converted file; the iPod only uses
+    embedded art. `images` maps a coverArt ID to the server's image (None:
+    it has none), so an album's cover is fetched once. Returns "navidrome"
+    (added), "missing" (the server has no cover either) or "none" (couldn't
+    tell: no mutagen, or not a format we tag). A network error is raised,
+    so the track is tried again next run.
+    """
+    try:
+        from mutagen.flac import FLAC, Picture
+        from mutagen.id3 import APIC, ID3, ID3NoHeaderError
+        from mutagen.mp4 import MP4, MP4Cover
+    except ImportError:
+        return "none"
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in (".mp3", ".m4a", ".mp4", ".flac"):
+        return "none"
+    cover_id = t.get("coverArt") or t.get("albumId")
+    if not cover_id:
+        return "missing"
+    if cover_id not in images:
+        try:
+            images[cover_id] = client.cover_art(cover_id, size=COVER_MAX)
+        except SubsonicError as e:
+            if e.network:
+                raise
+            images[cover_id] = None
+    data = images[cover_id]
+    if not data:
+        return "missing"
+    png = data.startswith(b"\x89PNG")
+    if ext == ".mp3":
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            tags = ID3()
+        tags.add(APIC(encoding=3, mime="image/png" if png else "image/jpeg",
+                      type=3, desc="", data=data))
+        tags.save(path, v2_version=3)
+    elif ext == ".flac":
+        f = FLAC(path)
+        pic = Picture()
+        pic.type, pic.mime, pic.data = 3, "image/png" if png else "image/jpeg", data
+        f.add_picture(pic)
+        f.save()
+    else:
+        f = MP4(path)
+        if f.tags is None:
+            f.add_tags()
+        f.tags["covr"] = [MP4Cover(data, imageformat=MP4Cover.FORMAT_PNG if png
+                                   else MP4Cover.FORMAT_JPEG)]
+        f.save()
+    shrink_cover(path, cache)       # PNG or oversized -> 600px baseline JPEG
+    return "navidrome"
+
+
 # --------------------------------------------------------------- workers ----
 HOT_C = 75.0               # above this, convert one track at a time until it cools
 
@@ -796,26 +856,38 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         kept.drop(kept.oldest(), "SD card below 25% free")
     kept.save()
 
-    # Shrink covers on tracks cached before covers were checked (one-time pass;
-    # each file is edited in tmp/ and swapped in whole).
-    cover_cache, covers = {}, {}
+    # Shrink covers on tracks cached before covers were checked, and give
+    # coverless ones Navidrome's cover (one-time pass per track; "none" =
+    # not yet asked the server; each file is edited in tmp/ and swapped in
+    # whole).
+    cover_cache, covers, server_images = {}, {}, {}
     checked = {t["id"]: t.get("cover")
                for t in list(previous.get("tracks", [])) + list(kept.items.values())
                if t.get("cover_max") == COVER_MAX and "id" in t}
     missing_names = {n for n, _ in missing}
     unchecked = [(n, t) for n, t in wanted.items()
-                 if n in existing and n not in missing_names and t["id"] not in checked]
+                 if n in existing and n not in missing_names
+                 and checked.get(t["id"], "none") == "none"]
     if unchecked:
         log.info("Checking covers on %d cached tracks", len(unchecked))
+    offline = False
     for i, (name, t) in enumerate(unchecked):
         if show and i % 10 == 0:
             show("preparing", "--done", str(i), "--total", str(len(unchecked)),
-                 "--detail", f"Shrinking covers: {label(t)}")
+                 "--detail", f"Checking covers: {label(t)}")
         tmp = os.path.join(tmp_dir, f"cover-{name}")
         try:
             shutil.copy2(os.path.join(tracks_dir, name), tmp)
             result = shrink_cover(tmp, cover_cache)
-            if result == "shrunk":
+            if result == "none" and not offline:
+                try:
+                    result = add_server_cover(tmp, t, client, server_images, cover_cache)
+                except SubsonicError as e:
+                    log.warning("Can't get covers from the server (%s); next run tries again", e)
+                    offline = True
+                if result == "navidrome":
+                    log.info("Added Navidrome's cover: %s", label(t))
+            if result in ("shrunk", "navidrome"):
                 fsync_file(tmp)
                 os.replace(tmp, os.path.join(tracks_dir, name))
             covers[t["id"]] = result
@@ -824,7 +896,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
-    covers.update(checked)
+    covers.update({k: v for k, v in checked.items() if k not in covers})
 
     # Ogg/Opus-sourced tracks converted before tags were read from the audio
     # stream have no title/artist: fill them in from Navidrome (cheap; only
@@ -888,6 +960,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 out = src
             try:
                 covers[t["id"]] = shrink_cover(out, cover_cache)
+                if covers[t["id"]] == "none":
+                    covers[t["id"]] = add_server_cover(out, t, client, server_images,
+                                                       cover_cache)
+            except SubsonicError as e:
+                log.warning("Couldn't get Navidrome's cover for %s (%s); next run "
+                            "tries again", label(t), e)
             except Exception:
                 log.exception("Couldn't shrink the cover of %s (kept as is)", label(t))
             try:

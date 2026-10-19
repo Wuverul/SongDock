@@ -79,6 +79,16 @@ class Client:
                 raise SubsonicError(f"{endpoint}: server sent invalid JSON") from None
         return self._check(endpoint, body)
 
+    def cover_art(self, cover_id, size=None):
+        """Image bytes for a coverArt ID (a song's or an album's). Raises
+        SubsonicError (code 70) when the server has no such image."""
+        params = {"id": cover_id, **({"size": size} if size else {})}
+        with self._open("getCoverArt", **params) as r:
+            if r.headers.get("Content-Type", "").startswith(("application/json", "text/")):
+                self._check("getCoverArt", json.load(r))   # an error, not an image
+                raise SubsonicError("getCoverArt: server sent text instead of an image")
+            return r.read()
+
     def download(self, song_id, dest):
         """Save the original (untranscoded) file for song_id to dest."""
         with self._open("download", id=song_id) as r:

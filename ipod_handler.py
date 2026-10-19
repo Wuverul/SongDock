@@ -565,6 +565,24 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
                 os.remove(path)
 
     start_artwork_ids_at(db)
+    # Tracks added before the prepare job embedded Navidrome's cover (the
+    # source had none): add the art to the track in place, no re-copy. The
+    # iPod builds thumbnails only when art is added, never from the file.
+    art_added = 0
+    for nid, r in present.items():
+        t = wanted.get(nid)
+        if not t or nid in changed or t.get("cover") != "navidrome":
+            continue
+        track = on_player[int(r["dbid"])]
+        path = os.path.join(cache_dir, t["file"])
+        if track.has_artwork or not os.path.exists(path):
+            continue
+        db._add_artwork_for_track(track.record, track.dbid, path)   # pygpod 0.0.6
+        if track.has_artwork:
+            art_added += 1
+    if art_added:
+        log_info(f"Added album art to {art_added} track(s) already on the player")
+        dirty = True
     added, skipped_full = 0, 0
     for i in range(0, len(additions), batch_size):
         batch = []
@@ -606,7 +624,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
     if playlists_changed or (dirty and not saved):
         save(db, guid)
     return {"added": added, "removed": removed, "replaced": len(changed), "renamed": renamed,
-            "not_added_full": skipped_full, "playlists_changed": playlists_changed}
+            "art_added": art_added, "not_added_full": skipped_full,
+            "playlists_changed": playlists_changed}
 
 
 def sync_playlists(db, record, guid, manifest):

@@ -211,7 +211,16 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   staged plan (no network). **Covers:** embedded covers over 600px / 300 KB /
   non-JPEG are replaced with a 600px baseline JPEG via mutagen (tags only;
   audio bytes untouched), one decode per album; recorded per track as
-  `cover`/`cover_max`, so cached tracks are checked once. Runs under the venv
+  `cover`/`cover_max`, so cached tracks are checked once. **No embedded
+  cover** (art only in the album folder, which Navidrome shows but a
+  converted file never carries; seen 2026-10-19 on Purity Ring's 2025 album,
+  Virtual Self, a Chillhop compilation): `add_server_cover` embeds
+  Navidrome's `getCoverArt` (song's `coverArt` ID, 600px, fetched once per
+  ID) → `cover: navidrome`; the server having none → `missing` (not asked
+  again). `none` from older manifests is rechecked once; a network error
+  leaves it `none` for the next run. `apply_plan` adds the art in place to
+  tracks already on the player (`cover: navidrome`, no artwork; pygpod's
+  `_add_artwork_for_track`, no re-copy). Runs under the venv
   (`musicdock-prepare.service` uses `~/musicdock/venv/bin/python`; install.sh
   creates the venv from `pi/requirements.txt`). Without mutagen it logs a
   warning and leaves covers as they are.

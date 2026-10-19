@@ -430,6 +430,18 @@ class HandlerTests(unittest.TestCase):
         if ids is not None:
             self.assertTrue(all(i >= 100 for i in ids))
 
+    def test_navidrome_cover_added_to_track_already_on_player(self):
+        a = self.song("n1", "One")                       # synced without art
+        self.apply(self.manifest([a]))
+        self.assertFalse(self.db().tracks[0].has_artwork)
+        fx.make_mp3(os.path.join(self.cache, a["file"]), "One", seconds=2, cover=True)
+        summary = self.apply(self.manifest([{**a, "cover": "navidrome"}]))
+        self.assertEqual((summary["art_added"], summary["added"], summary["removed"]),
+                         (1, 0, 0))                      # in place, no re-copy
+        self.assertTrue(self.db().tracks[0].has_artwork)
+        again = self.apply(self.manifest([{**a, "cover": "navidrome"}]))
+        self.assertEqual(again["art_added"], 0)
+
     def test_backups_pruned(self):
         backups = os.path.join(self.tmp, "backups")
         os.makedirs(backups)

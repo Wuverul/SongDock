@@ -65,6 +65,12 @@ class FakeServer:
                                  "entry": songs}}
         raise AssertionError(endpoint)
 
+    def cover_art(self, cover_id, size=None):
+        self.cover_fetches = getattr(self, "cover_fetches", []) + [cover_id]
+        if cover_id in getattr(self, "covers", {}):
+            return self.covers[cover_id]
+        raise SubsonicError("getCoverArt: not found (code 70)", code=70)
+
     def download(self, song_id, dest):
         self.downloads.append(song_id)
         if song_id in getattr(self, "offline_from", ()):
@@ -622,6 +628,89 @@ class ShrinkCoverTests(unittest.TestCase):
         f.close()
         self.addCleanup(os.remove, f.name)
         self.assertEqual(dock_prepare.shrink_cover(f.name), "none")
+
+    # Navidrome's cover for files without one (e.g. art in a folder cover.jpg).
+    def bare_mp3(self):
+        f = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        f.write(self.AUDIO)
+        f.close()
+        self.addCleanup(os.remove, f.name)
+        return f.name
+
+    class CoverServer:
+        def __init__(self, image=None, network=False):
+            self.image, self.network, self.fetches = image, network, []
+
+        def cover_art(self, cover_id, size=None):
+            self.fetches.append((cover_id, size))
+            if self.network:
+                raise SubsonicError("getCoverArt: can't reach server", network=True)
+            if self.image is None:
+                raise SubsonicError("getCoverArt: not found (code 70)", code=70)
+            return self.image
+
+    def png(self, px):
+        buf = io.BytesIO()
+        Image.new("RGB", (px, px), (10, 200, 90)).save(buf, "PNG")
+        return buf.getvalue()
+
+    def test_server_cover_embedded_as_600px_jpeg(self):
+        path = self.bare_mp3()
+        server = self.CoverServer(self.png(1000))
+        t = {"id": "s1", "coverArt": "dc-alb:1_0", "albumId": "alb"}
+        self.assertEqual(dock_prepare.add_server_cover(path, t, server, {}), "navidrome")
+        im, pic = self.cover(path)
+        self.assertEqual((im.format, im.size, pic.mime), ("JPEG", (600, 600), "image/jpeg"))
+        self.assertEqual(self.audio_bytes(path), self.AUDIO)
+        self.assertEqual(server.fetches, [("dc-alb:1_0", 600)])   # the song's own ID
+
+    def test_server_cover_fetched_once_per_album(self):
+        server, images = self.CoverServer(self.png(300)), {}
+        t = {"id": "s1", "albumId": "alb"}
+        for _ in range(3):
+            dock_prepare.add_server_cover(self.bare_mp3(), t, server, images)
+        self.assertEqual(server.fetches, [("alb", 600)])
+
+    def test_server_without_cover(self):
+        path = self.bare_mp3()
+        result = dock_prepare.add_server_cover(path, {"id": "s1", "albumId": "alb"},
+                                               self.CoverServer(None), {})
+        self.assertEqual(result, "missing")
+        self.assertEqual(dock_prepare.shrink_cover(path), "none")
+
+    def test_prepare_rechecks_cached_tracks_without_covers(self):
+        with tempfile.TemporaryDirectory() as cache:
+            server = FakeServer(songs=[song("a1", suffix="mp3", coverArt="dc-x"),
+                                       song("b1", suffix="mp3", albumId="nope")])
+            mpath = os.path.join(cache, "manifest.json")
+
+            def run():
+                prepare(server, config(), cache, convert_fn=fake_convert, disk_usage=ROOMY)
+                with open(mpath) as f:
+                    return json.load(f)
+
+            covers = {t["id"]: t["cover"] for t in run()["tracks"]}
+            self.assertEqual(covers, {"a1": "missing", "b1": "missing"})
+            server.cover_fetches = []
+            run()                               # "missing" isn't asked again
+            self.assertEqual(server.cover_fetches, [])
+            # A track from before this change ("none"): asked once more.
+            with open(mpath) as f:
+                m = json.load(f)
+            for t in m["tracks"]:
+                t["cover"] = "none"
+            with open(mpath, "w") as f:
+                json.dump(m, f)
+            server.covers = {"dc-x": self.png(800)}
+            covers = {t["id"]: t["cover"] for t in run()["tracks"]}
+            self.assertEqual(covers, {"a1": "navidrome", "b1": "missing"})
+            self.assertEqual(self.cover(os.path.join(cache, "tracks", "a1.mp3"))[0].size,
+                             (600, 600))
+
+    def test_server_unreachable_raises(self):
+        with self.assertRaises(SubsonicError):
+            dock_prepare.add_server_cover(self.bare_mp3(), {"id": "s1", "albumId": "a"},
+                                          self.CoverServer(network=True), {})
 
 
 class WorkerTests(unittest.TestCase):
