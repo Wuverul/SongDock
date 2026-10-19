@@ -157,9 +157,12 @@ class BlockDevice:
         run(["mount", "-o", "ro,noatime", self.path, self.root], "Couldn't mount player")
         self.mounted = True
 
+    def fstype(self):
+        return subprocess.run(["lsblk", "-no", "FSTYPE", self.path],
+                              capture_output=True, text=True).stdout.strip()
+
     def make_writable(self):
-        fstype = subprocess.run(["lsblk", "-no", "FSTYPE", self.path],
-                                capture_output=True, text=True).stdout.strip()
+        fstype = self.fstype()
         # flush: vfat writes data out promptly - safer on a removable player.
         opts = "remount,rw,noatime,flush" if fstype == "vfat" else "remount,rw,noatime"
         log.info("Remounting %s read-write", self.root)
@@ -259,6 +262,9 @@ class FakeDevice:
             raise SyncError(f"Fake device {self.path} not found")
         log.info("[fake] Would mount; using folder %s", self.root)
         self.mounted = True
+
+    def fstype(self):
+        return "vfat"
 
     def make_writable(self):
         log.info("[fake] Would remount %s read-write", self.root)
@@ -450,7 +456,14 @@ def make_ipod_work(cfg, guid, product, write):
                       else f"No {MARKER} on this iPod")
             log.info("Not syncing: %s (nothing read or written)", reason)
             return {"not_synced": reason}
-        if write:
+        # A Mac-formatted iPod is HFS+, which Linux can't safely write: read
+        # its plays (a restore to FAT32 would wipe them), then fail.
+        mac_formatted = write and device.fstype() == "hfsplus"
+        if mac_formatted:
+            log.warning("This iPod was formatted on a Mac (HFS+), which the dock can't "
+                        "write. Reading plays only. Restore it on Windows (FAT32) to sync music.")
+        writing = write and not mac_formatted
+        if writing:
             device.make_writable()
             if status == "known":
                 with open(os.path.join(device.root, MARKER), "w") as f:
@@ -469,10 +482,12 @@ def make_ipod_work(cfg, guid, product, write):
                 device.root, guid, record, manifest, cache_dir,
                 work_dir=os.path.join(base, "work", guid),
                 backup_root=os.path.join(base, "backups", guid),
-                write=write, client=client, usb_product=product, step=step,
+                write=writing, client=client, usb_product=product, step=step,
                 progress=progress, block_device=whole_disk(getattr(device, "path", "")))
         finally:
             record.close()
+        if mac_formatted:
+            raise SyncError("Mac-formatted iPod (see guide)")
         summary["wifi"] = handle_wifi_file(device, write, client)
         log.info("Session summary: %s", summary)
         return summary

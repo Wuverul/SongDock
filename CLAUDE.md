@@ -321,6 +321,18 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   genres by artist/album/disc/track - before pygpod's sort. A marker
   (`iPod_Control/musicdock/sort-order`) makes the next write sync re-save
   once so existing players get corrected lists.
+- **Supported players (2026-10-19, user: Classic, Video and Nano only; no
+  touch/shuffle):** `ipod_handler.SIGNED_GENERATIONS` (Classic 1-3, Nano
+  3G/4G: hash58 required) and `UNSIGNED_GENERATIONS` (Video 5G/5.5G, Nano
+  1G/2G: none required, following libgpod; pygpod 0.0.6 signs them with
+  hash58 anyway, which the firmware ignores). `check_supported` runs in
+  `ensure_sysinfo` before SysInfo is touched; anything else (Nano 5G hash72,
+  Nano 6G+ hashAB, shuffles, older iPods) fails with "<model> isn't
+  supported". `REPRESENTATIVE_MODELS` covers each supported USB product ID.
+  Only the Nano 4G is tested on hardware. **HFS+ (Mac-formatted) iPods:**
+  `dock_sync` reads their plays read-only (the Pi kernel has `hfsplus`),
+  then fails with "Mac-formatted iPod (see guide)": a restore to FAT32
+  would wipe unread plays.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

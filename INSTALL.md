@@ -206,6 +206,8 @@ the password for an open one.
 | **NOT SYNCED · No MediaDock.txt** | Add `MediaDock.txt` to the iPod's top folder (step 1) |
 | **NOT SYNCED · Not an iPod** | Only iPods are synced |
 | **SYNC FAILED · Unknown iPod model** | Look up the model on the iPod (Settings > About > Model, e.g. `MB029`). On the iPod (disk mode on your computer), open `iPod_Control/Device/SysInfo` in a text editor and add a line `ModelNumStr: xB029` (an `x` plus the model without its first letter). Dock again |
+| **SYNC FAILED · iPod ... isn't supported** | That iPod's music database can't be written by the dock (see "Which iPods work" in the README). Nothing on it was changed |
+| **SYNC FAILED · Mac-formatted iPod** | The iPod is formatted for Mac (HFS+), which the dock can only read. Its plays were still sent (or queued). Restore it once with iTunes on a Windows PC to make it FAT32 (this erases it), add `MediaDock.txt` again, and dock it |
 | **SYNC FAILED** with another reason | Check the log (below). The iPod was restored to how it was before the sync |
 | Nothing happens when docking | Check you're using the Pi's **USB** port (not PWR) with the OTG adapter; check the log |
 | **NO WI-FI** after starting up | The dock can't join its network. Fix it with `wifi.txt`, or re-flash the SD card's Wi-Fi settings with Raspberry Pi Imager |

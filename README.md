@@ -29,9 +29,13 @@ music in the background, so syncs are quick.
   |---|---|
   | iPod nano 4th generation | **Tested** |
   | iPod classic (6th/7th generation, 2007-2009) | Should work (same database signature); not yet tested |
-  | iPod nano 3rd generation | Should work; not tested |
-  | iPod nano 5th generation and later, iPod touch | **Not supported** (different signature) |
-  | Older iPods (video, mini, photo, original) | Not supported yet |
+  | iPod nano 3rd generation | Should work (same signature); not tested |
+  | iPod video (5th/5.5th generation), iPod nano 1st/2nd generation | Should work (no signature needed); not tested |
+  | iPod nano 5th generation and later | **Not supported** (signatures the dock can't make) |
+  | iPod touch, iPod shuffle, older iPods (mini, photo, 4th gen and earlier) | **Not supported** |
+
+  An unsupported iPod gets **SYNC FAILED** with its model name, before
+  anything on it is changed.
 
   Stock Apple firmware only (not Rockbox).
 

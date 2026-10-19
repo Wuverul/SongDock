@@ -118,8 +118,20 @@ class HandlerError(Exception):
 # empty (fresh restore) and that the record hasn't seen yet. Any model of the
 # same generation gives the same signature type and artwork sizes.
 REPRESENTATIVE_MODELS = {
+    0x1209: "xA002",       # iPod video (5th/5.5th generation)
+    0x120A: "xA004",       # iPod nano 1st generation
+    0x1260: "xA426",       # iPod nano 2nd generation
+    0x1261: "xB029",       # iPod classic (all three generations)
+    0x1262: "xA980",       # iPod nano 3rd generation
     0x1263: "xB903",       # iPod nano 4th generation
 }
+# Generations the dock writes to (pygpod IpodGeneration names). The firmware
+# of the first group rejects a database without a hash58 signature; the
+# second checks no signature. pygpod 0.0.6 signs those too (libgpod
+# doesn't); the extra header bytes are ignored. Nano 5G (hash72), nano 6G/7G
+# (hashAB), shuffles, touch and pre-video iPods are refused.
+SIGNED_GENERATIONS = {"CLASSIC_1", "CLASSIC_2", "CLASSIC_3", "NANO_3", "NANO_4"}
+UNSIGNED_GENERATIONS = {"VIDEO_1", "VIDEO_2", "NANO_1", "NANO_2"}
 NAVIDROME_TAG = "navidrome:"   # prefix in a track's comment field (mapping backup)
 FREE_SPACE_MARGIN = 200 * 1024 * 1024
 ARTWORK_FIRST_ID = 100     # pygpod starts at 1, which clashed with game icons
@@ -188,6 +200,7 @@ def ensure_sysinfo(mount, guid, record, usb_product=None, block_device=None,
                  f"'ModelNumStr: x<model>' to {sysinfo_path(mount)} (model from "
                  "Settings > About, e.g. MB903 -> xB903), then dock again.")
         raise HandlerError("Unknown iPod model (see the guide)")
+    check_supported(model)
     add = []
     if "ModelNumStr" not in values:
         add.append(f"ModelNumStr: {model}")
@@ -201,6 +214,22 @@ def ensure_sysinfo(mount, guid, record, usb_product=None, block_device=None,
             os.fsync(f.fileno())
     record.upsert_player(guid, model=model)
     return model
+
+
+def check_supported(model):
+    """Raise HandlerError unless the dock can write this model's database.
+    Runs before SysInfo or anything else on the player is changed."""
+    from pygpod.device.models import get_generation_name, lookup_model
+    gen = lookup_model(model).generation
+    if gen.name in SIGNED_GENERATIONS | UNSIGNED_GENERATIONS:
+        return
+    if gen.name == "UNKNOWN":
+        log_info(f"Model {model} isn't in pygpod's table; can't tell how to "
+                 "sign its database")
+        raise HandlerError(f"Unknown iPod model {model} (see the guide)")
+    log_info(f"{get_generation_name(gen)} ({model}) isn't supported: its database "
+             "needs a signature the dock can't make, or a different format")
+    raise HandlerError(f"{get_generation_name(gen)} isn't supported")
 
 
 # ================================================================= backup ====
@@ -409,9 +438,14 @@ def mark_sort_order(mount):
 def checked_save(db, guid):
     """Save only if pygpod will sign the DB the way this player needs."""
     d = db._device
-    if not d or not d.requires_hash or d.checksum_type.name != "HASH58":
-        raise HandlerError(f"refusing to save: player not identified as needing a "
-                           f"hash58-signed database ({d.model if d else 'no device'})")
+    gen = d.generation.name if d else None
+    if gen in SIGNED_GENERATIONS:
+        ok = d.requires_hash and d.checksum_type.name == "HASH58"
+    else:
+        ok = gen in UNSIGNED_GENERATIONS and d.checksum_type.name in ("NONE", "HASH58")
+    if not ok:
+        raise HandlerError(f"refusing to save: player not identified as a model the "
+                           f"dock can sign for ({d.model if d else 'no device'})")
     if (d.firewire_guid or "").upper() != guid.upper():
         raise HandlerError("refusing to save: SysInfo FireWire GUID doesn't match the player")
     install_sort_order()

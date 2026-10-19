@@ -347,6 +347,42 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(h.ensure_sysinfo(self.mount, G, self.rec, usb_product=0x1263),
                          "xB903")
 
+    def set_model(self, model):
+        with open(h.sysinfo_path(self.mount), "w") as f:
+            f.write(f"ModelNumStr: {model}\nFirewireGuid: 0x{G}\n")
+
+    def test_saves_for_every_supported_generation(self):
+        for model in ("xB029", "xB565", "xA980", "xB903",      # hash58 required
+                      "xA002", "xA446", "xA004", "xA426"):     # no signature
+            with self.subTest(model=model):
+                self.set_model(model)
+                self.assertEqual(h.ensure_sysinfo(self.mount, G, self.rec), model)
+                h.checked_save(self.db(), G)
+
+    def test_unsupported_models_refused_before_any_write(self):
+        for model, reason in (("xC027", "Nano 5th Gen isn't supported"),
+                              ("xC525", "Nano 6th Gen isn't supported"),
+                              ("xA546", "Shuffle 2nd Gen isn't supported"),
+                              ("x9282", "4th Gen isn't supported"),
+                              ("xZZZZ", "Unknown iPod model xZZZZ")):
+            with self.subTest(model=model):
+                with open(h.sysinfo_path(self.mount), "w") as f:
+                    f.write(f"ModelNumStr: {model}\n")
+                with self.assertRaisesRegex(h.HandlerError, reason):
+                    h.ensure_sysinfo(self.mount, G, self.rec)
+                self.assertEqual(h.read_sysinfo(self.mount)[0], {"ModelNumStr": model})
+                with self.assertRaisesRegex(h.HandlerError, "refusing to save"):
+                    h.checked_save(self.db(), G)
+
+    def test_empty_sysinfo_model_from_usb_id(self):
+        for product, model in ((0x1261, "xB029"), (0x1209, "xA002"), (0x1260, "xA426")):
+            with self.subTest(product=hex(product)):
+                open(h.sysinfo_path(self.mount), "w").close()
+                rec = Record(os.path.join(self.tmp, f"{product}.db"))
+                self.addCleanup(rec.close)
+                self.assertEqual(h.ensure_sysinfo(self.mount, G, rec, usb_product=product),
+                                 model)
+
     def test_refuses_to_save_unsigned(self):
         with open(h.sysinfo_path(self.mount), "w") as f:
             f.write(f"FirewireGuid: 0x{G}\n")                    # model missing

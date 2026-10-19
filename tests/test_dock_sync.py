@@ -243,6 +243,22 @@ class OptInTests(unittest.TestCase):
         dev.make_writable.assert_not_called()
         sp.assert_called_once()                                 # plays still logged
 
+    def test_mac_formatted_ipod_reads_plays_then_fails(self):
+        self.ipod(marker="MediaDock.txt")
+        dev = FakeDevice(self.root)
+        dev.make_writable = mock.Mock()
+        dev.fstype = mock.Mock(return_value="hfsplus")
+        fake_record = mock.Mock()
+        fake_record.player.return_value = None
+        cfg = {"sync": {"cache_dir": self.root},
+               "server": {"url": "https://x", "username": "u", "password": "p"}}
+        with mock.patch("dock_record.Record", return_value=fake_record), \
+                mock.patch("ipod_handler.sync_player", return_value={}) as sp, \
+                self.assertRaisesRegex(dock_sync.SyncError, "Mac-formatted"):
+            dock_sync.make_ipod_work(cfg, "G", 0x1261, True)(dev, lambda *a, **k: None)
+        dev.make_writable.assert_not_called()
+        self.assertFalse(sp.call_args.kwargs["write"])          # plays only
+
     def test_not_synced_screen_shown(self):
         events, shown = [], []
         dev = RecordingDevice(self.root, events)
