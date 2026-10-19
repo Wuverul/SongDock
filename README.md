@@ -1,6 +1,6 @@
 # Music Dock
 
-A Raspberry Pi dock that keeps a classic iPod in sync with a
+A Raspberry Pi dock that keeps a classic stock firmware iPod in sync with a
 [Navidrome](https://www.navidrome.org/) music server. Plug the iPod in, and
 the dock:
 
