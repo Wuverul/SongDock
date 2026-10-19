@@ -329,6 +329,83 @@ def reconcile(db, record, guid, mount, delete_orphans=True, manifest=None):
 
 
 # ================================================================== apply ====
+# The iPod browses by pre-sorted lists stored in the iTunesDB. pygpod 0.0.6
+# sorts each by one field (album, artist, ...) and leaves ties in the order
+# tracks were added, so an album's tracks came out in add order: a title
+# track added first (when its album name still differed) showed as track 1
+# (2026-10-19). Ties are broken like iTunes/libgpod: by album, disc, track.
+SORT_ORDER_VERSION = "1"
+SORT_ORDER_MARKER = os.path.join("iPod_Control", "musicdock", "sort-order")
+
+
+def _sort_text(value):
+    value = (value or "").upper()                  # as pygpod's own sort does
+    return value[4:] if value.startswith("THE ") else value
+
+
+def _master_track_ids(db):
+    """Track IDs of the master playlist, in its order (pygpod internals)."""
+    for mhsd in db._root.children:
+        if mhsd.fields.get("mhsd_type") in (2, 3) and mhsd.children:
+            for mhyp in mhsd.children[0].children:
+                if mhyp.fields.get("playlist_type") == 1:
+                    return [c.fields.get("track_id") for c in mhyp.children
+                            if c.magic == b"mhip"]
+    return []
+
+
+def install_sort_order():
+    """Make pygpod's browse lists order an album's tracks by disc and track.
+
+    pygpod sorts each list with a stable sort on one field, so handing it the
+    tracks already ordered by the full key gives the right result. Applied
+    once per process; checked_save calls it before every save."""
+    from pygpod.model import database as pdb
+    original = pdb.Database._build_sort_pair
+    if getattr(original, "_musicdock", False):
+        return
+
+    def build_sort_pair(self, sort_key, field_name, tracks_meta):
+        ids = _master_track_ids(self)
+
+        def numbers(meta):
+            i = meta["index"]
+            t = self._track_lookup.get(ids[i]) if i < len(ids) else None
+            return (t.cd_number or 0, t.track_number or 0) if t else (0, 0)
+
+        def key(meta):
+            album, artist = _sort_text(meta["album"]), _sort_text(meta["artist"])
+            title = _sort_text(meta["title"])
+            if sort_key == 4:                                   # albums
+                return (album, *numbers(meta), title)
+            if sort_key == 5:                                   # artists
+                return (artist, album, *numbers(meta), title)
+            if sort_key == 7:                                   # genres
+                return (_sort_text(meta["genre"]), artist, album, *numbers(meta), title)
+            return (_sort_text(meta[field_name]), title)
+        return original(self, sort_key, field_name, sorted(tracks_meta, key=key))
+
+    build_sort_pair._musicdock = True
+    pdb.Database._build_sort_pair = build_sort_pair
+
+
+def sort_order_outdated(mount):
+    """True if the player's browse lists were last written without the
+    disc/track ordering (so the next write sync re-saves them once)."""
+    try:
+        with open(os.path.join(mount, SORT_ORDER_MARKER)) as f:
+            return f.read().strip() != SORT_ORDER_VERSION
+    except OSError:
+        return True
+
+
+def mark_sort_order(mount):
+    path = os.path.join(mount, SORT_ORDER_MARKER)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(SORT_ORDER_VERSION + "\n")
+
+
 def checked_save(db, guid):
     """Save only if pygpod will sign the DB the way this player needs."""
     d = db._device
@@ -337,6 +414,7 @@ def checked_save(db, guid):
                            f"hash58-signed database ({d.model if d else 'no device'})")
     if (d.firewire_guid or "").upper() != guid.upper():
         raise HandlerError("refusing to save: SysInfo FireWire GUID doesn't match the player")
+    install_sort_order()
     db.save()
 
 
@@ -586,8 +664,13 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             if report["reset"]:
                 log_info("Player appears to have been reset: rebuilding it")
             step(5, "Copying tracks")
+            resort = sort_order_outdated(mount)
+            if resort:
+                log_info("Re-sorting the player's album lists by disc and track")
             result = apply_plan(db, record, guid, mount, manifest, cache_dir,
-                                progress=progress, dirty=report["dirty"])
+                                progress=progress, dirty=report["dirty"] or resort)
+            if resort:
+                mark_sort_order(mount)
         except Exception:
             log_info("Sync failed: restoring the player's database from the backup")
             restore_backup(mount, backup)

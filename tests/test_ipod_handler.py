@@ -233,6 +233,40 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(self.db().tracks[0].album, "Hold Your Colour (2007 re-release)")
         self.assertEqual(self.apply(self.manifest([fixed]))["renamed"], 0)
 
+    def album_list_titles(self):
+        """Titles in the order the iPod's album browse list (sort index 4)
+        gives them, read back from the saved iTunesDB."""
+        import struct
+        db = self.db()
+        ids = h._master_track_ids(db)
+        title = {t.track_id: t.title for t in db.tracks}
+        with open(os.path.join(self.mount, "iPod_Control", "iTunes", "iTunesDB"), "rb") as f:
+            data = f.read()
+        pos = data.find(b"mhod")
+        while pos != -1:
+            hlen, _, mtype = struct.unpack_from("<III", data, pos + 4)
+            if mtype == 52:
+                key, count = struct.unpack_from("<II", data, pos + hlen)
+                if key == 4:
+                    idx = struct.unpack_from(f"<{count}I", data, pos + hlen + 48)
+                    return [title[ids[i]] for i in idx]
+            pos = data.find(b"mhod", pos + 4)
+        self.fail("no album sort index in the iTunesDB")
+
+    def test_album_list_follows_track_numbers_not_add_order(self):
+        # The title track went on first (its album name differed back then).
+        hyc = self.song("t10", "Hold Your Colour", album="HYC", track=10)
+        self.apply(self.manifest([hyc]))
+        rest = [self.song(f"t{n}", f"Song {n}", album="HYC", track=n) for n in (2, 1, 3)]
+        self.apply(self.manifest([hyc] + rest))
+        self.assertEqual(self.album_list_titles(),
+                         ["Song 1", "Song 2", "Song 3", "Hold Your Colour"])
+
+    def test_sort_order_marker(self):
+        self.assertTrue(h.sort_order_outdated(self.mount))
+        h.mark_sort_order(self.mount)
+        self.assertFalse(h.sort_order_outdated(self.mount))
+
     def test_orphan_files_removed(self):
         stray = os.path.join(self.mount, "iPod_Control", "Music", "F01", "old.m4a")
         with open(stray, "wb") as f:

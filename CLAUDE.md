@@ -293,6 +293,15 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   Verified on 9 Kitsune² songs on two albums: spectrograms matched 0.999+
   (one was 1.9 dB louder), while studio vs live scored 0.2; 13 same-title
   Porter Robinson pairs (live/studio, different IDs) are left alone.
+- **Album track order on the iPod (2026-10-19):** the stock firmware browses
+  by sort lists stored in the iTunesDB (MHOD 52/53). pygpod 0.0.6 sorts each
+  by one field with a stable sort, so an album's tracks kept their add order
+  ("Hold Your Colour", track 10, added first, showed as track 1).
+  `install_sort_order()` (called by `checked_save`) pre-orders the tracks
+  like iTunes/libgpod - albums by disc/track, artists by album/disc/track,
+  genres by artist/album/disc/track - before pygpod's sort. A marker
+  (`iPod_Control/musicdock/sort-order`) makes the next write sync re-save
+  once so existing players get corrected lists.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.
