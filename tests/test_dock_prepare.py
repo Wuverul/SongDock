@@ -32,10 +32,11 @@ class FakeServer:
     """Stands in for subsonic.Client."""
 
     def __init__(self, songs=(), albums=None, fail_download=(), playlists=None,
-                 album_names=None):
+                 album_names=None, album_meta=None):
         self.songs = list(songs)
         self.albums = albums or {}            # album id -> [songs]
         self.album_names = album_names or {}  # album id -> the album's own name
+        self.album_meta = album_meta or {}    # album id -> releaseTypes, songCount...
         self.playlists = playlists or {}      # playlist id -> (name, [songs][, comment])
         self.fail_download = set(fail_download)
         self.downloads = []
@@ -47,6 +48,7 @@ class FakeServer:
         if endpoint == "getAlbum":
             self.album_lookups = getattr(self, "album_lookups", []) + [params["id"]]
             return {"album": {"name": self.album_names.get(params["id"]),
+                              **self.album_meta.get(params["id"], {}),
                               "song": self.albums.get(params["id"], [])}}
         if endpoint == "getPlaylists":
             return {"playlists": {"playlist": [
@@ -131,6 +133,51 @@ class PrepareTests(unittest.TestCase):
         albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
         self.assertEqual(albums, {"a": "X (deluxe)", "b": "X (deluxe)", "c": "Y"})
         self.assertEqual(server.album_lookups, ["x"])
+
+    def test_same_recording_on_single_and_album_kept_once_from_album(self):
+        single = song("s1", title="Liebe", album="Liebe", albumId="sgl",
+                      musicBrainzId="REC-1", duration=166)
+        album = song("a1", title="Liebe", album="Squaredance", albumId="alb",
+                     musicBrainzId="rec-1", duration=167)       # case, 1 s apart
+        server = FakeServer(songs=[single], playlists={"p1": ("Mix", [single, album], "#ipod")},
+                            album_meta={"sgl": {"releaseTypes": ["single"], "songCount": 1},
+                                        "alb": {"releaseTypes": ["album"], "songCount": 31}})
+        cfg = config()
+        cfg["sync"]["playlist_tag"] = "#ipod"
+        self.run_prepare(server, cfg)
+        m = self.manifest()
+        self.assertEqual([t["id"] for t in m["tracks"]], ["a1"])
+        self.assertEqual(sorted(m["tracks"][0]["sources"]), ["playlist:Mix", "starred"])
+        lists = {p["name"]: p["song_ids"] for p in m["playlists"]}
+        self.assertEqual(lists, {"Favorites": ["a1"], "Mix": ["a1"]})   # listed once
+
+    def test_album_preferred_over_release_without_a_type(self):
+        a = song("old", album="I Kind of Really Want...", albumId="x", musicBrainzId="r")
+        b = song("new", album="Squaredance", albumId="y", musicBrainzId="r")
+        server = FakeServer(songs=[a, b], album_meta={"x": {"releaseTypes": [], "songCount": 26},
+                                                      "y": {"releaseTypes": ["album"],
+                                                            "songCount": 31}})
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["new"])
+
+    def test_different_lengths_or_no_ids_are_not_merged(self):
+        studio = song("st", title="Look at the Sky", albumId="n", musicBrainzId="r1",
+                      duration=309)
+        live = song("lv", title="Look at the Sky", albumId="l", musicBrainzId="r1",
+                    duration=370)                                # same ID, other length
+        a = song("x1", title="Intro", albumId="p")                # no IDs: never merged
+        b = song("x2", title="Intro", albumId="q")
+        self.run_prepare(FakeServer(songs=[studio, live, a, b]))
+        self.assertEqual(sorted(t["id"] for t in self.manifest()["tracks"]),
+                         ["lv", "st", "x1", "x2"])
+
+    def test_isrc_identifies_a_recording_without_musicbrainz(self):
+        a = song("a", albumId="s", isrc=["USQE92000004"])
+        b = song("b", albumId="l", isrc=["usqe92000004"])
+        server = FakeServer(songs=[a, b], album_meta={"s": {"releaseTypes": ["single"]},
+                                                      "l": {"releaseTypes": ["album"]}})
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["b"])
 
     def test_formats_for_stock_ipod(self):
         server = FakeServer(songs=[song("f", "flac"), song("m", "mp3"),

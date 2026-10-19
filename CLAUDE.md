@@ -284,6 +284,15 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   udev then starts the normal sync. `[device] auto_resync`
   (default true) turns it off. Interrupts playback while docked. Verified on
   the real Nano 2026-10-18 (re-plug -> sync in 6 s).
+- **One copy per recording (2026-10-19, user: "favor the album listing",
+  verify first):** `merge_same_recordings` treats songs as one recording
+  only with the same MusicBrainz recording ID (else ISRC) and lengths within
+  2 s; no IDs, no merge. Keeps the copy whose release ranks best (album,
+  untyped, EP, single, live, compilation; then more tracks, earlier year);
+  the kept copy takes the other's targets and playlist places (once).
+  Verified on 9 Kitsune² songs on two albums: spectrograms matched 0.999+
+  (one was 1.9 dB louder), while studio vs live scored 0.2; 13 same-title
+  Porter Robinson pairs (live/studio, different IDs) are left alone.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

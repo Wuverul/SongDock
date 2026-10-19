@@ -111,15 +111,15 @@ class PrepareError(Exception):
 
 
 # --------------------------------------------------------------- targets ----
-def starred_songs(client, album_names=None):
+def starred_songs(client, album_info=None):
     """Starred songs plus every track of a starred album. Fills
-    `album_names` ({album id: name}) from the albums it reads."""
+    `album_info` ({album id: album fields}) from the albums it reads."""
     starred = client.call("getStarred2").get("starred2", {})
     songs = list(starred.get("song", []))
     for album in starred.get("album", []):
         info = client.call("getAlbum", id=album["id"]).get("album", {})
-        if album_names is not None and info.get("name"):
-            album_names[album["id"]] = info["name"]
+        if album_info is not None:
+            album_info[album["id"]] = {k: v for k, v in info.items() if k != "song"}
         songs += info.get("song", [])
     if starred.get("artist"):
         log.info("Ignoring %d starred artist(s): only songs and albums are synced",
@@ -191,7 +191,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     """
     known_playlists = known_playlists or {}
     tracks, sources, playlists = {}, {}, []
-    album_names = {}
+    album_info = {}
     listing = None
     if tag:
         listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
@@ -231,7 +231,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             add(key, songs)
             continue
         if target == "starred":
-            songs = starred_songs(client, album_names)
+            songs = starred_songs(client, album_info)
             if favorites_name:
                 playlists.append({"target": target, "id": None, "name": favorites_name,
                                   "via": "starred",
@@ -252,18 +252,98 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             raise PrepareError(f"unknown target {target!r} "
                                "(use \"starred\" or \"playlist:<name>\")")
         add(target, songs)
-    unify_album_names(client, tracks.values(), album_names)
+    merge_same_recordings(client, tracks, sources, playlists, album_info)
+    unify_album_names(client, tracks.values(), album_info)
     return sorted(tracks.values(), key=library_order), sources, playlists
 
 
-def unify_album_names(client, songs, album_names):
+# Which copy of a recording found on several releases to keep: lower is
+# better ("favor the album listing"; user, 2026-10-19).
+RELEASE_RANK = {"album": 0, "": 1, "ep": 2, "single": 3, "live": 4, "compilation": 5,
+                "soundtrack": 5, "remix": 6, "demo": 7}
+SAME_LENGTH = 2              # seconds: copies of one recording are this close
+
+
+def album_fields(client, album_id, album_info):
+    """Navidrome's album record (name, releaseTypes, songCount...), cached in
+    `album_info`; {} if it can't be read."""
+    if album_id not in album_info:
+        try:
+            album = client.call("getAlbum", id=album_id).get("album", {})
+            album_info[album_id] = {k: v for k, v in album.items() if k != "song"}
+        except SubsonicError as e:
+            log.warning("Couldn't look up album %s (%s)", album_id, e)
+            album_info[album_id] = {}
+    return album_info[album_id]
+
+
+def recording_key(song):
+    """What identifies a recording across releases: its MusicBrainz recording
+    ID, else its ISRC. Songs without either are never merged."""
+    if song.get("musicBrainzId"):
+        return ("mbid", song["musicBrainzId"].lower())
+    isrc = song.get("isrc")
+    if isinstance(isrc, list):
+        isrc = isrc[0] if isrc else None
+    return ("isrc", isrc.upper()) if isrc else None
+
+
+def merge_same_recordings(client, tracks, sources, playlists, album_info):
+    """Keep one copy of a recording that the targets list on several releases
+    (e.g. a single and its album), preferring the album.
+
+    Two songs are one recording only if they share a MusicBrainz recording ID
+    (or ISRC) and their lengths agree within SAME_LENGTH seconds; verified on
+    Kitsune² tracks found on two albums (2026-10-19: spectrograms matched to
+    0.999+, a studio and a live version scored 0.2). The kept copy takes over
+    the other's targets and playlist places (listed once). Modifies `tracks`
+    ({song id: song}), `sources` and the playlists' song_ids in place.
+    """
+    groups = {}
+    for song in tracks.values():
+        key = recording_key(song)
+        if key:
+            groups.setdefault(key, []).append(song)
+
+    def rank(song):
+        info = album_fields(client, song.get("albumId"), album_info) \
+            if song.get("albumId") else {}
+        types = [t.lower() for t in info.get("releaseTypes") or []] or [""]
+        return (min(RELEASE_RANK.get(t, 4) for t in types),
+                bool(info.get("isCompilation")), -(info.get("songCount") or 0),
+                song.get("year") or 9999, song["id"])
+
+    replaced = {}
+    for songs in groups.values():
+        if len(songs) < 2:
+            continue
+        songs.sort(key=rank)
+        keep = songs[0]
+        for other in songs[1:]:
+            if abs((other.get("duration") or 0) - (keep.get("duration") or 0)) > SAME_LENGTH:
+                continue
+            replaced[other["id"]] = keep["id"]
+            log.info("Same recording on two releases: keeping %s - %s from %r, not %r",
+                     keep.get("artist"), keep.get("title"), keep.get("album"),
+                     other.get("album"))
+    for old, new in replaced.items():
+        del tracks[old]
+        for target in sources.pop(old, []):
+            if target not in sources[new]:
+                sources[new].append(target)
+    if replaced:
+        for pl in playlists:
+            pl["song_ids"] = unique_ids([{"id": replaced.get(i, i)} for i in pl["song_ids"]])
+
+
+def unify_album_names(client, songs, album_info):
     """Give every song of one Navidrome album the album's own name.
 
     Navidrome groups an album by its ID, but a song's `album` field comes
     from that file's tags and can differ (2026-10-18: one track of "Hold
     Your Colour (2007 re-release)" said "Hold Your Colour"). The iPod groups
     by name, so that song landed in an album of its own. Only albums whose
-    songs disagree are looked up; `album_names` holds names already known.
+    songs disagree are looked up; `album_info` holds albums already read.
     """
     names = {}
     for s in songs:
@@ -272,14 +352,7 @@ def unify_album_names(client, songs, album_names):
     for album_id, seen in names.items():
         if len(seen) < 2:
             continue
-        name = album_names.get(album_id)
-        if not name:
-            try:
-                name = client.call("getAlbum", id=album_id).get("album", {}).get("name")
-            except SubsonicError as e:
-                log.warning("Couldn't look up album %s (%s); names left as they are",
-                            album_id, e)
-                continue
+        name = album_fields(client, album_id, album_info).get("name")
         if not name:
             continue
         for s in songs:
