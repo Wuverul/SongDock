@@ -293,6 +293,25 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   Verified on 9 Kitsune² songs on two albums: spectrograms matched 0.999+
   (one was 1.9 dB louder), while studio vs live scored 0.2; 13 same-title
   Porter Robinson pairs (live/studio, different IDs) are left alone.
+- **Simplified genres (2026-10-19, `dock_genres.py`):** Navidrome songs carry
+  several genre tags, and the iPod showed each combination as a genre (56
+  for 78 albums). `[genres]` in the config is an ordered list of groups
+  (name + keywords; whole-word match, `release:<type>` matches the album's
+  release type, `album:<words>` the album name, e.g. `album:chillhop`). A
+  song gets the first group matching any tag (order = priority, so adding
+  albums never reshuffles; user's choice over counting). Only songs no group
+  matches go by count: their tag carried by the most synced albums
+  (`unmatched = ""`, default; no tags = "Other"). Then each album takes its
+  songs' majority group. The default list has the user's groups first, then
+  general categories from Discogs/iTunes top-level genres (Classical,
+  Country, Jazz, Metal, ...) for libraries this one doesn't cover. The prepare job writes it
+  as each track's `genre` in the manifest (`album_types` caches release
+  types); `fill_missing_names` applies it in the iTunesDB only (no re-copy;
+  Navidrome and cached files untouched). Preview: `dock_prepare.py
+  --genres`. Default list on the real library: 9 genres. Navidrome
+  sometimes sends `releaseTypes` as one string ("album;compilation");
+  `dock_genres.release_types` handles both (it was read letter by letter
+  in `merge_same_recordings`).
 - **Album track order on the iPod (2026-10-19):** the stock firmware browses
   by sort lists stored in the iTunesDB (MHOD 52/53). pygpod 0.0.6 sorts each
   by one field with a stable sort, so an album's tracks kept their add order

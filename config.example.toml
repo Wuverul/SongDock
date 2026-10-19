@@ -39,3 +39,134 @@ auto_resync = true                 # an iPod left docked syncs again by itself w
 [display]
 invert = false                     # true: dark mode (white on black) for a dark case;
                                    # e-ink holds either colour without power: no extra wear
+
+[genres]
+# The iPod's Genres menu. Navidrome gives songs several genre tags, and the
+# iPod showed every combination as its own genre. Instead, each song goes in
+# one of the groups below; only the iPod's copy changes, never Navidrome.
+# Order is priority: a song goes in the FIRST group with a keyword matching
+# any of its tags. Keywords match whole words, ignoring case and punctuation
+# ("rock" matches "alternative rock"; "pop" doesn't match "electropop").
+# "release:live" matches the album's release type in Navidrome, and
+# "album:chillhop" words in the album's name. Then each album takes the
+# group most of its songs got. Preview the result with:
+#   ~/musicdock/venv/bin/python ~/musicdock/app/dock_prepare.py --genres
+unmatched = ""                     # songs no group matches: "" = their tag that the
+                                   # most albums carry; or one name, e.g. "Other"
+
+[[genres.groups]]
+name = "Live Recordings"
+match = ["release:live", "live"]
+
+[[genres.groups]]
+name = "Soundtracks"
+match = ["release:soundtrack", "soundtrack", "score", "ost",
+         "video game music", "musical", "show tunes"]
+
+[[genres.groups]]
+name = "Holiday"
+match = ["christmas", "holiday", "xmas"]
+
+[[genres.groups]]
+name = "Children's"
+match = ["children", "kids", "nursery", "lullaby"]
+
+[[genres.groups]]
+name = "Spoken Word"
+match = ["spoken word", "comedy", "audiobook", "podcast", "poetry",
+         "speech", "non music"]
+
+[[genres.groups]]
+name = "Chiptune"
+match = ["chiptune", "chipstep", "bitpop", "8 bit"]
+
+[[genres.groups]]
+name = "Breakcore"
+match = ["breakcore", "dariacore", "digital hardcore", "speedcore",
+         "mashcore"]
+
+[[genres.groups]]
+name = "DnB"
+match = ["drum and bass", "drum n bass", "dnb", "jungle", "liquid funk",
+         "neurofunk"]
+
+[[genres.groups]]
+name = "Lofi / Chill"
+match = ["album:chillhop", "album:lofi", "album:lo fi", "lo fi", "lofi",
+         "chill", "chillout", "chillhop", "trip hop", "new age"]
+
+[[genres.groups]]
+name = "Hip-Hop"
+match = ["hip hop", "hiphop", "boom bap", "rap", "trap", "grime", "drill"]
+
+[[genres.groups]]
+name = "Indie Rock"
+match = ["indie rock"]
+
+[[genres.groups]]
+name = "Indie Pop"
+match = ["indie pop", "dream pop", "bedroom pop", "indietronica",
+         "art pop", "alternative pop"]
+
+[[genres.groups]]
+name = "Metal"
+match = ["metal", "metalcore", "deathcore", "grindcore", "djent"]
+
+[[genres.groups]]
+name = "Country"
+match = ["country", "bluegrass", "americana", "honky tonk"]
+
+[[genres.groups]]
+name = "Folk"
+match = ["folk", "singer songwriter", "acoustic"]
+
+[[genres.groups]]
+name = "Rock"
+match = ["rock", "punk", "grunge", "emo", "post hardcore", "screamo",
+         "shoegaze"]
+
+[[genres.groups]]
+name = "Electronic"
+match = ["electronic", "electronica", "edm", "house", "techno", "trance",
+         "dubstep", "brostep", "riddim", "electro", "complextro",
+         "breaks", "dance", "rave", "eurodance", "hardcore", "footwork",
+         "synthwave", "future bass", "idm"]
+
+[[genres.groups]]
+name = "Pop"
+match = ["pop", "electropop", "hyperpop"]
+
+[[genres.groups]]
+name = "R&B / Soul"
+match = ["r&b", "rnb", "rhythm and blues", "soul", "funk", "motown",
+         "disco"]
+
+[[genres.groups]]
+name = "Jazz"
+match = ["jazz", "bebop", "swing", "big band", "bossa nova"]
+
+[[genres.groups]]
+name = "Blues"
+match = ["blues"]
+
+[[genres.groups]]
+name = "Classical"
+match = ["classical", "orchestral", "symphony", "opera", "baroque",
+         "chamber music", "choral", "neoclassical"]
+
+[[genres.groups]]
+name = "Reggae"
+match = ["reggae", "ska", "dub", "dancehall", "rocksteady"]
+
+[[genres.groups]]
+name = "Latin"
+match = ["latin", "reggaeton", "salsa", "bachata", "cumbia", "samba",
+         "tango"]
+
+[[genres.groups]]
+name = "Gospel & Christian"
+match = ["gospel", "christian", "worship"]
+
+[[genres.groups]]
+name = "World"
+match = ["world", "afrobeat", "afrobeats", "celtic", "flamenco"]

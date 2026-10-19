@@ -445,17 +445,21 @@ def fill_missing_names(track, t):
     titles the track with the file name (the Navidrome ID) and no artist.
     The album always follows Navidrome (as when the track was added), so a
     corrected album name in the plan reaches tracks already on the player.
-    Returns True if the track changed."""
-    changed = False
+    So does the genre: the plan's simplified one (dock_genres), not the
+    file's tags. Returns the names of the fields changed (empty: none)."""
+    changed = set()
     if t.get("album") and track.album != t["album"]:
         track.album = t["album"]
-        changed = True
+        changed.add("album")
     if t.get("title") and (not track.title or track.title == t["id"]):
         track.title = t["title"]
-        changed = True
+        changed.add("title")
     if t.get("artist") and not track.artist:
         track.artist = t["artist"]
-        changed = True
+        changed.add("artist")
+    if t.get("genre") and track.genre != t["genre"]:
+        track.genre = t["genre"]
+        changed.add("genre")
     return changed
 
 
@@ -486,15 +490,21 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
     keep = targeted_ids(manifest)        # a song not cached right now stays put
     removals = [r for nid, r in present.items() if nid not in keep or nid in changed]
 
-    # Tracks already on the player that were added without tags (fixed in
-    # the iTunesDB; no copy needed).
-    renamed = 0
+    # Tracks already on the player that were added without tags, or whose
+    # album name or genre changed in the plan (fixed in the iTunesDB; no
+    # copy needed).
+    renamed = regenred = 0
     for nid, r in present.items():
-        if nid in wanted and nid not in changed and \
-                fill_missing_names(on_player[int(r["dbid"])], wanted[nid]):
+        if nid not in wanted or nid in changed:
+            continue
+        fields = fill_missing_names(on_player[int(r["dbid"])], wanted[nid])
+        if fields - {"genre"}:
             log_info(f"Updated names from Navidrome: {wanted[nid].get('artist')} - "
                      f"{wanted[nid].get('title')} ({wanted[nid].get('album')})")
-            renamed += 1
+        renamed += bool(fields)
+        regenred += "genre" in fields
+    if regenred:
+        log_info(f"Genre updated on {regenred} track(s) (the [genres] list)")
     dirty = dirty or bool(renamed)
     additions = [t for nid, t in wanted.items() if nid not in present or nid in changed]
 

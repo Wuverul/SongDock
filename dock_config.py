@@ -10,6 +10,8 @@ import os
 import re
 import tomllib
 
+import dock_genres
+
 log = logging.getLogger("dock_config")
 
 DEFAULT_PATH = os.environ.get("MUSICDOCK_CONFIG", "~/.config/musicdock/config.toml")
@@ -22,6 +24,8 @@ DEFAULTS = {
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False, "auto_resync": True},
     "display": {"invert": False},
+    "genres": {"unmatched": dock_genres.DEFAULT_UNMATCHED,
+               "groups": dock_genres.DEFAULT_GROUPS},
 }
 
 
@@ -102,7 +106,24 @@ def load(path=None):
     w = cfg["sync"]["workers"]
     if not (w == "auto" or (isinstance(w, int) and not isinstance(w, bool) and w >= 1)):
         raise ConfigError(f'{path}: workers must be "auto" or a whole number >= 1')
+    check_genres(cfg["genres"], path)
     if cfg["device"]["convert_to"] == "aac":
         log.warning("convert_to = \"aac\" uses ffmpeg's built-in AAC encoder, which "
                     "adds audible artifacts; \"mp3\" is recommended")
     return cfg
+
+
+def check_genres(genres, path):
+    """[genres]: unmatched is text; groups is a list of {name, match}."""
+    if not isinstance(genres["unmatched"], str):
+        raise ConfigError(f'{path}: [genres] unmatched must be text, e.g. "Other" '
+                          '("" = keep each song\'s first tag)')
+    groups = genres["groups"]
+    ok = isinstance(groups, list) and all(
+        isinstance(g, dict) and isinstance(g.get("name"), str) and g["name"].strip()
+        and isinstance(g.get("match"), list) and g["match"]
+        and all(isinstance(m, str) and m.strip() for m in g["match"])
+        for g in groups)
+    if not ok:
+        raise ConfigError(f"{path}: each [[genres.groups]] needs a name and a match "
+                          f'list, e.g. name = "Rock" / match = ["rock", "punk"]')

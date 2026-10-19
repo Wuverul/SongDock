@@ -54,6 +54,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import dock_config  # noqa: E402
+import dock_genres  # noqa: E402
 from subsonic import Client, SubsonicError  # noqa: E402
 
 log = logging.getLogger("dock_prepare")
@@ -177,7 +178,7 @@ def has_tag(comment, tag):
 
 
 def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites",
-                  tag="", previously_tagged=()):
+                  tag="", previously_tagged=(), album_info=None):
     """Resolve the configured targets into one de-duplicated set of tracks.
 
     targets: e.g. ["starred", "playlist:Mel Test"].
@@ -186,12 +187,13 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     tag: playlists whose Navidrome comment contains this (e.g. "#ipod") are
     added too. previously_tagged: playlist IDs tagged last run, so an empty
     playlist listing (server trouble) stops the run instead of pruning.
+    album_info: pass a dict to keep the album records read along the way.
     Returns (tracks in artist/album/track order, {song id: [targets]},
     [playlist records for the manifest, in target order]).
     """
     known_playlists = known_playlists or {}
     tracks, sources, playlists = {}, {}, []
-    album_info = {}
+    album_info = {} if album_info is None else album_info
     listing = None
     if tag:
         listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
@@ -308,7 +310,7 @@ def merge_same_recordings(client, tracks, sources, playlists, album_info):
     def rank(song):
         info = album_fields(client, song.get("albumId"), album_info) \
             if song.get("albumId") else {}
-        types = [t.lower() for t in info.get("releaseTypes") or []] or [""]
+        types = dock_genres.release_types(info) or [""]
         return (min(RELEASE_RANK.get(t, 4) for t in types),
                 bool(info.get("isCompilation")), -(info.get("songCount") or 0),
                 song.get("year") or 9999, song["id"])
@@ -360,6 +362,28 @@ def unify_album_names(client, songs, album_info):
                 log.info("Album name from Navidrome's album: %s - %s: %r -> %r",
                          s.get("artist"), s.get("title"), s.get("album"), name)
                 s["album"] = name
+
+
+def plan_genres(client, cfg, songs, previous, album_info=None):
+    """{song id: genre for the player} from the [genres] list, and the
+    release types used ({album id: [types]}, kept in the manifest so each
+    album is looked up once, and only if a group uses "release:").
+    album_info: album records already read this run (target_tracks)."""
+    album_info = {} if album_info is None else album_info
+    settings = cfg.get("genres", dock_config.DEFAULTS["genres"])
+    groups = settings["groups"]
+    album_types = {}
+    if dock_genres.uses_release_types(groups):
+        known = previous.get("album_types", {})
+        for album_id in sorted({s["albumId"] for s in songs if s.get("albumId")}):
+            if album_id in known:
+                album_types[album_id] = known[album_id]
+                continue
+            info = album_fields(client, album_id, album_info)
+            if info:                         # {} = lookup failed: retry next run
+                album_types[album_id] = dock_genres.release_types(info)
+    genres = dock_genres.assign(songs, groups, settings["unmatched"], album_types)
+    return genres, album_types
 
 
 def needs_conversion(suffix, device_type):
@@ -707,10 +731,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     known = {p["target"]: p["id"] for p in previous.get("playlists", []) if p.get("id")}
     previously_tagged = [p["id"] for p in previous.get("playlists", [])
                          if p.get("via") == "tag"]
+    album_info = {}                 # album records read this run, shared
     targets, sources, playlists = target_tracks(
         client, cfg["sync"]["targets"], known,
         cfg["sync"].get("favorites_playlist", "Favorites"),
-        cfg["sync"].get("playlist_tag", ""), previously_tagged)
+        cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info)
+    genres, album_types = plan_genres(client, cfg, targets, previous, album_info)
     wanted = {output_name(t, device, fmt): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
     to_remove = sorted(existing - wanted.keys())     # includes tracks kept earlier
@@ -950,7 +976,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 "title": t.get("title"), "artist": t.get("artist"),
                 "album": t.get("album"), "track": t.get("track"),
                 "disc": t.get("discNumber"), "year": t.get("year"),
-                "duration": t.get("duration"), "size": os.path.getsize(path),
+                "duration": t.get("duration"), "genre": genres.get(t["id"]),
+                "size": os.path.getsize(path),
                 "source_suffix": t.get("suffix"),
                 "converted": needs_conversion(t.get("suffix"), device),
                 "encoding": (current if needs_conversion(t.get("suffix"), device)
@@ -964,6 +991,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         "playlist_tag": cfg["sync"].get("playlist_tag", ""),
         "tracks": ready, "playlists": playlists, "skipped": skipped,
         "kept_after_removal": len(kept.items),
+        **({"album_types": album_types} if album_types else {}),
     }
     # Runs every 15 minutes: only write the plan when it changed (spares the
     # SD card; "generated" then says when the plan last changed).
@@ -1011,6 +1039,32 @@ def show_plan(manifest):
                      f"{len(albums)} album(s): {', '.join(albums)}"
                      + (f" ({missing} not ready)" if missing else ""))
     return "\n".join(lines)
+
+
+def show_genres(config_path=None):
+    """The --genres preview: the current targets with the [genres] list
+    applied, from the server (nothing is written)."""
+    try:
+        cfg = dock_config.load(config_path)
+    except dock_config.ConfigError as e:
+        log.error("%s", e)
+        return 1
+    client = Client(cfg["server"]["url"], cfg["server"]["username"],
+                    cfg["server"]["password"])
+    previous = read_manifest(os.path.expanduser(cfg["sync"]["cache_dir"]))
+    known = {p["target"]: p["id"] for p in previous.get("playlists", []) if p.get("id")}
+    album_info = {}
+    try:
+        songs, _, _ = target_tracks(client, cfg["sync"]["targets"], known,
+                                    cfg["sync"].get("favorites_playlist", "Favorites"),
+                                    cfg["sync"].get("playlist_tag", ""),
+                                    album_info=album_info)
+        genres, _ = plan_genres(client, cfg, songs, previous, album_info)
+    except (SubsonicError, PrepareError) as e:
+        log.error("Couldn't read the targets: %s", e)
+        return 1
+    print("\n".join(dock_genres.summary(songs, genres)))
+    return 0
 
 
 def pending_args(manifest):
@@ -1070,6 +1124,9 @@ def main(argv=None):
     p.add_argument("--show-plan", action="store_true",
                    help="print what the next sync would put on the player, from "
                         "the last run's manifest (no network)")
+    p.add_argument("--genres", action="store_true",
+                   help="show which genre each synced album gets on the player "
+                        "([genres] in the config); reads the server, changes nothing")
     p.add_argument("--preview-dir", metavar="DIR",
                    help="save screens as PNGs instead of drawing on the panel")
     args = p.parse_args(argv)
@@ -1084,6 +1141,9 @@ def main(argv=None):
         print(show_plan(read_manifest(os.path.expanduser(
             args.cache_dir or cfg["sync"]["cache_dir"]))))
         return 0
+
+    if args.genres:
+        return show_genres(args.config)
 
     try:
         os.nice(19)          # conversion must never slow a sync down

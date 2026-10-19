@@ -233,6 +233,19 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(self.db().tracks[0].album, "Hold Your Colour (2007 re-release)")
         self.assertEqual(self.apply(self.manifest([fixed]))["renamed"], 0)
 
+    def test_plan_genre_replaces_file_tags_on_new_and_existing_tracks(self):
+        a = self.song("g1", "Liebe")
+        self.apply(self.manifest([a]))                     # plan without genres
+        self.apply(self.manifest([dict(a, genre="Electronic"),
+                                  dict(self.song("g2", "Squaredance"), genre="Chiptune")]))
+        genres = {t.title: t.genre for t in self.db().tracks}
+        self.assertEqual(genres, {"Liebe": "Electronic", "Squaredance": "Chiptune"})
+        summary = self.apply(self.manifest([dict(a, genre="Pop"),
+                                            dict(self.song("g2", "Squaredance"),
+                                                 genre="Chiptune")]))
+        self.assertEqual((summary["renamed"], summary["added"]), (1, 0))   # no re-copy
+        self.assertEqual({t.title: t.genre for t in self.db().tracks}["Liebe"], "Pop")
+
     def album_list_titles(self):
         """Titles in the order the iPod's album browse list (sort index 4)
         gives them, read back from the saved iTunesDB."""

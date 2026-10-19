@@ -86,7 +86,11 @@ def config(device="stock_ipod", max_gb=20, convert_to="mp3", mp3_quality="v0",
            targets=("starred",)):
     return {"sync": {"targets": list(targets), "max_cache_gb": max_gb},
             "device": {"type": device, "convert_to": convert_to,
-                       "mp3_quality": mp3_quality, "aac_bitrate": "256k"}}
+                       "mp3_quality": mp3_quality, "aac_bitrate": "256k"},
+            # No "release:" groups, so album lookups stay what each test expects.
+            "genres": {"unmatched": "Other",
+                       "groups": [{"name": "Electronic", "match": ["electronic", "dance"]},
+                                  {"name": "Hip-Hop", "match": ["hip hop"]}]}}
 
 
 class PrepareTests(unittest.TestCase):
@@ -178,6 +182,44 @@ class PrepareTests(unittest.TestCase):
                                                       "l": {"releaseTypes": ["album"]}})
         self.run_prepare(server)
         self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["b"])
+
+    def test_manifest_carries_one_genre_per_album(self):
+        server = FakeServer(songs=[
+            song("a", albumId="x", genres=[{"name": "rave"}, {"name": "dance"}]),
+            song("b", albumId="x", genres=[{"name": "electronic"}]),
+            song("c", albumId="x", genres=[{"name": "hip hop"}]),      # outvoted
+            song("d", albumId="y", genre="jazz fusion")])              # no group
+        self.run_prepare(server)
+        genres = {t["id"]: t["genre"] for t in self.manifest()["tracks"]}
+        self.assertEqual(genres, {"a": "Electronic", "b": "Electronic",
+                                  "c": "Electronic", "d": "Other"})
+        self.assertNotIn("album_types", self.manifest())     # no "release:" groups
+
+    def test_release_types_looked_up_once_and_kept(self):
+        cfg = config()
+        cfg["genres"]["groups"].insert(0, {"name": "Live", "match": ["release:live"]})
+        server = FakeServer(songs=[song("a", albumId="x", genres=[{"name": "electronic"}]),
+                                   song("b", albumId="y", genres=[{"name": "electronic"}])],
+                            album_meta={"x": {"releaseTypes": "album;live"},   # a string
+                                        "y": {"releaseTypes": ["album"]}})
+        self.run_prepare(server, cfg)
+        m = self.manifest()
+        self.assertEqual({t["id"]: t["genre"] for t in m["tracks"]},
+                         {"a": "Live", "b": "Electronic"})
+        self.assertEqual(m["album_types"], {"x": ["album", "live"], "y": ["album"]})
+        server.album_lookups = []
+        self.run_prepare(server, cfg)
+        self.assertEqual(server.album_lookups, [])             # remembered
+
+    def test_release_types_given_as_one_string_rank_correctly(self):
+        # Read letter by letter, "album" ranked below a single (2026-10-19).
+        a = song("lp", album="Squaredance", albumId="x", musicBrainzId="r")
+        b = song("single", album="Liebe", albumId="y", musicBrainzId="r")
+        server = FakeServer(songs=[a, b],
+                            album_meta={"x": {"releaseTypes": "album", "songCount": 12},
+                                        "y": {"releaseTypes": ["single"], "songCount": 1}})
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["lp"])
 
     def test_formats_for_stock_ipod(self):
         server = FakeServer(songs=[song("f", "flac"), song("m", "mp3"),
