@@ -1194,7 +1194,24 @@ def wait_for_syncs(check=sync_running, sleep=time.sleep, poll=15):
 
 
 # ------------------------------------------------------------------ main ----
+def limit_malloc_arenas(n=2):
+    """Cap glibc's per-thread malloc arenas (call before starting threads).
+
+    Each worker thread otherwise gets its own arena (up to 64 MB on 64-bit),
+    which keeps freed memory: on a Zero 2 W (415 MB) a run grew to ~230 MB
+    over 116 tracks and was OOM-killed (2026-10-23). Same as setting
+    MALLOC_ARENA_MAX. Returns False where there's no glibc (e.g. macOS).
+    """
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6")
+        return bool(libc.mallopt(-8, n))       # M_ARENA_MAX
+    except (OSError, AttributeError):
+        return False
+
+
 def main(argv=None):
+    limit_malloc_arenas()
     p = argparse.ArgumentParser(description="Music dock prepare job")
     p.add_argument("--config", help="config.toml path (default: %s)" % dock_config.DEFAULT_PATH)
     p.add_argument("--cache-dir", help="override cache_dir from the config")

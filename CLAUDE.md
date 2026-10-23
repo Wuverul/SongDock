@@ -233,7 +233,10 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   batch reserved space for all of it: 432 queued FLACs tripped the cache
   limit at 4.7 GB on 2026-10-17). No CPU
   pinning or systemd CPUQuota: the worker count leaves a core's worth free,
-  and nice 19 lets a sync preempt.
+  and nice 19 lets a sync preempt. **Memory:** `limit_malloc_arenas()` caps glibc
+  malloc arenas at 2 (`mallopt(M_ARENA_MAX)`) at start: per-thread arenas
+  kept freed memory and a run on the Zero 2 W (415 MB) was OOM-killed at
+  ~230 MB after 116 tracks (2026-10-23).
 - `dock_record.py`: the SQLite record (`/var/lib/musicdock/dock.db`; players,
   tracks, pending_plays, playlists). `dock_plays.py`: upload queued plays
   (batches of 25; leave the queue only on server confirmation). Both the sync
