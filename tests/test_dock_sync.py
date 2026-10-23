@@ -292,6 +292,67 @@ class WifiFileSyncTests(unittest.TestCase):
         self.assertIn("3", args)
 
 
+class SetupFileSyncTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = self.tmp.name
+        os.environ["MUSICDOCK_RECORD"] = os.path.join(self.root, "dock.db")
+        self.addCleanup(os.environ.pop, "MUSICDOCK_RECORD")
+        os.makedirs(os.path.join(self.root, "iPod"))
+        self.root_db, self.root = self.root, os.path.join(self.root, "iPod")
+        from dock_record import Record
+        rec = Record(os.environ["MUSICDOCK_RECORD"])
+        for guid, name in (("000A270000000001", "New iPod"), ("000A270000000002", "Old iPod")):
+            rec.upsert_player(guid)
+            rec.set_player_name(guid, name)
+            rec.mark_synced(guid)
+        rec.close()
+
+    def handle(self, write=True):
+        from dock_record import Record
+        path = os.environ["MUSICDOCK_RECORD"]
+        with mock.patch("dock_record.Record", side_effect=lambda: Record(path)):
+            return dock_sync.handle_setup_file(FakeDevice(self.root), write,
+                                               "000A270000000001")
+
+    def test_forgets_old_ipod_and_lists_them_in_the_marker(self):
+        with open(os.path.join(self.root, "DockSetup.txt"), "w") as f:
+            f.write("Forget=Old iPod\n")
+        result = self.handle()
+        self.assertTrue(result["ok"])
+        self.assertFalse(os.path.exists(os.path.join(self.root, "DockSetup.txt")))
+        with open(os.path.join(self.root, dock_sync.MARKER)) as f:
+            text = f.read()
+        self.assertTrue(text.startswith(dock_sync.MARKER_TEXT))
+        self.assertIn("New iPod", text)
+        self.assertIn("this iPod", text)
+        self.assertIn("forgotten", text)
+        self.assertIn("Last DockSetup.txt", text)
+
+    def test_marker_list_written_without_a_setup_file(self):
+        self.assertIsNone(self.handle())
+        with open(os.path.join(self.root, dock_sync.MARKER)) as f:
+            self.assertIn("Old iPod", f.read())
+
+    def test_read_only_leaves_everything_alone(self):
+        with open(os.path.join(self.root, "DockSetup.txt"), "w") as f:
+            f.write("Forget=Old iPod\n")
+        result = self.handle(write=False)
+        self.assertEqual(result["reason"], "Dock is read-only (write = false)")
+        self.assertTrue(os.path.exists(os.path.join(self.root, "DockSetup.txt")))
+        self.assertFalse(os.path.exists(os.path.join(self.root, dock_sync.MARKER)))
+
+    def test_result_screen(self):
+        shown = []
+        run_sync(RecordingDevice(self.root, []), lambda s, *a, force=False: shown.append((s, a)),
+                 work=lambda d, step: {"added": 2, "setup": {
+                     "ok": True, "done": ["Forgot Old iPod (model unknown)"], "reason": ""}})
+        screen, args = shown[-1]
+        self.assertEqual(screen, "setup")
+        self.assertEqual(args[:2], ("--reason", "Forgot Old iPod (model unknown)"))
+
+
 class ScreenProcessTests(unittest.TestCase):
     """Screen must draw in a separate process (GPIO is released on exit)."""
 

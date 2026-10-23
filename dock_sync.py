@@ -415,6 +415,15 @@ def run_sync(device, show, work=None, total=None):
                  "--removed", str(summary.get("removed", 0)),
                  "--plays", str(summary.get("plays_sent", 0)),
                  "--queued", str(summary.get("plays_queued", 0)), force=True)
+        elif summary.get("setup"):
+            import dock_setup
+            s = summary["setup"]
+            show("setup" if s["ok"] else "setupfail",
+                 "--reason", dock_setup.summary_line(s),
+                 "--added", str(summary.get("added", 0)),
+                 "--removed", str(summary.get("removed", 0)),
+                 "--plays", str(summary.get("plays_sent", 0)),
+                 "--queued", str(summary.get("plays_queued", 0)), force=True)
         else:
             show("safe", "--added", str(summary.get("added", 0)),
                  "--removed", str(summary.get("removed", 0)),
@@ -488,10 +497,49 @@ def make_ipod_work(cfg, guid, product, write):
             record.close()
         if mac_formatted:
             raise SyncError("Mac-formatted iPod (see guide)")
+        summary["setup"] = handle_setup_file(device, writing, guid)
+        if writing:
+            try:
+                import dock_guide
+                if dock_guide.write_guide(device.root, cfg):
+                    log.info("Updated %s on the iPod", dock_guide.GUIDE_FILE)
+            except Exception:
+                log.exception("Couldn't write the guide (continuing)")
         summary["wifi"] = handle_wifi_file(device, write, client)
         log.info("Session summary: %s", summary)
         return summary
     return work
+
+
+def handle_setup_file(device, write, guid):
+    """DockSetup.txt on an opted-in player (forget/keep other iPods; write
+    mode only, since success deletes it), then MediaDock.txt rewritten with
+    the iPods the dock knows. Returns the DockSetup.txt result or None.
+    Never fails the sync."""
+    import dock_setup
+    from dock_record import Record
+    result = None
+    found = dock_setup.find_file(device.root, dock_setup.SETUP_FILE)
+    if found and not write:
+        log.info("%s found but the dock is read-only (write = false): ignored",
+                 dock_setup.SETUP_FILE)
+        return {"ok": False, "done": [], "reason": "Dock is read-only (write = false)"}
+    if not write:
+        return None
+    try:
+        record = Record()
+        try:
+            if found:
+                result = dock_setup.apply_setup_file(device.root, record, guid)
+            dock_setup.write_marker(device.root, MARKER, record.players(), guid,
+                                    MARKER_TEXT, result)
+        finally:
+            record.close()
+    except Exception as e:
+        log.exception("%s / %s handling failed", dock_setup.SETUP_FILE, MARKER)
+        if found and result is None:
+            result = {"ok": False, "done": [], "reason": f"Error: {e}"[:60]}
+    return result
 
 
 def handle_wifi_file(device, write, client):

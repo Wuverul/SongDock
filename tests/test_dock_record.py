@@ -25,6 +25,57 @@ class RecordTests(unittest.TestCase):
         self.rec = Record(self.path)
         self.addCleanup(lambda: self.rec.close())     # self.rec may be replaced
 
+    def test_songs_on_every_player(self):
+        self.assertEqual(self.rec.songs_on_every_player(), {})
+        self.rec.add_track(GUID, 1, navidrome_id="n1", encoding="mp3 v0")
+        self.rec.add_track(GUID, 2, navidrome_id="n2", encoding="mp3 v0")
+        self.rec.add_track(GUID, 3, navidrome_id="n3")
+        self.rec.mark_removed(GUID, 3, "no longer in any synced playlist")
+        self.assertEqual(self.rec.songs_on_every_player(),
+                         {"n1": {"mp3 v0"}, "n2": {"mp3 v0"}})
+        other = "000A270000000003"
+        self.rec.upsert_player(other)                       # e.g. just reset: empty
+        self.assertEqual(self.rec.songs_on_every_player(), {})
+        self.rec.add_track(other, 9, navidrome_id="n2", encoding="original")
+        self.assertEqual(self.rec.songs_on_every_player(), {"n2": {"mp3 v0", "original"}})
+
+    def test_forgotten_player_holds_nothing_back_until_it_docks(self):
+        nano, classic = GUID, "000A270000000003"
+        for guid in (nano, classic):
+            self.rec.upsert_player(guid)
+            self.rec.mark_synced(guid)
+        self.rec.add_track(nano, 1, navidrome_id="n1", encoding="mp3 v0")
+        for i, nid in enumerate(["n1", "n2", "n3"]):
+            self.rec.add_track(classic, 10 + i, navidrome_id=nid, encoding="mp3 v0")
+        self.assertEqual(set(self.rec.songs_on_every_player()), {"n1"})
+        self.rec.forget_player(nano)
+        self.assertEqual(set(self.rec.songs_on_every_player()), {"n1", "n2", "n3"})
+        self.assertEqual(self.rec.last_synced_player()["guid"], classic)
+        nano_row = {p["guid"]: p for p in self.rec.players()}[nano]
+        self.assertIsNotNone(nano_row["forgotten_at"])
+        self.assertEqual(nano_row["present"], 1)                  # history kept
+        self.rec.mark_synced(nano)                                 # docked again
+        self.assertEqual(set(self.rec.songs_on_every_player()), {"n1"})
+        self.assertIsNone(self.rec.player(nano)["forgotten_at"])
+        self.rec.forget_player(nano)
+        self.rec.forget_player(classic)
+        self.assertEqual(self.rec.songs_on_every_player(), {})
+        self.assertIsNone(self.rec.last_synced_player())
+
+    def test_older_record_gains_the_forgotten_column(self):
+        self.rec.close()
+        old = os.path.join(self.tmp.name, "old.db")
+        db = sqlite3.connect(old)
+        db.execute("CREATE TABLE players (guid TEXT PRIMARY KEY, model TEXT, "
+                   "first_seen INTEGER NOT NULL, last_sync INTEGER)")
+        db.execute("INSERT INTO players VALUES (?, 'xB903', 1, 2)", (GUID,))
+        db.commit()
+        db.close()
+        self.rec = Record(old)
+        self.assertIsNone(self.rec.player(GUID)["forgotten_at"])
+        self.assertEqual(self.rec.last_synced_player()["guid"], GUID)
+        Record(old).close()                                        # second open: no-op
+
     def test_player_model_kept_once_known(self):
         self.rec.upsert_player(GUID, model="xB903")
         self.rec.upsert_player(GUID)                       # model unknown this time

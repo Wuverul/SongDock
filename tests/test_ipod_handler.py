@@ -99,6 +99,48 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(summary["removed"], 0)
         self.assertEqual(sorted(t.title for t in self.db().tracks), ["One", "Two"])
 
+    def test_track_dropped_from_full_cache_stays_and_gets_renamed(self):
+        a, b = self.song("n1", "One"), self.song("n2", "Two")
+        self.apply(self.manifest([a, b]))
+        os.remove(os.path.join(self.cache, b["file"]))           # cache made room
+        m = self.manifest([a])
+        m["on_player"] = [{k: v for k, v in dict(b, genre="Chiptune").items()
+                           if k not in ("file", "size")}]
+        summary = self.apply(m)
+        self.assertEqual((summary["removed"], summary["added"]), (0, 0))
+        self.assertEqual({t.title: t.genre for t in self.db().tracks}["Two"], "Chiptune")
+        self.assertEqual(h.pending_changes(m, ["n1", "n2"]), (0, 0))
+
+    def test_player_bigger_than_cache_fills_over_several_syncs(self):
+        # Prepare -> sync cycles with a cache that holds about 2 of 6 tracks:
+        # each sync adds what's cached, the next prepare drops those files
+        # (now on the player) for the next ones. Nothing is ever removed.
+        import json
+        import dock_prepare
+        from test_dock_prepare import ROOMY, FakeServer, config, song
+
+        def convert(src, dst, options, duration=None):
+            fx.make_mp3(dst, os.path.basename(dst), seconds=2)
+        sample = fx.make_mp3(os.path.join(self.tmp, "sample.mp3"), "x", seconds=2)
+        size = os.path.getsize(sample)
+        server = FakeServer(songs=[song(f"s{i}", size=size // 2, track=i) for i in range(6)])
+        limit = 2 * size + 6000                    # + the plan file itself
+        cfg = config(max_gb=limit / 1e9)
+        cfg["sync"]["workers"] = 1
+        for cycle in range(6):
+            dock_prepare.prepare(server, cfg, self.cache, convert_fn=convert,
+                                 disk_usage=ROOMY,
+                                 on_player=self.rec.songs_on_every_player())
+            self.assertLessEqual(dock_prepare.dir_bytes(self.cache), limit + size)
+            with open(os.path.join(self.cache, "manifest.json")) as f:
+                summary = self.apply(json.load(f))
+            self.assertEqual(summary["removed"], 0)
+            if len(self.db().tracks) == 6:
+                break
+        self.assertEqual(sorted(h.navidrome_id_from(t) for t in self.db().tracks),
+                         [f"s{i}" for i in range(6)])
+        self.assertGreater(cycle, 1)                       # it really took batches
+
     def test_crash_mid_sync_resumes_without_duplicates(self):
         songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
         real_save, calls = h.checked_save, []

@@ -151,7 +151,7 @@ fi
 # 6. Services, udev rule, Wi-Fi hook -------------------------------------------
 say "Installing services"
 if [ $CHECK = 1 ]; then
-  plan "install systemd units, the udev rule, the NetworkManager hook, musicdock-status and /run/musicdock"
+  plan "install systemd units, the udev rule, the NetworkManager hook, musicdock-status, musicdock-players and /run/musicdock"
 else
   # Shared screen state for every job. Owned by the login user so manual runs
   # and the prepare job can write it; root (sync, boot) can write it anyway.
@@ -182,6 +182,13 @@ MUSICDOCK_CONFIG="\${MUSICDOCK_CONFIG:-$USER_HOME/.config/musicdock/config.toml}
   exec "$VENV/bin/python" "$APP_DIR/dock_report.py" "\$@"
 EOF
   chmod 755 /usr/local/bin/musicdock-status
+  # List the iPods the dock knows; forget one you've stopped using.
+  cat > /usr/local/bin/musicdock-players <<EOF
+#!/bin/sh
+# Music Dock players (list / forget). Installed by $APP_DIR/pi/install.sh.
+exec "$VENV/bin/python" "$APP_DIR/dock_players.py" "\$@"
+EOF
+  chmod 755 /usr/local/bin/musicdock-players
   systemctl daemon-reload
   systemctl enable musicdock-boot.service
   systemctl enable --now musicdock-prepare.timer

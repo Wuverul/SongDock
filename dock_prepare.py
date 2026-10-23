@@ -774,10 +774,16 @@ class KeptTracks:
 
 
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
-            dry_run=False, disk_usage=shutil.disk_usage, clock=time.time):
+            dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
+            on_player=None):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
+    on_player: {song id: {encodings}} for songs confirmed on every player
+    (Record.songs_on_every_player). When the cache is full, those songs'
+    files make room for songs the player lacks (largest first) and aren't
+    fetched again: the plan lists them under "on_player", so the sync keeps
+    them. A player bigger than the cache then fills over several syncs.
     """
     device = cfg["device"]["type"]
     fmt = cfg["device"]["convert_to"]
@@ -812,6 +818,18 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
              and made_with.get(t["id"]) not in (None, current)}
     missing = [(name, t) for name, t in wanted.items()
                if name not in existing or name in stale]
+
+    # Songs already on every player in their current encoding ("held") can
+    # do without a cache file. Fetch songs the player lacks first (playlist
+    # songs before the rest), then mirror held ones while there's room.
+    on_player = on_player or {}
+
+    def made_as(t):
+        return current if needs_conversion(t.get("suffix"), device) else "original"
+    held = {name for name, t in wanted.items()
+            if on_player.get(t["id"]) and on_player[t["id"]] <= {None, made_as(t)}}
+    missing.sort(key=lambda nt: (nt[0] in held, not any(
+        s.startswith("playlist:") for s in sources.get(nt[1]["id"], []))))
 
     log.info("Target: %d tracks; %d cached, %d to get (%d to re-convert as %s), "
              "%d to remove", len(wanted), len(wanted) - len(missing), len(missing),
@@ -862,7 +880,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # whole).
     cover_cache, covers, server_images = {}, {}, {}
     checked = {t["id"]: t.get("cover")
-               for t in list(previous.get("tracks", [])) + list(kept.items.values())
+               for t in list(previous.get("tracks", [])) + previous.get("on_player", [])
+               + list(kept.items.values())
                if t.get("cover_max") == COVER_MAX and "id" in t}
     missing_names = {n for n, _ in missing}
     unchecked = [(n, t) for n, t in wanted.items()
@@ -1003,6 +1022,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # the cache limit with the cache at 4.7 GB (2026-10-17).
     in_flight = threading.BoundedSemaphore(workers + 1)
 
+    # Cache files of held songs, largest first: dropped only to make room for
+    # a song the player lacks, never for another held one (no churn).
+    evictable = sorted((n for n in held if n in existing and n not in missing_names),
+                       key=lambda n: -os.path.getsize(os.path.join(tracks_dir, n)))
+    evicted = 0
+
     def run_one(name, t, need):
         try:
             prepare_one(name, t, need)
@@ -1028,14 +1053,28 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                     kept.drop(kept.oldest(), "making room for new music")
                     reason = no_room(cache_dir, need + progress["reserved"], max_bytes,
                                      disk_usage)
+                while reason and evictable and name not in held:
+                    gone = evictable.pop(0)
+                    os.remove(os.path.join(tracks_dir, gone))
+                    evicted += 1
+                    log.info("Cache full: dropped %s from the cache (it's on the player)",
+                             label(wanted[gone]))
+                    reason = no_room(cache_dir, need + progress["reserved"], max_bytes,
+                                     disk_usage)
                 if not reason:
                     progress["reserved"] += need
             if reason:
                 in_flight.release()
-                log.warning("Stopping early: %s", reason)
+                rest = [t2 for n2, t2 in missing[i:] if n2 not in held]
+                if rest:
+                    log.warning("Stopping early: %s (%d tracks wait for the next run)",
+                                reason, len(rest))
+                else:
+                    log.info("Cache full: %d tracks already on the player stay uncached",
+                             len(missing) - i)
                 with lock:
                     skipped += [{"id": t2["id"], "title": label(t2), "reason": reason,
-                                 "error": False} for _, t2 in missing[i:]]
+                                 "error": False} for t2 in rest]
                 break
             futures.append(pool.submit(run_one, name, t, need))
         for f in futures:
@@ -1045,30 +1084,36 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    ready = []
+    def entry(t):
+        return {
+            "id": t["id"],
+            "title": t.get("title"), "artist": t.get("artist"),
+            "album": t.get("album"), "track": t.get("track"),
+            "disc": t.get("discNumber"), "year": t.get("year"),
+            "duration": t.get("duration"), "genre": genres.get(t["id"]),
+            "source_suffix": t.get("suffix"),
+            "converted": needs_conversion(t.get("suffix"), device),
+            "encoding": made_as(t),
+            "sources": sources.get(t["id"], []),
+            **({"cover": covers[t["id"]], "cover_max": COVER_MAX}
+               if covers.get(t["id"], "unchecked") != "unchecked" else {}),
+        }
+
+    ready, uncached = [], []
     for name, t in wanted.items():
         path = os.path.join(tracks_dir, name)
         if os.path.exists(path):
-            ready.append({
-                "id": t["id"], "file": f"tracks/{name}",
-                "title": t.get("title"), "artist": t.get("artist"),
-                "album": t.get("album"), "track": t.get("track"),
-                "disc": t.get("discNumber"), "year": t.get("year"),
-                "duration": t.get("duration"), "genre": genres.get(t["id"]),
-                "size": os.path.getsize(path),
-                "source_suffix": t.get("suffix"),
-                "converted": needs_conversion(t.get("suffix"), device),
-                "encoding": (current if needs_conversion(t.get("suffix"), device)
-                             else "original"),
-                "sources": sources.get(t["id"], []),
-                **({"cover": covers[t["id"]], "cover_max": COVER_MAX}
-                   if covers.get(t["id"], "unchecked") != "unchecked" else {}),
-            })
+            ready.append({"file": f"tracks/{name}", "size": os.path.getsize(path),
+                          **entry(t)})
+        elif name in held:
+            uncached.append(entry(t))         # on the player; no file needed
+    held_ids = {t["id"] for t in uncached}
+    skipped = [s for s in skipped if s["id"] not in held_ids]
     manifest = {
         "targets": cfg["sync"]["targets"], "device": device,
         "playlist_tag": cfg["sync"].get("playlist_tag", ""),
-        "tracks": ready, "playlists": playlists, "skipped": skipped,
-        "kept_after_removal": len(kept.items),
+        "tracks": ready, "on_player": uncached, "playlists": playlists,
+        "skipped": skipped, "kept_after_removal": len(kept.items),
         **({"album_types": album_types} if album_types else {}),
     }
     # Runs every 15 minutes: only write the plan when it changed (spares the
@@ -1076,8 +1121,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     if {k: v for k, v in previous.items() if k != "generated"} != manifest:
         manifest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         write_json_atomic(os.path.join(cache_dir, "manifest.json"), manifest)
-    return {"total": len(wanted), "ready": len(ready), "added": added,
-            "removed": len(newly_removed), "skipped": skipped}
+    if evicted:
+        log.info("Dropped %d cached tracks that are on the player, to make room", evicted)
+    return {"total": len(wanted), "ready": len(ready) + len(uncached), "added": added,
+            "removed": len(newly_removed), "skipped": skipped, "evicted": evicted}
 
 
 def show_plan(manifest):
@@ -1099,19 +1146,23 @@ def show_plan(manifest):
         combos[key] = combos.get(key, 0) + 1
     for key, n in sorted(combos.items()):
         lines.append(f"    {n:4d} from {key}")
+    if manifest.get("on_player"):
+        lines.append(f"  {len(manifest['on_player'])} on the player but not cached "
+                     f"(cache full; the sync keeps them)")
     if manifest.get("skipped"):
         lines.append(f"  {len(manifest['skipped'])} not ready (see manifest 'skipped')")
     if manifest.get("kept_after_removal"):
         lines.append(f"  {manifest['kept_after_removal']} removed track(s) still cached "
                      f"for the grace period")
+    listed = {**{t["id"]: t for t in manifest.get("on_player", [])}, **tracks}
     for pl in manifest.get("playlists", []):
         ids = pl["song_ids"]
         albums = []
         for i in ids:
-            a = tracks.get(i, {}).get("album") or "?"
+            a = listed.get(i, {}).get("album") or "?"
             if a not in albums:
                 albums.append(a)
-        missing = sum(1 for i in ids if i not in tracks)
+        missing = sum(1 for i in ids if i not in listed)
         via = {"tag": " [tagged]", "config": " [config]"}.get(pl.get("via"), "")
         lines.append(f"  iPod playlist {pl['name']!r}{via}: {len(ids)} songs from "
                      f"{len(albums)} album(s): {', '.join(albums)}"
@@ -1291,8 +1342,22 @@ def main(argv=None):
         except Exception:
             log.exception("Couldn't send queued plays (they stay queued)")
 
+    # What every player already holds (its cache files can go when space is
+    # short). Unreadable record = nothing held: the cache just stops filling.
     try:
-        summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run)
+        from dock_record import Record
+        record = Record()
+        try:
+            on_player = record.songs_on_every_player()
+        finally:
+            record.close()
+    except Exception:
+        log.exception("Couldn't read what's on the players (keeping every cached track)")
+        on_player = {}
+
+    try:
+        summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run,
+                          on_player=on_player)
     except SubsonicError as e:
         if e.network:
             # Wi-Fi or server down: expected now and then, not a failure.
@@ -1307,7 +1372,7 @@ def main(argv=None):
     idle = ["idle", "--ready", str(summary["ready"]), "--total", str(summary["total"])]
     if not args.dry_run:
         idle += pending_args(read_manifest(cache_dir))
-    prev_ready = len(previous.get("tracks", []))
+    prev_ready = len(previous.get("tracks", [])) + len(previous.get("on_player", []))
     changed = summary["added"] or summary["removed"] or prev_ready != summary["ready"]
     if args.preview_dir:
         if changed:

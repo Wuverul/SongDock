@@ -462,8 +462,10 @@ def start_artwork_ids_at(db, first=ARTWORK_FIRST_ID):
 def targeted_ids(manifest):
     """Songs the player should hold: ready tracks plus targeted ones that
     aren't cached right now (manifest "skipped": download failed, cache
-    full, ...). Only songs outside this set are ever removed."""
+    full, ...; "on_player": dropped from a full cache because the player
+    has them). Only songs outside this set are ever removed."""
     return ({t["id"] for t in manifest.get("tracks", [])}
+            | {t["id"] for t in manifest.get("on_player", [])}
             | {s["id"] for s in manifest.get("skipped", [])})
 
 
@@ -528,15 +530,18 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
 
     # Tracks already on the player that were added without tags, or whose
     # album name or genre changed in the plan (fixed in the iTunesDB; no
-    # copy needed).
+    # copy needed). Includes songs the cache no longer holds ("on_player").
+    planned = {t["id"]: t for t in manifest.get("on_player", [])}
+    planned.update(wanted)
     renamed = regenred = 0
     for nid, r in present.items():
-        if nid not in wanted or nid in changed:
+        if nid not in planned or nid in changed:
             continue
-        fields = fill_missing_names(on_player[int(r["dbid"])], wanted[nid])
+        t = planned[nid]
+        fields = fill_missing_names(on_player[int(r["dbid"])], t)
         if fields - {"genre"}:
-            log_info(f"Updated names from Navidrome: {wanted[nid].get('artist')} - "
-                     f"{wanted[nid].get('title')} ({wanted[nid].get('album')})")
+            log_info(f"Updated names from Navidrome: {t.get('artist')} - "
+                     f"{t.get('title')} ({t.get('album')})")
         renamed += bool(fields)
         regenred += "genre" in fields
     if regenred:
@@ -704,8 +709,10 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
     step(2, "Reading plays")
     shutil.rmtree(work_dir, ignore_errors=True)
     copied = snapshot_play_data(mount, work_dir)
+    name = None                        # the name given to the iPod (DockSetup.txt uses it)
     if "iTunesDB" in copied:
         snap = pygpod.Database.from_file(os.path.join(work_dir, "iTunesDB"))
+        name = getattr(snap.master_playlist, "name", None)
         reconcile(snap, record, guid, mount, delete_orphans=False, manifest=manifest)
         plays = plays_from_snapshot(work_dir, record, guid)
         summary["plays_new"] = record.queue_plays(guid, plays)
@@ -755,5 +762,11 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             record.backup_to(dest)
     except OSError as e:
         log_info(f"Couldn't save a copy of the record on the player: {e}")
-    record.mark_synced(guid) if record.player(guid) else None
+    player = record.player(guid)
+    if player:
+        if player.get("forgotten_at"):
+            log_info("This iPod was forgotten (musicdock-players forget); "
+                     "docking it brings it back")
+        record.set_player_name(guid, name)
+        record.mark_synced(guid)
     return summary

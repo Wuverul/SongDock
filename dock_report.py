@@ -27,7 +27,8 @@ SCREEN_NAMES = {
     "idle": "DOCK READY", "preparing": "PREPARING", "syncing": "SYNCING",
     "safe": "SAFE TO REMOVE", "failed": "SYNC FAILED", "starting": "STARTING UP",
     "offline": "NO WI-FI", "notsynced": "NOT SYNCED",
-    "wifi": "WI-FI CHANGED", "wififail": "WI-FI UNCHANGED", "connecting": "CONNECTING",
+    "wifi": "WI-FI CHANGED", "wififail": "WI-FI UNCHANGED",
+    "setup": "IPODS UPDATED", "setupfail": "SETUP NOT USED", "connecting": "CONNECTING",
 }
 # Messages that mean "the server (or network) was down", not a dock problem.
 NETWORK_HINTS = ("can't reach server", "Server unreachable", "name resolution")
@@ -252,8 +253,11 @@ def ipod_section(record_path, manifest, now=None):
         return ["iPod: never synced"], {}
     db = open_record(record_path)
     try:
-        p = db.execute("SELECT * FROM players WHERE last_sync IS NOT NULL "
-                       "ORDER BY last_sync DESC LIMIT 1").fetchone()
+        # Skip forgotten players (the column may not exist yet: read-only
+        # here, and a record from an older version gains it on its next write).
+        p = next((r for r in db.execute("SELECT * FROM players WHERE last_sync IS NOT "
+                                        "NULL ORDER BY last_sync DESC")
+                  if "forgotten_at" not in r.keys() or r["forgotten_at"] is None), None)
         if not p:
             return ["iPod: never synced"], {}
         present = [r[0] for r in db.execute(
@@ -291,6 +295,8 @@ def music_section(manifest, cfg, cache_dir):
     skipped = manifest.get("skipped", [])
     kept = manifest.get("kept_after_removal", 0)
     line = f"Plan: {ready} tracks ready"
+    if manifest.get("on_player"):
+        line += f", {len(manifest['on_player'])} on the iPod only (cache full)"
     if skipped:
         line += f", {len(skipped)} not ready yet"
     if kept:

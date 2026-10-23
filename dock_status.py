@@ -72,7 +72,8 @@ PROGRESS_SCREENS = {"syncing", "preparing"}   # rate-limited when repeated
 PREPARE_SCREENS = {"idle", "preparing"}       # drawn by the prepare job
 # Resting screens --refresh may redraw when Wi-Fi connects or drops. Active
 # screens (syncing, preparing, boot) redraw often enough on their own.
-REFRESHABLE = {"idle", "safe", "failed", "notsynced", "wifi", "wififail"}
+REFRESHABLE = {"idle", "safe", "failed", "notsynced", "wifi", "wififail", "setup",
+               "setupfail"}
 # Options that control drawing rather than what's drawn; not saved for --refresh.
 CONTROL_OPTIONS = {"--force": 0, "--only-over": 1, "--preview": 1, "--at": 1,
                    "--wifi": 1, "--ip": 1}
@@ -310,6 +311,21 @@ def render(screen, args):
                     (fit(args.reason or "", small_f), small_f)]
             rows.append((f"Synced {now}", small_f))
             lines(rows)
+
+    elif screen in ("setup", "setupfail"):
+        # Result of a DockSetup.txt on the player (the sync itself succeeded).
+        minus = "\u2212" if has_glyphs else "-"
+        if screen == "setup":
+            header(f"{check}IPODS UPDATED", inverted=False)
+            rows = [(fit(args.reason or "", body_f), body_f),
+                    (f"+{args.added}  {minus}{args.removed} tracks", body_f)]
+        else:
+            header(f"{warn}SETUP NOT USED", inverted=True)
+            rows = [("Safe to remove", body_f),
+                    (fit(args.reason or "DockSetup.txt not used", small_f), small_f),
+                    ("See MediaDock.txt on the iPod", small_f)]
+        rows.append((f"Synced {now}", small_f))
+        lines(rows)
 
     elif screen == "notsynced":
         # A player the dock left alone: not an iPod, or no MediaDock.txt.
@@ -566,6 +582,7 @@ def build_parser():
     p = argparse.ArgumentParser(description="Dock e-ink status screen")
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
                                       "failed", "starting", "offline", "notsynced", "wifi", "wififail",
+                                      "setup", "setupfail",
                                       "connecting"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
@@ -710,9 +727,10 @@ def refresh_main(argv=None, attempts=3, settle=3):
 
 
 REST_MODES = {
-    # 10 min after a sync; FAILED and WI-FI UNCHANGED stay up until unplugged.
-    "timer": "safe,notsynced,wifi",
-    "unplug": "safe,failed,notsynced,wifi,wififail",  # player physically removed
+    # 10 min after a sync; FAILED, WI-FI UNCHANGED and SETUP NOT USED stay up
+    # until unplugged.
+    "timer": "safe,notsynced,wifi,setup",
+    "unplug": "safe,failed,notsynced,wifi,wififail,setup,setupfail",  # player physically removed
 }
 MIN_SHOWN = 60   # seconds SAFE/FAILED stay up before an unplug swaps them
 
@@ -743,7 +761,7 @@ def rest_main(argv=None, sleep=time.sleep):
         return
     prev = build_parser().parse_args(state.get("argv") or [screen])
     when = datetime.fromtimestamp(drawn_at).strftime("%-I:%M %p")
-    if screen in ("safe", "wifi", "wififail"):
+    if screen in ("safe", "wifi", "wififail", "setup", "setupfail"):
         detail = (f"Last synced {when}\n"
                   f"+{prev.added}  \u2212{prev.removed} tracks \u00b7 {prev.plays} plays")
     else:

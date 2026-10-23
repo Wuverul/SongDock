@@ -184,6 +184,37 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   A Pi Zero's green LED is solid when idle, so it isn't a hang sign.
 - `deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
   on the Pi (cache stays in `~/musicdock/cache`).
+- `dock_players.py`: `musicdock-players` (installed like musicdock-status)
+  lists the players in the record; `forget` / `keep <name>` set/clear
+  `players.forgotten_at`, so the player stops holding songs in the cache
+  (`songs_on_every_player`) and isn't DOCK READY's / the report's player.
+  History and queued plays stay; `mark_synced` clears it (docking it again
+  brings it back, logged). Use when replacing an iPod (the user plans a
+  Nano -> Classic move). Players are named as people know them: the iPod's
+  own name (`players.name`, from the iTunesDB master playlist, saved each
+  sync; the user's Nano is the name in its backups) + an optional model
+  hint `(nano)` / ID end `(AB12)`, or `all others`; curly/straight
+  apostrophes and case don't matter. `Record` adds new columns to older
+  records (`_add_column`).
+- `dock_setup.py`: **`DockSetup.txt` on an opted-in iPod** (write mode
+  only; user's choice of name, 2026-10-23), like wifi.txt: `Forget=` /
+  `Keep=` lines, all or nothing (a bad line changes nothing and the file
+  stays), deleted on success; can't forget the iPod being synced. Screens
+  `setup` (IPODS UPDATED) / `setupfail` (SETUP NOT USED); a wifi.txt
+  result takes precedence on screen. Every write sync then rewrites
+  **MediaDock.txt** (existing spelling kept) with the known iPods (name,
+  model, ID end, tracks, last sync / forgotten), a one-line DockSetup.txt
+  example pointing to the README, and the last DockSetup.txt outcome (carried over between syncs). Runs
+  after the music, before wifi.txt; never fails the sync.
+- `dock_guide.py`: **`MediaDock README.txt`**, a user manual on every
+  write-synced iPod (user request, 2026-10-23): the files a person can add
+  or edit there (MediaDock.txt, wifi.txt, DockSetup.txt) with every
+  setting, how music is chosen in Navidrome (built from the config: tag,
+  Favorites name, grace days, configured playlists), what the screens
+  mean, and not to use Finder/iTunes. Rewritten only when its text
+  changes. **Keep it in step** when a file's settings or a screen change
+  (`tests/test_dock_guide.py` checks the main settings appear).
+  MediaDock.txt points to it rather than repeating the details.
 - `dock_report.py`: read-only status report, installed as
   `/usr/local/bin/musicdock-status` (wrapper sets the venv and
   `MUSICDOCK_CONFIG`). Dock (uptime, temp, throttling, memory, SD, Wi-Fi),
@@ -470,16 +501,32 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   should hold = its targets (starred + tagged/configured playlists). The
   cache is a speed-up; the Pi's SQLite record adds mappings and pending
   plays. A rebuild needs only Navidrome + the targets.
-- **Hybrid cache:** mirror every targeted track while it fits under
-  `max_cache_gb` / 80% of the card. When over, evict only tracks the record
-  shows **confirmed on the player** (DB saved, reconciled), largest/oldest
-  first. Never evict a track the player still needs.
-- **Rolling batches for big jobs:** the prepare job fills the cache with the
-  next batch of missing tracks in **priority order** (tagged playlists and
-  Favorites first, then the rest); the sync copies a batch, saves the DB,
-  marks those tracks evictable; repeat. While the player stays docked the
-  sync should keep going as batches arrive (no re-plugging per batch).
-  Progress on screen, e.g. `Restoring 12,340 / 40,000`.
+- **Hybrid cache (built 2026-10-23):** mirror every targeted track while it
+  fits under `max_cache_gb` / 80% of the card. When over, evict only songs
+  `Record.songs_on_every_player()` shows **present on every player** the
+  record knows (DB saved), in the encoding the plan wants (an older one
+  needs the new file to be replaced), largest first. Eviction happens only
+  to make room for a song a player lacks, never for another held one (no
+  churn). Held songs without a cache file are listed in the manifest's
+  `on_player` (full entries, no `file`): `targeted_ids` keeps them on the
+  player and `apply_plan` still applies name/genre fixes to them. A reset
+  or newly added player holds nothing, so nothing is evicted until it's
+  rebuilt. An unreadable record = nothing held (the cache just stops
+  filling). Eviction is about efficiency, not safety: Navidrome has every
+  song, so ignoring a player only costs re-downloads if it docks again.
+  A player still in use that is *full* (e.g. a 16 GB Nano next to a big
+  Classic) never gets the rest, so it blocks eviction too; forget it with
+  `DockSetup.txt` or `musicdock-players forget` (not automatic yet).
+- **Rolling batches for big jobs (built 2026-10-23):** missing songs are
+  fetched in priority order (songs the player lacks first; among them
+  playlist songs before starred-only ones; held songs last, while room
+  lasts). The prepare job fills the cache and writes the plan; the auto
+  re-sync syncs the docked player; the next prepare run (5 min later)
+  evicts what was just copied and fetches the next batch. A prepare run
+  waits for a running sync, so batches alternate rather than overlap.
+  Tested end to end (`test_player_bigger_than_cache_fills_over_several_syncs`);
+  not yet on hardware with a full cache. Not built: a `Restoring 12,340 /
+  40,000` screen (the sync shows `Copying n/N` per batch).
 - **Reset detection:** if every known track is missing at once, log "player
   appears to have been reset" and rebuild, instead of 1,000s of removals.
 - **SysInfo recovery:** a reset wipes `SysInfo`, and pygpod then writes an
@@ -493,7 +540,9 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   its write cache disabled, and the vfat mount uses `flush` - try without
   `flush` on a later sync and compare), so 200 GB of copying ~40+ h; FLAC->MP3 conversion is the bottleneck
   (~song length per track on the Zero W, so 200 GB of FLAC ~20 days; run
-  conversions in parallel on a Zero 2 W, ~2 days). Plays recorded since the
+  conversions in parallel on a Zero 2 W, ~2 days). **Measured on the Zero 2
+  W (2026-10-23):** ~6 tracks/min with 3 workers at ~50 C (heatsink, no
+  throttling); downloads ~2.5 MB/s on a good Wi-Fi network. Plays recorded since the
   last sync are lost in a wipe; server-purged discovery tracks can't return.
 - **Optional accelerators (not required):** "Mac mode" - run the dock's own
   sync engine on the Mac against the mounted player and hand the resulting
@@ -515,7 +564,9 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    in 15.4 min (copy step 14.8 min, ~11 s/track vs 5.7 s SD-to-SD), played
    back fine. The user's Pi config now has `write = true`.
 5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
-   (see "Resilience without a mirror"). Rockbox handler deprioritized.
+   (see "Resilience without a mirror"). Reset detection, SysInfo recovery,
+   record backup and the cache side are built; hardware test with a cache
+   smaller than the library pending. Rockbox handler deprioritized.
 6. 3D-printed dock enclosure
 7. Documentation, setup guide, and packaging for friends. **Built
    2026-10-16:** README.md, INSTALL.md, `make_release.sh` (builds

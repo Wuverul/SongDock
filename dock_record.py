@@ -7,11 +7,16 @@ and the prepare job (login user).
 
 Tables:
   players          one row per player, keyed by FireWire GUID (= USB serial):
-                   model number (to rewrite SysInfo after a reset), last sync.
+                   model number (to rewrite SysInfo after a reset), its name,
+                   last sync,
+                   and when it was forgotten (retired: it no longer holds
+                   songs in the cache; docking it again brings it back).
   tracks           what the dock put on each player: GUID + dbid (the iPod's
                    persistent track ID) -> file path, Navidrome song ID,
                    MusicBrainz ID, metadata, encoding, and state:
-                   "present" (confirmed on the player) or "removed".
+                   "present" (confirmed on the player) or "removed". Songs
+                   present on every player may leave the cache when it's
+                   full (songs_on_every_player).
   pending_plays    plays read from a player, waiting for Navidrome. A play is
                    removed from the queue only by marking it sent after the
                    server confirms; sent rows are kept as history. Each play
@@ -36,7 +41,9 @@ CREATE TABLE IF NOT EXISTS players (
     guid        TEXT PRIMARY KEY,
     model       TEXT,
     first_seen  INTEGER NOT NULL,
-    last_sync   INTEGER
+    last_sync   INTEGER,
+    forgotten_at INTEGER,         -- set by `musicdock-players forget` / DockSetup.txt
+    name        TEXT              -- the name given to the iPod (its master playlist)
 );
 CREATE TABLE IF NOT EXISTS tracks (
     guid          TEXT NOT NULL,
@@ -101,11 +108,25 @@ class Record:
         self.db.execute("PRAGMA foreign_keys=ON")
         with self.db:
             self.db.executescript(SCHEMA)
+        self._add_column("players", "forgotten_at INTEGER")      # added 2026-10-23
+        self._add_column("players", "name TEXT")                 # added 2026-10-23
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
             # login user) so the prepare job can write it too.
             st = os.stat(folder)
             os.chown(path, st.st_uid, st.st_gid)
+
+    def _add_column(self, table, column):
+        """Bring a record made by an older version up to date."""
+        name = column.split()[0]
+        if name in {r[1] for r in self.db.execute(f"PRAGMA table_info({table})")}:
+            return
+        try:
+            with self.db:
+                self.db.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+        except sqlite3.OperationalError:
+            if name not in {r[1] for r in self.db.execute(f"PRAGMA table_info({table})")}:
+                raise                          # not just another job adding it first
 
     def close(self):
         self.db.close()
@@ -131,12 +152,41 @@ class Record:
 
     def last_synced_player(self):
         row = self.db.execute("SELECT * FROM players WHERE last_sync IS NOT NULL "
+                              "AND forgotten_at IS NULL "
                               "ORDER BY last_sync DESC LIMIT 1").fetchone()
         return dict(row) if row else None
 
     def mark_synced(self, guid):
+        """Record a finished sync. A forgotten player that docks is back."""
         with self.db:
-            self.db.execute("UPDATE players SET last_sync = ? WHERE guid = ?",
+            self.db.execute("UPDATE players SET last_sync = ?, forgotten_at = NULL "
+                            "WHERE guid = ?", (int(time.time()), guid))
+
+    def set_player_name(self, guid, name):
+        if name:
+            with self.db:
+                self.db.execute("UPDATE players SET name = ? WHERE guid = ?", (name, guid))
+
+    def remember_player(self, guid):
+        """Undo forget_player (as docking the player again would)."""
+        with self.db:
+            self.db.execute("UPDATE players SET forgotten_at = NULL WHERE guid = ?", (guid,))
+
+    def players(self):
+        """Every player the dock knows, most recently synced first, with
+        how many tracks the dock has on it."""
+        rows = self.db.execute(
+            "SELECT p.*, (SELECT COUNT(*) FROM tracks t WHERE t.guid = p.guid "
+            "AND t.state = 'present') AS present FROM players p "
+            "ORDER BY p.last_sync IS NULL, p.last_sync DESC")
+        return [dict(r) for r in rows]
+
+    def forget_player(self, guid):
+        """Retire a player: its songs no longer hold files in the cache and
+        it's no longer the one DOCK READY reports on. Its history and queued
+        plays stay; docking it again brings it back (mark_synced)."""
+        with self.db:
+            self.db.execute("UPDATE players SET forgotten_at = ? WHERE guid = ?",
                             (int(time.time()), guid))
 
     # ------------------------------------------------------------- tracks ----
@@ -163,6 +213,26 @@ class Record:
         rows = self.db.execute("SELECT * FROM tracks WHERE guid = ? AND state = ? "
                                "ORDER BY artist, album, track_no", (guid, state))
         return [dict(r) for r in rows]
+
+    def songs_on_every_player(self):
+        """{navidrome_id: {encodings}} for songs present on every player the
+        dock knows (players table or any track row) and hasn't forgotten, so
+        the prepare job can drop their cache files when space is short. A
+        player with no tracks (e.g. just reset) holds nothing, so nothing is.
+        {} with no players."""
+        guids = [r[0] for r in self.db.execute(
+            "SELECT guid FROM players WHERE forgotten_at IS NULL UNION "
+            "SELECT DISTINCT guid FROM tracks WHERE guid NOT IN (SELECT guid FROM players)")]
+        held = None
+        for guid in guids:
+            mine = {}
+            for nid, enc in self.db.execute(
+                    "SELECT navidrome_id, encoding FROM tracks "
+                    "WHERE guid = ? AND state = 'present'", (guid,)):
+                mine.setdefault(nid, set()).add(enc)
+            held = mine if held is None else {n: held[n] | e for n, e in mine.items()
+                                              if n in held}
+        return held or {}
 
     def track(self, guid, dbid):
         row = self.db.execute("SELECT * FROM tracks WHERE guid = ? AND dbid = ?",

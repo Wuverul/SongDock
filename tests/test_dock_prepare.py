@@ -531,6 +531,73 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(server.downloads, [])
         self.assertFalse(summary["skipped"][0]["error"])   # a limit, not an error
 
+    # A full cache and a player bigger than it: songs confirmed on the player
+    # give up their cache files (cache limit here: 12,000 bytes).
+    SMALL = 0.000012
+
+    def cached(self, name, size):
+        os.makedirs(os.path.join(self.cache, "tracks"), exist_ok=True)
+        with open(os.path.join(self.cache, "tracks", name), "wb") as f:
+            f.write(b"x" * size)
+
+    def test_full_cache_drops_largest_track_on_the_player_for_a_new_one(self):
+        self.cached("a.mp3", 6000)
+        self.cached("b.mp3", 5000)
+        server = FakeServer(songs=[song("a"), song("b"), song("c", size=1500)])
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL),
+                                   on_player={"a": {"mp3 v0"}, "b": {"mp3 v0"}})
+        self.assertEqual(server.downloads, ["c"])
+        self.assertEqual(self.files(), ["b.mp3", "c.mp3"])          # a: largest
+        m = self.manifest()
+        self.assertEqual([t["id"] for t in m["on_player"]], ["a"])
+        self.assertEqual(m["on_player"][0]["encoding"], "mp3 v0")
+        self.assertEqual(m["skipped"], [])
+        self.assertEqual((summary["ready"], summary["evicted"]), (3, 1))
+
+    def test_full_cache_never_drops_a_track_the_player_lacks(self):
+        self.cached("a.mp3", 6000)
+        self.cached("b.mp3", 5000)
+        server = FakeServer(songs=[song("a"), song("b"), song("c", size=1500)])
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL),
+                                   on_player={"a": {"mp3 v0"}})
+        self.assertEqual(summary["evicted"], 1)                      # only a can go
+        self.assertIn("b.mp3", self.files())
+        self.cached("d.mp3", 6000)                                    # full again
+        server.songs.append(song("e", size=1500))
+        server.songs.append(song("d"))
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL),
+                                   on_player={"a": {"mp3 v0"}})
+        self.assertEqual(summary["evicted"], 0)
+        self.assertEqual([s["id"] for s in summary["skipped"]], ["e"])
+        self.assertNotIn("e", server.downloads[1:])
+
+    def test_held_tracks_dont_push_each_other_out(self):
+        # The player has both; only b fits. No churn: a stays uncached.
+        self.cached("b.mp3", 5000)
+        server = FakeServer(songs=[song("a", size=5000), song("b")])
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL),
+                                   on_player={"a": {"mp3 v0"}, "b": {"mp3 v0"}})
+        self.assertEqual(server.downloads, [])
+        self.assertEqual(self.files(), ["b.mp3"])
+        self.assertEqual([t["id"] for t in self.manifest()["on_player"]], ["a"])
+        self.assertEqual((summary["skipped"], summary["ready"]), ([], 2))
+
+    def test_held_tracks_are_still_cached_while_there_is_room(self):
+        server = FakeServer(songs=[song("a")])
+        self.run_prepare(server, on_player={"a": {"mp3 v0"}})
+        self.assertEqual(self.files(), ["a.mp3"])
+        self.assertEqual(self.manifest()["on_player"], [])
+
+    def test_track_on_the_player_in_an_old_encoding_isnt_held(self):
+        # It needs the new file to be replaced, so it's never dropped.
+        self.cached("a.mp3", 6000)
+        self.cached("b.mp3", 5000)
+        server = FakeServer(songs=[song("a"), song("b"), song("c", size=1500)])
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL),
+                                   on_player={"a": {"mp3 v2"}, "b": {"mp3 v0", None}})
+        self.assertEqual(self.files(), ["a.mp3", "c.mp3"])            # b went, not a
+        self.assertEqual(summary["evicted"], 1)
+
     def test_stops_at_cache_limit(self):
         server = FakeServer(songs=[song("a", size=600_000_000)])
         summary = self.run_prepare(server, cfg=config(max_gb=1))

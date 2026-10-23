@@ -219,6 +219,33 @@ the password for an open one.
 `ssh yourname@musicdock.local musicdock-status` from your computer) sums up
 what the dock is doing and lists anything that needs attention.
 
+**On the iPod itself:** after each sync, `MediaDock README.txt` in the
+iPod's top folder explains every file you can add there (`wifi.txt`,
+`DockSetup.txt`, `MediaDock.txt`) and what the screens mean.
+
+**Switching to a new iPod:** the dock keeps songs cached until every iPod
+it syncs has them, so an old, smaller iPod can stop a bigger new one from
+filling up once the dock's storage runs short. Once you stop using the old
+one, retire it:
+
+1. Open `MediaDock.txt` on the new iPod (disk mode on a computer). After
+   each sync it lists the iPods the dock knows, by the name you gave them.
+2. Next to it, create `DockSetup.txt` containing, for example:
+   ```
+   Forget=Jo's iPod (nano)
+   ```
+   The model in brackets is only needed if two iPods share a name; use
+   `Forget=all others` to retire every iPod except this one, and
+   `Keep=<name>` to bring one back.
+3. Dock the iPod. The screen shows **IPODS UPDATED** (or **SETUP NOT
+   USED** and why), the dock deletes `DockSetup.txt`, and the outcome is
+   noted at the end of `MediaDock.txt`.
+
+Over SSH, `musicdock-players` lists the same iPods and
+`musicdock-players forget "Jo's iPod (nano)"` does the same. Forgetting
+changes nothing on either iPod, the old one's plays are still sent, and
+docking it again brings it back.
+
 **Logs:**
 
 ```sh
