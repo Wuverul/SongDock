@@ -131,9 +131,10 @@ In Navidrome:
 
 Within about 5 minutes the dock notices, then downloads and converts the music
 (**PREPARING** on the screen). On a Pi Zero W, converting a FLAC song takes a
-bit less time than the song lasts (a Zero 2 W is faster); songs that are
-already MP3 just download. A big first batch can take hours. The iPod doesn't
-need to be docked for this.
+bit less time than the song lasts; a Pi Zero 2 W converts about 16 minutes of
+music per minute (see "Which Raspberry Pi" in README.md). Songs that are
+already MP3 just download. A big first batch can take hours (Zero 2 W) or
+days (Zero W). The iPod doesn't need to be docked for this.
 
 ## 8. First dock: a read-only check
 

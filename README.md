@@ -53,10 +53,40 @@ music in the background, so syncs are quick.
   left alone, but don't sync the iPod with Finder/iTunes after setting up the
   dock: that replaces the whole iPod database, including the dock's music.
 
-- **Your selection has to fit on the dock's SD card.** The dock keeps a copy
-  of every song it syncs (about 2 MB per minute of music). A 64 GB card holds
-  roughly 35-40 GB of music. Rebuilding an iPod that holds more than that is
-  planned but not built yet.
+- **The dock keeps a copy of the songs it syncs** (about 2 MB per minute of
+  music); a 64 GB card holds roughly 35-40 GB. A bigger iPod fills over
+  several syncs: once the card is full, the dock drops its copies of songs
+  already on the iPod to make room for the rest. (Built and tested in
+  software; not yet tried with a real iPod bigger than the card.)
+
+## Which Raspberry Pi
+
+Both the **Pi Zero W** (first generation) and the **Pi Zero 2 W** run the
+dock, from the same install. The dock works out how many songs to convert
+at once each time it runs, so an SD card can move from one to the other
+without reinstalling. Both have 512 MB of memory and 2.4 GHz-only Wi-Fi.
+
+Measured on the real hardware (FLAC music converted to MP3 V0):
+
+| | Pi Zero W | Pi Zero 2 W |
+|---|---|---|
+| Processor | 1 core | 4 cores |
+| Songs converted at once | 1 | 3 (one core is left free for syncing) |
+| Time to convert music | a little under 1 minute per minute of music | **3.7 seconds per minute of music** (16 minutes of music per minute) |
+| Preparing a first batch of ~900 songs (~2,600 minutes of music) | about 1.5-2 days | **about 3 hours** |
+| A weekly handful of new songs (~30) | about 1.5 hours | 5-10 minutes |
+| Copying to an iPod nano 4G | ~11 s per song (the iPod's USB speed, ~1.3-1.5 MB/s, is the limit) | not measured yet; the same iPod limit applies |
+| Temperature while converting | no throttling seen | ~50 °C with a small stick-on heatsink, never throttled |
+
+**Which to get:** the **Pi Zero 2 W** is about 16 times faster at preparing
+music, which matters for the first fill of an iPod, for big libraries, and
+after changing the music format (everything is converted again). Day to
+day - a few new songs a week - a Pi Zero W keeps up fine; songs that are
+already MP3 or AAC on the server need no conversion on either.
+
+On the Pi Zero 2 W, preparing a very large library (200 GB of FLAC) takes
+about a day and a half; copying that much to an iPod over USB takes longer
+(~40 hours), on either Pi.
 
 ## What the screen means
 
@@ -70,6 +100,7 @@ music in the background, so syncs are quick.
 | **SYNC FAILED** | Something went wrong; the iPod was put back the way it was. Safe to unplug. See the log |
 | **NOT SYNCED** | The iPod has no `MediaDock.txt`, or it isn't an iPod. Nothing was read or changed |
 | **WI-FI CHANGED / UNCHANGED** | Result of a `wifi.txt` on the iPod (see INSTALL.md) |
+| **DOCK UPDATED / SETUP NOT USED** | Result of a `DockSetup.txt` on the iPod (see `MediaDock README.txt` on the iPod) |
 | **NO WI-FI / CLOCK NOT SET** | The dock can't reach the network after starting up |
 
 After a sync, the screen goes back to DOCK READY when you unplug the iPod, or
