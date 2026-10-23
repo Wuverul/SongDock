@@ -100,6 +100,7 @@ class RockboxTests(unittest.TestCase):
                 "#EXTM3U", "/MediaDock/Artist/Hold_ Your Colour/02 Three.mp3",
                 "/MediaDock/Artist/Hold_ Your Colour/01 One_Two.mp3"])
         self.assertEqual(self.rec.player(G)["model"], "xB029")
+        self.assertEqual(self.rec.player(G)["kind"], "rockbox")
         again = self.sync(m)
         self.assertEqual((again["added"], again["removed"], again["playlists_changed"],
                           again["renamed"]), (0, 0, 0, 0))

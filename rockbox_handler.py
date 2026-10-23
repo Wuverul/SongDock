@@ -493,5 +493,6 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root=
             log_info("This player was forgotten (musicdock-players forget); "
                      "docking it brings it back")
         record.set_player_name(guid, player_name(mount))
+        record.set_player_kind(guid, "rockbox")
         record.mark_synced(guid)
     return summary

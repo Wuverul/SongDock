@@ -271,7 +271,7 @@ class OptInTests(unittest.TestCase):
         with open(os.path.join(self.root, "MediaDock README.txt")) as f:
             self.assertIn("This player runs Rockbox", f.read())
 
-    def test_flac_dock_refuses_a_stock_ipod(self):
+    def stock_on_flac_dock(self, setup=None):
         self.ipod(marker="MediaDock.txt")
         cfg = {"sync": {"cache_dir": self.root}, "device": {"type": "rockbox"},
                "server": {"url": "https://x", "username": "u", "password": "p"}}
@@ -280,10 +280,31 @@ class OptInTests(unittest.TestCase):
         dev = FakeDevice(self.root)
         dev.make_writable = mock.Mock()
         with mock.patch("dock_record.Record", return_value=fake_record), \
-                mock.patch("ipod_handler.sync_player") as sp, \
-                self.assertRaisesRegex(dock_sync.SyncError, "set up for Rockbox"):
-            dock_sync.make_ipod_work(cfg, "G", 0x1261, True)(dev, lambda *a, **k: None)
-        sp.assert_not_called()
+                mock.patch("ipod_handler.sync_player", return_value={"added": 0}) as sp, \
+                mock.patch.object(dock_sync, "handle_setup_file", return_value=setup):
+            try:
+                return dock_sync.make_ipod_work(cfg, "G", 0x1261, True)(
+                    dev, lambda *a, **k: None), sp
+            except dock_sync.SyncError as e:
+                return e, sp
+
+    def test_flac_dock_reads_a_stock_ipods_plays_but_leaves_its_music(self):
+        result, sp = self.stock_on_flac_dock()
+        self.assertIsInstance(result, dock_sync.SyncError)
+        self.assertIn("set up for Rockbox", str(result))
+        self.assertFalse(sp.call_args.kwargs["write"])            # plays only
+
+    def test_stock_ipod_can_switch_compatibility_back_on(self):
+        result, sp = self.stock_on_flac_dock(setup={
+            "ok": True, "done": ["Stock iPods sync again (music converted)"],
+            "reason": "", "stock_compatible": True})
+        self.assertEqual(result["setup"]["stock_compatible"], True)   # DOCK UPDATED
+        self.assertFalse(sp.call_args.kwargs["write"])
+
+    def test_failed_setup_on_a_flac_dock_shows_its_reason(self):
+        result, _ = self.stock_on_flac_dock(setup={"ok": False, "done": [],
+                                                   "reason": "Unknown setting 'X'"})
+        self.assertEqual(result["setup"]["reason"], "Unknown setting 'X'")
 
     def test_not_synced_screen_shown(self):
         events, shown = [], []

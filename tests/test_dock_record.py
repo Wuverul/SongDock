@@ -62,6 +62,17 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(self.rec.songs_on_every_player(), {})
         self.assertIsNone(self.rec.last_synced_player())
 
+    def test_active_stock_players(self):
+        nano, rockbox, unseen = GUID, "000A270000000003", "000A270000000004"
+        for guid in (nano, rockbox, unseen):
+            self.rec.upsert_player(guid)
+        self.rec.set_player_kind(nano, "stock")
+        self.rec.set_player_kind(rockbox, "rockbox")
+        self.assertEqual({p["guid"] for p in self.rec.active_stock_players()},
+                         {nano, unseen})                  # unseen = assumed stock
+        self.rec.forget_player(nano)
+        self.assertEqual([p["guid"] for p in self.rec.active_stock_players()], [unseen])
+
     def test_older_record_gains_the_forgotten_column(self):
         self.rec.close()
         old = os.path.join(self.tmp.name, "old.db")

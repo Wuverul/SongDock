@@ -485,10 +485,13 @@ def make_ipod_work(cfg, guid, product, write):
                     os.fsync(f.fileno())
                 log.info("Created %s on this already-synced iPod", MARKER)
         rockbox = rockbox_handler.is_rockbox(device.root)
-        if not rockbox and cfg.get("device", {}).get("type") == "rockbox":
-            # type = "rockbox" keeps FLAC in the cache, which a stock iPod can't play.
-            record.close()
-            raise SyncError("Stock iPod: dock is set up for Rockbox")
+        # type = "rockbox" keeps FLAC in the cache, which a stock iPod can't
+        # play: its plays are still read, and DockSetup.txt / wifi.txt still
+        # handled (so StockCompatible=yes can switch the dock back from this
+        # very iPod), but its music isn't touched.
+        refused = not rockbox and cfg.get("device", {}).get("type") == "rockbox"
+        if refused:
+            log.warning("Stock iPod on a Rockbox-only dock: reading plays only")
         handler = rockbox_handler if rockbox else ipod_handler
         if rockbox:
             log.info("Rockbox player: syncing files and playlists")
@@ -503,7 +506,7 @@ def make_ipod_work(cfg, guid, product, write):
                 device.root, guid, record, manifest, cache_dir,
                 work_dir=os.path.join(base, "work", guid),
                 backup_root=os.path.join(base, "backups", guid),
-                write=writing, client=client, usb_product=product, step=step,
+                write=writing and not refused, client=client, usb_product=product, step=step,
                 progress=progress, block_device=whole_disk(getattr(device, "path", "")))
         finally:
             record.close()
@@ -513,7 +516,15 @@ def make_ipod_work(cfg, guid, product, write):
         # the dock ends up on.
         summary["wifi"] = handle_wifi_file(device, write, client)
         summary["setup"] = handle_setup_file(device, writing, guid, cfg)
-        if writing:
+        if refused:
+            setup = summary["setup"] or {}
+            if setup.get("stock_compatible"):
+                log.info("Stock compatibility back on: this iPod's music follows "
+                         "once the next prepare run has converted it")
+            elif not setup or setup.get("ok"):
+                raise SyncError("Stock iPod: dock is set up for Rockbox")
+            # else: SETUP NOT USED shows why the DockSetup.txt failed
+        elif writing:
             try:
                 import dock_guide
                 if dock_guide.write_guide(device.root, cfg, rockbox=rockbox):

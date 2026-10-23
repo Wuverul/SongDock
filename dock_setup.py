@@ -13,6 +13,12 @@ and the list of known iPods written into its MediaDock.txt.
     Password=...                          (each also works alone, but Server
     NewLibrary=yes                        never does); NewLibrary=yes when
                                           the new server has other music
+    StockCompatible=no           Rockbox-only dock: music copied as-is (FLAC
+                                 included); refused while any stock iPod is
+                                 active (kind "stock" or not seen yet),
+                                 counting Forget=/Keep= lines in the same file
+    StockCompatible=yes          music for stock iPods again; works from a
+                                 stock iPod docked on a Rockbox-only dock
 
 (see dock_players.py for what forgetting does). Several lines are fine.
 Rules, as for wifi.txt:
@@ -44,7 +50,8 @@ GUIDE_FILE = "MediaDock README.txt"     # the manual (dock_guide.py)
 ACTIONS = {"forget": dock_players.forget, "keep": dock_players.keep}
 SETTINGS = {"playlisttag": "PlaylistTag", "syncstarred": "SyncStarred",
             "syncfavorites": "SyncStarred", "server": "Server", "username": "Username",
-            "password": "Password", "newlibrary": "NewLibrary"}
+            "password": "Password", "newlibrary": "NewLibrary",
+            "stockcompatible": "StockCompatible"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
 
@@ -153,7 +160,36 @@ def plan_settings(settings, cfg):
             done.append("Password changed")
     new_library = yes_no("NewLibrary", settings["NewLibrary"]) \
         if "NewLibrary" in settings else False
+    if "StockCompatible" in settings:
+        on = yes_no("StockCompatible", settings["StockCompatible"])
+        if on != (cfg["device"].get("type", "stock_ipod") == "stock_ipod"):
+            changes[("device", "type")] = "stock_ipod" if on else "rockbox"
+            done.append("Stock iPods sync again (music converted)" if on
+                        else "Rockbox only: music copied as-is (FLAC)")
+        else:
+            done.append("Already " + ("compatible with stock iPods" if on
+                                      else "Rockbox only"))
     return changes, done, login, new_library
+
+
+def stock_blocker(record, players, steps, guid):
+    """Why stock-iPod compatibility can't be switched off, or None: a stock
+    iPod is still active (the one docked, or another not being forgotten
+    by this same file; one brought back by Keep= counts too)."""
+    gone, back = set(), set()
+    for action, value in steps:
+        found, _ = dock_players.match(players, value, guid)
+        (gone if action == "forget" else back).update(p["guid"] for p in found)
+    stock = {p["guid"]: p for p in record.active_stock_players() if p["guid"] not in gone}
+    stock.update({p["guid"]: p for p in players if p["guid"] in back - gone
+                  and p.get("kind") in (None, "stock")})
+    if guid in stock:
+        return "This is a stock iPod: it needs stock compatibility"
+    if len(stock) == 1:
+        return f"{dock_players.label(next(iter(stock.values())))} still syncs: Forget it first"
+    if stock:
+        return f"{len(stock)} stock iPods still sync: Forget them first"
+    return None
 
 
 def check_login(login, record, guid, new_library, connect):
@@ -223,6 +259,10 @@ def apply_setup_file(root, record, guid, cfg=None, config_path=None, connect=Non
             why = "Can't forget the iPod being synced"
         if why:
             return refuse(why)
+    if changes.get(("device", "type")) == "rockbox":
+        why = stock_blocker(record, players, steps, guid)
+        if why:
+            return refuse(why)
     if login:
         if connect is None:
             from subsonic import Client as connect
@@ -243,7 +283,10 @@ def apply_setup_file(root, record, guid, cfg=None, config_path=None, connect=Non
         log.info("%s: %s", SETUP_FILE, msg)
     os.remove(path)
     _fsync_dir(root)
-    return {"ok": True, "done": done, "reason": ""}
+    result = {"ok": True, "done": done, "reason": ""}
+    if ("device", "type") in changes:
+        result["stock_compatible"] = changes[("device", "type")] == "stock_ipod"
+    return result
 
 
 def _fsync_dir(path):

@@ -768,5 +768,6 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             log_info("This iPod was forgotten (musicdock-players forget); "
                      "docking it brings it back")
         record.set_player_name(guid, name)
+        record.set_player_kind(guid, "stock")
         record.mark_synced(guid)
     return summary

@@ -315,6 +315,20 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   mode only; unmatched plays queue without a song. Record copy at
   `MediaDock/.musicdock/dock.db`. The iPod README gets a Rockbox paragraph
   (Last.fm Log setting, Database Auto Update). Keep.m3u8: not built.
+- **Stock-iPod compatibility switch (2026-10-23):** `DockSetup.txt`
+  `StockCompatible=no|yes` sets `[device] type` to `rockbox` / `stock_ipod`.
+  **Failsafe (user requirement):** `=no` is refused while
+  `Record.active_stock_players()` isn't empty - players not forgotten whose
+  `players.kind` (set by each handler at every sync) is `stock` or NULL
+  (not seen since kinds were recorded: assumed stock) - including the
+  docked one; `Forget=`/`Keep=` lines in the same file are counted
+  (`dock_setup.stock_blocker`). **A stock iPod on a Rockbox-only dock** is no
+  longer refused up front: `dock_sync` runs `ipod_handler.sync_player` with
+  write=False (plays read, music untouched), then wifi.txt and DockSetup.txt
+  as usual, so `StockCompatible=yes` from that iPod switches the dock back
+  (result `stock_compatible: True`, DOCK UPDATED; the music follows after
+  the next prepare run via auto re-sync). Without that it fails with "Stock
+  iPod: dock is set up for Rockbox" (or SETUP NOT USED with the reason).
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. **Fallback addresses (2026-10-23):** `[server] url` may be a
   list in priority order (e.g. home LAN address, then a public one; user's

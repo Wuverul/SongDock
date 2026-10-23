@@ -125,6 +125,20 @@ Which music syncs:
   Songs that no longer belong to anything synced leave the iPod at the
   next sync. At least one of the two must stay on.
 
+Music format (stock iPods and Rockbox players):
+  StockCompatible=no     for a dock that only serves Rockbox players: copy
+                         music as it is on the server, FLAC included
+                         (lossless, about 2-3 times the space). Refused
+                         while any stock iPod still syncs - the one docked
+                         included; retire them first (Forget=, which can go
+                         in the same file)
+  StockCompatible=yes    convert music for stock iPods again (the default).
+                         Works from a stock iPod docked while the dock is
+                         Rockbox-only: the dock reads its plays, switches
+                         back, and fills it once the music is converted.
+  Either way, the dock's copy of the music is redone in the new format and
+  songs already on players are swapped at the next syncs.
+
 The Navidrome server and the account the dock signs in with:
   Server=https://music.example.com
   Username=your-name

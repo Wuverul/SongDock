@@ -228,8 +228,16 @@ type = "rockbox"     # copy music as it is on the server (FLAC included)
 
 The cache is then re-filled in the new format at the next check, and songs
 already on the player are swapped for their FLAC versions at the next syncs.
-A dock set this way refuses stock iPods (they can't play FLAC); set it back
-to `"stock_ipod"` to serve them again.
+A dock set this way doesn't sync music to stock iPods (they can't play
+FLAC); set it back to `"stock_ipod"` to serve them again.
+
+The same switch works without SSH, from a `DockSetup.txt` on a docked
+player: `StockCompatible=no` (refused while any stock iPod still syncs,
+including the one docked; retire them first with `Forget=`, which can go in
+the same file) or `StockCompatible=yes`. A stock iPod docked on a
+Rockbox-only dock still has its plays read, and a `DockSetup.txt` with
+`StockCompatible=yes` on it switches the dock back; its music follows once
+it has been converted.
 
 ## Troubleshooting
 

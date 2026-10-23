@@ -297,6 +297,40 @@ class SettingsTests(PlayersBase):
         self.assertTrue(self.apply(login + "NewLibrary=yes\n")["ok"])
         self.assertEqual(self.settings()["server"]["url"], "https://other.example.com")
 
+    def test_stock_compatibility_off_needs_no_active_stock_ipod(self):
+        rec = self.record()
+        # NANO and FRIEND have never synced since kinds were recorded: they
+        # count as stock. CLASSIC is a Rockbox player.
+        rec.set_player_kind(CLASSIC, "rockbox")
+        self.assert_unchanged(self.apply("StockCompatible=no\n", this=CLASSIC),
+                              "2 stock iPods still sync")
+        rec.set_player_kind(FRIEND, "rockbox")
+        self.assert_unchanged(self.apply("StockCompatible=no\n", this=CLASSIC),
+                              "still syncs: Forget it first")
+        self.assert_unchanged(self.apply("StockCompatible=no\n", this=NANO),
+                              "This is a stock iPod")
+        # Forgetting the last stock iPod in the same file is fine...
+        result = self.apply("Forget=Jo's iPod (nano)\nStockCompatible=no\n", this=CLASSIC)
+        self.assertTrue(result["ok"])
+        self.assertIs(result["stock_compatible"], False)
+        self.assertEqual(self.settings()["device"]["type"], "rockbox")
+        # ...and bringing it back in the same file as switching off isn't.
+        self.apply("StockCompatible=yes\n", this=CLASSIC)
+        result = self.apply("Keep=Jo's iPod (nano)\nStockCompatible=no\n", this=CLASSIC)
+        self.assertFalse(result["ok"])
+
+    def test_stock_compatibility_back_on_from_a_stock_ipod(self):
+        self.record().set_player_kind(NANO, "stock")
+        with open(self.config, "a") as f:
+            f.write('\n[device]\ntype = "rockbox"\n')
+        result = self.apply("StockCompatible=yes\n", this=NANO)
+        self.assertTrue(result["ok"])
+        self.assertIs(result["stock_compatible"], True)
+        self.assertEqual(result["done"], ["Stock iPods sync again (music converted)"])
+        self.assertEqual(self.settings()["device"]["type"], "stock_ipod")
+        self.assertEqual(self.apply("StockCompatible=yes\n", this=NANO)["done"],
+                         ["Already compatible with stock iPods"])
+
     def test_settings_and_players_together(self):
         result = self.apply("Forget=Sam's iPod\nPlaylistTag=#car\n")
         self.assertEqual(dock_setup.summary_line(result), "2 changes made")

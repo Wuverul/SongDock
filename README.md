@@ -50,7 +50,10 @@ music in the background, so syncs are quick.
   settings): music is then copied **as it is on the server, FLAC
   included**, lossless and with no conversion. FLAC takes about 2-3 times
   the space on the dock's SD card and the player, and a dock set this way
-  refuses stock iPods, which can't play FLAC.
+  doesn't sync music to stock iPods, which can't play FLAC (their plays are
+  still read). This can also be switched from a `DockSetup.txt` on a docked
+  player (`StockCompatible=no` / `yes`); switching it off is refused while
+  any stock iPod still syncs, and a stock iPod can always switch it back on.
 
 - **The iPod must be formatted FAT32 ("Windows format").** An iPod restored
   with Finder/iTunes on a **Mac** is usually formatted for Mac (HFS+), which the

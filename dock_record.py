@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS players (
     first_seen  INTEGER NOT NULL,
     last_sync   INTEGER,
     forgotten_at INTEGER,         -- set by `musicdock-players forget` / DockSetup.txt
-    name        TEXT              -- the name given to the iPod (its master playlist)
+    name        TEXT,             -- the name given to the iPod (its master playlist)
+    kind        TEXT              -- "stock" or "rockbox" (set each sync; NULL = not seen yet)
 );
 CREATE TABLE IF NOT EXISTS tracks (
     guid          TEXT NOT NULL,
@@ -112,6 +113,7 @@ class Record:
         self._add_column("players", "forgotten_at INTEGER")      # added 2026-10-23
         self._add_column("players", "name TEXT")                 # added 2026-10-23
         self._add_column("tracks", "genre TEXT")                 # Rockbox re-tags (2026-10-23)
+        self._add_column("players", "kind TEXT")                 # stock / rockbox (2026-10-23)
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
             # login user) so the prepare job can write it too.
@@ -168,6 +170,19 @@ class Record:
         if name:
             with self.db:
                 self.db.execute("UPDATE players SET name = ? WHERE guid = ?", (name, guid))
+
+    def set_player_kind(self, guid, kind):
+        """"stock" or "rockbox": which handler synced it (see active_stock_players)."""
+        with self.db:
+            self.db.execute("UPDATE players SET kind = ? WHERE guid = ?", (kind, guid))
+
+    def active_stock_players(self):
+        """Players that aren't forgotten and may run Apple's firmware: kind
+        "stock", or not seen since kinds were recorded (assumed stock, so
+        stock-iPod compatibility is never switched off under one)."""
+        rows = self.db.execute("SELECT * FROM players WHERE forgotten_at IS NULL "
+                               "AND (kind IS NULL OR kind = 'stock')")
+        return [dict(r) for r in rows]
 
     def remember_player(self, guid):
         """Undo forget_player (as docking the player again would)."""
