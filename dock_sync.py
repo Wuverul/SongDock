@@ -525,6 +525,7 @@ def make_ipod_work(cfg, guid, product, write):
                 raise SyncError("Stock iPod: dock is set up for Rockbox")
             # else: SETUP NOT USED shows why the DockSetup.txt failed
         elif writing:
+            summary["followup"] = ask_for_followup(cfg, manifest, guid)
             try:
                 import dock_guide
                 if dock_guide.write_guide(device.root, cfg, rockbox=rockbox):
@@ -534,6 +535,43 @@ def make_ipod_work(cfg, guid, product, write):
         log.info("Session summary: %s", summary)
         return summary
     return work
+
+
+def ask_for_followup(cfg, applied, guid):
+    """Concurrent batches: the prepare job may have handed over a newer plan
+    while this sync was copying. If it has more for this player, ask for the
+    next sync now (dock_resync waits for this one to end) rather than at the
+    next batch. Only when the plan changed since this sync read it, so a
+    player that can't take more (full, files missing) never loops.
+    Returns True if a sync was asked for."""
+    if not cfg.get("device", {}).get("auto_resync", True):
+        return False
+    try:
+        with open(os.path.join(cfg["sync"]["cache_dir"], "manifest.json")) as f:
+            newest = json.load(f)
+    except (OSError, ValueError, KeyError):
+        return False
+    if "tracks" not in newest or newest.get("generated") == (applied or {}).get("generated"):
+        return False
+    try:
+        import dock_resync
+        import ipod_handler
+        from dock_record import Record
+        record = Record()
+        try:
+            present = {r["navidrome_id"] for r in record.tracks(guid)}
+        finally:
+            record.close()
+        add, remove = ipod_handler.pending_changes(newest, present)
+        if not (add or remove):
+            return False
+        dock_resync.request()
+    except Exception:
+        log.exception("Couldn't ask for the next sync (the next batch will)")
+        return False
+    log.info("More music was prepared during this sync (+%d -%d): syncing again next",
+             add, remove)
+    return True
 
 
 def handle_setup_file(device, write, guid, cfg=None):

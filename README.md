@@ -129,7 +129,10 @@ already MP3 or AAC on the server need no conversion on either.
 
 On the Pi Zero 2 W, preparing a very large library (200 GB of FLAC) takes
 about a day and a half; copying that much to an iPod over USB takes longer
-(~40 hours), on either Pi.
+(~40 hours), on either Pi. On the Zero 2 W the two overlap: while music
+converts, every 25 finished songs (`sync_batch_size`) are copied to a docked
+iPod, so the iPod fills as conversion goes rather than afterwards. A Zero W
+converts first and copies afterwards, since its one core can't do both.
 
 **32-bit or 64-bit Raspberry Pi OS:**
 - The **Pi Zero W can only run the 32-bit** version (its processor has no

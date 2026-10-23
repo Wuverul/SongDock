@@ -598,6 +598,43 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(self.files(), ["a.mp3", "c.mp3"])            # b went, not a
         self.assertEqual(summary["evicted"], 1)
 
+    # Concurrent batches: the plan is handed over mid-run.
+    def batch_run(self, batch, cores, n=4):
+        cfg = config()
+        cfg["sync"].update(workers=1, sync_batch_size=batch)   # 2 in flight at a time
+        server = FakeServer(songs=[song(f"b{i}") for i in range(n)])
+        handed = []
+
+        def on_batch(manifest):
+            with open(os.path.join(self.cache, "manifest.json")) as f:
+                self.assertEqual(json.load(f), manifest)              # on disk first
+            handed.append(manifest)
+        summary = self.run_prepare(server, cfg=cfg, on_batch=on_batch, cpu_count=cores)
+        return summary, handed
+
+    def test_batches_hand_over_every_song_ready_or_waiting(self):
+        summary, handed = self.batch_run(batch=1, cores=4)
+        self.assertGreaterEqual(len(handed), 1)
+        self.assertEqual(summary["batches"], len(handed))
+        everyone = {f"b{i}" for i in range(4)}
+        for m in handed:
+            ready = {t["id"] for t in m["tracks"]}
+            waiting = {s["id"] for s in m["skipped"]}
+            self.assertEqual(ready | waiting, everyone)      # nothing can be removed
+            self.assertFalse(ready & waiting)
+            self.assertTrue(all(s["reason"] == "waiting to be prepared" and not s["error"]
+                                for s in m["skipped"]))
+        self.assertLess(len(handed[0]["tracks"]), 4)
+        final = self.manifest()                               # the real plan replaces it
+        self.assertEqual(({t["id"] for t in final["tracks"]}, final["skipped"]),
+                         (everyone, []))
+
+    def test_no_batches_on_one_core_or_when_off(self):
+        self.assertEqual(self.batch_run(batch=1, cores=1)[1], [])
+        self.tmp.cleanup()
+        os.makedirs(self.cache)
+        self.assertEqual(self.batch_run(batch=0, cores=4)[1], [])
+
     def test_stops_at_cache_limit(self):
         server = FakeServer(songs=[song("a", size=600_000_000)])
         summary = self.run_prepare(server, cfg=config(max_gb=1))
@@ -901,7 +938,10 @@ class ConfigTests(unittest.TestCase):
                                           '[display]\ntheme = "dark"\n'))
         self.assertEqual((cfg["display"]["theme"], cfg["sync"]["check_interval_minutes"]),
                          ("dark", 15))
-        for bad, why in (('[display]\ntheme = "blue"', "theme"),
+        self.assertEqual(cfg["sync"]["sync_batch_size"], 25)
+        for bad, why in (('[sync]\nsync_batch_size = -1', "sync_batch_size"),
+                         ('[sync]\nsync_batch_size = 2.5', "sync_batch_size"),
+                         ('[display]\ntheme = "blue"', "theme"),
                          ('[sync]\ncheck_interval_minutes = 0', "check_interval"),
                          ('[sync]\ncheck_interval_minutes = 2000', "check_interval"),
                          ('[sync]\ncheck_interval_minutes = "5"', "check_interval")):

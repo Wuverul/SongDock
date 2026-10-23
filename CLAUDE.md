@@ -607,7 +607,27 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   lasts). The prepare job fills the cache and writes the plan; the auto
   re-sync syncs the docked player; the next prepare run (5 min later)
   evicts what was just copied and fetches the next batch. A prepare run
-  waits for a running sync, so batches alternate rather than overlap.
+  waits for a running sync before it *starts*.
+- **Concurrent batches (2026-10-23, user request):** within a run, every
+  `[sync] sync_batch_size` (default 25; 0 = off) newly prepared tracks,
+  `hand_over()` writes an interim plan (`build_manifest(waiting=True)`:
+  ready tracks + every not-yet-prepared song in `skipped` as "waiting to be
+  prepared", so the sync removes nothing) and `on_batch` asks for a re-sync
+  of a docked iPod; conversion carries on, so USB copying overlaps
+  conversion (today's 903-track run: ~3 h conversion then ~2.75 h copying,
+  one after the other). Only with 2+ CPU cores (`os.cpu_count()`; on a
+  Zero W a sync would just slow the one core). A batch that finds a sync
+  still running skips the request; the end of the run waits for the
+  running sync, then asks, so the last tracks aren't stranded. The final
+  plan always replaces an interim one. Skipped batches combine by
+  themselves: every plan lists everything ready, and a sync copies all of
+  it that's missing. **No idle gap:** as a sync ends, `dock_sync.
+  ask_for_followup` asks for the next one if the plan on disk is newer
+  (`generated` differs) than the one it applied and has changes for this
+  player - only then, so a full player or missing file never loops - and
+  `dock_resync` now waits up to `SYNC_END_WAIT` (120 s) for that sync to
+  end instead of skipping at once (unit timeout raised to 5 min). Not yet
+  run on hardware.
   Tested end to end (`test_player_bigger_than_cache_fills_over_several_syncs`);
   not yet on hardware with a full cache. Not built: a `Restoring 12,340 /
   40,000` screen (the sync shows `Copying n/N` per batch).

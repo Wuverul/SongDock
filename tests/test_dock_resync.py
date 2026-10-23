@@ -141,10 +141,21 @@ class ResyncTests(unittest.TestCase):
         self.assertEqual(self.resync(), 0)
 
     def test_left_alone_during_a_sync(self):
-        self.sys.device("1-1", disk_size=0)
-        self.running = True
+        real = self.sys.device("1-1", disk_size=0)
+        self.running = True                             # a long sync: never ends here
         self.assertEqual(self.resync(), 0)
-        self.assertEqual((self.sleeps, self.shown), ([], []))
+        self.assertEqual(self.shown, [])                # no CONNECTING, no re-plug
+        self.assertEqual(sum(self.sleeps), dock_resync.SYNC_END_WAIT)   # waited, gave up
+        self.assertEqual(self.authorized(real), "1")
+
+    def test_waits_for_a_finishing_sync_then_replugs(self):
+        # The sync that asked for a follow-up ends a few seconds later.
+        self.sys.device("1-1", disk_size=0)
+        replugged = dock_resync.resync(self.sys.usb, self.sys.block, self.record,
+                                       sync_running=lambda: self.t < 12, sleep=self.sleep,
+                                       show=self.show, state=self.state, clock=lambda: self.t)
+        self.assertEqual(replugged, 1)
+        self.assertEqual(self.shown[0][0], "connecting")
 
     def test_unknown_ipod_and_other_devices_left_alone(self):
         self.sys.device("1-1", serial="000A270000000002", disk_size=0)   # someone else's

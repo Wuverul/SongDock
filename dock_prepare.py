@@ -775,7 +775,7 @@ class KeptTracks:
 
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
-            on_player=None):
+            on_player=None, on_batch=None, cpu_count=None):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -784,6 +784,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     files make room for songs the player lacks (largest first) and aren't
     fetched again: the plan lists them under "on_player", so the sync keeps
     them. A player bigger than the cache then fills over several syncs.
+    on_batch(manifest): called each time a batch of [sync] sync_batch_size
+    new tracks is handed over mid-run (only with 2+ CPU cores).
     """
     device = cfg["device"]["type"]
     fmt = cfg["device"]["convert_to"]
@@ -1022,6 +1024,68 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # the cache limit with the cache at 4.7 GB (2026-10-17).
     in_flight = threading.BoundedSemaphore(workers + 1)
 
+    def entry(t):
+        return {
+            "id": t["id"],
+            "title": t.get("title"), "artist": t.get("artist"),
+            "album_artist": t.get("displayAlbumArtist") or t.get("albumArtist"),
+            "album": t.get("album"), "track": t.get("track"),
+            "disc": t.get("discNumber"), "year": t.get("year"),
+            "duration": t.get("duration"), "genre": genres.get(t["id"]),
+            "source_suffix": t.get("suffix"),
+            "converted": needs_conversion(t.get("suffix"), device),
+            "encoding": made_as(t),
+            "sources": sources.get(t["id"], []),
+            **({"cover": covers[t["id"]], "cover_max": COVER_MAX}
+               if covers.get(t["id"], "unchecked") != "unchecked" else {}),
+        }
+
+    def build_manifest(waiting=False):
+        """The plan from what's cached now. waiting=True (a batch handed over
+        mid-run): songs not prepared yet are listed as skipped ("waiting to
+        be prepared"), so the sync keeps them on the player."""
+        ready, uncached = [], []
+        for name, t in wanted.items():
+            path = os.path.join(tracks_dir, name)
+            if os.path.exists(path):
+                ready.append({"file": f"tracks/{name}", "size": os.path.getsize(path),
+                              **entry(t)})
+            elif name in held:
+                uncached.append(entry(t))         # on the player; no file needed
+        held_ids = {t["id"] for t in uncached}
+        not_ready = [s for s in skipped if s["id"] not in held_ids]
+        if waiting:
+            listed = held_ids | {t["id"] for t in ready} | {s["id"] for s in not_ready}
+            not_ready += [{"id": t["id"], "title": label(t), "reason": "waiting to be prepared",
+                           "error": False} for t in wanted.values() if t["id"] not in listed]
+        return {
+            "targets": cfg["sync"]["targets"], "device": device,
+            "playlist_tag": cfg["sync"].get("playlist_tag", ""),
+            "tracks": ready, "on_player": uncached, "playlists": playlists,
+            "skipped": not_ready, "kept_after_removal": len(kept.items),
+            **({"album_types": album_types} if album_types else {}),
+        }
+
+    # Concurrent batches (Pi with 2+ cores): every `batch` newly prepared
+    # tracks, hand the plan so far to the sync (on_batch asks for a sync of a
+    # docked iPod), while the remaining conversions carry on.
+    batch = int(cfg["sync"].get("sync_batch_size", 25) or 0)
+    if batch and (cpu_count or os.cpu_count() or 1) < 2:
+        batch = 0                    # one core: a sync would only slow conversion
+    handed = {"added": 0, "batches": 0}
+
+    def hand_over():
+        with lock:
+            manifest = build_manifest(waiting=True)
+            done = progress["added"]
+        manifest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        write_json_atomic(os.path.join(cache_dir, "manifest.json"), manifest)
+        handed["added"], handed["batches"] = done, handed["batches"] + 1
+        log.info("Batch %d ready (%d new tracks so far): a docked iPod can sync it "
+                 "while the rest are prepared", handed["batches"], done)
+        if on_batch:
+            on_batch(manifest)
+
     # Cache files of held songs, largest first: dropped only to make room for
     # a song the player lacks, never for another held one (no churn).
     evictable = sorted((n for n in held if n in existing and n not in missing_names),
@@ -1040,6 +1104,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             conv = needs_conversion(t.get("suffix"), device)
             need = int(t.get("size") or 0) * (2 if conv else 1)
             in_flight.acquire()
+            if batch and progress["added"] - handed["added"] >= batch:
+                hand_over()
             if progress["offline"]:
                 in_flight.release()
                 with lock:
@@ -1084,48 +1150,20 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    def entry(t):
-        return {
-            "id": t["id"],
-            "title": t.get("title"), "artist": t.get("artist"),
-            "album_artist": t.get("displayAlbumArtist") or t.get("albumArtist"),
-            "album": t.get("album"), "track": t.get("track"),
-            "disc": t.get("discNumber"), "year": t.get("year"),
-            "duration": t.get("duration"), "genre": genres.get(t["id"]),
-            "source_suffix": t.get("suffix"),
-            "converted": needs_conversion(t.get("suffix"), device),
-            "encoding": made_as(t),
-            "sources": sources.get(t["id"], []),
-            **({"cover": covers[t["id"]], "cover_max": COVER_MAX}
-               if covers.get(t["id"], "unchecked") != "unchecked" else {}),
-        }
-
-    ready, uncached = [], []
-    for name, t in wanted.items():
-        path = os.path.join(tracks_dir, name)
-        if os.path.exists(path):
-            ready.append({"file": f"tracks/{name}", "size": os.path.getsize(path),
-                          **entry(t)})
-        elif name in held:
-            uncached.append(entry(t))         # on the player; no file needed
-    held_ids = {t["id"] for t in uncached}
-    skipped = [s for s in skipped if s["id"] not in held_ids]
-    manifest = {
-        "targets": cfg["sync"]["targets"], "device": device,
-        "playlist_tag": cfg["sync"].get("playlist_tag", ""),
-        "tracks": ready, "on_player": uncached, "playlists": playlists,
-        "skipped": skipped, "kept_after_removal": len(kept.items),
-        **({"album_types": album_types} if album_types else {}),
-    }
+    manifest = build_manifest()
+    skipped = manifest["skipped"]
     # Runs every few minutes: only write the plan when it changed (spares the
-    # SD card; "generated" then says when the plan last changed).
-    if {k: v for k, v in previous.items() if k != "generated"} != manifest:
+    # SD card; "generated" then says when the plan last changed). After a
+    # batch hand-over the file on disk is an interim plan: always replace it.
+    if handed["batches"] or \
+            {k: v for k, v in previous.items() if k != "generated"} != manifest:
         manifest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
         write_json_atomic(os.path.join(cache_dir, "manifest.json"), manifest)
     if evicted:
         log.info("Dropped %d cached tracks that are on the player, to make room", evicted)
-    return {"total": len(wanted), "ready": len(ready) + len(uncached), "added": added,
-            "removed": len(newly_removed), "skipped": skipped, "evicted": evicted}
+    return {"total": len(wanted), "ready": len(manifest["tracks"]) + len(manifest["on_player"]),
+            "added": added, "removed": len(newly_removed), "skipped": skipped,
+            "evicted": evicted, "batches": handed["batches"]}
 
 
 def show_plan(manifest):
@@ -1356,9 +1394,36 @@ def main(argv=None):
         log.exception("Couldn't read what's on the players (keeping every cached track)")
         on_player = {}
 
+    def ask_for_sync(manifest, batch=False):
+        """A docked (ejected) iPod gets new music without being re-plugged by
+        hand: musicdock-resync (root) re-plugs it if one is there. Only when
+        the plan changes something for the last-synced player. While a sync
+        is still running, a mid-run batch skips it (the next batch asks
+        again); the end of the run waits for that sync, then asks."""
+        if args.dry_run or args.preview_dir or not cfg["device"].get("auto_resync", True):
+            return
+        if not has_pending(["idle"] + pending_args(manifest)):
+            return
+        if shutil.which("systemctl") and sync_running():
+            if batch:
+                log.info("A sync is still running: this batch goes with the next one")
+                return
+            # End of the run: no later batch would ask again, so wait for the
+            # running sync, then ask if the full plan still has changes.
+            wait_for_syncs()
+            if not has_pending(["idle"] + pending_args(manifest)):
+                return
+        try:
+            import dock_resync
+            dock_resync.request()
+            log.info("New changes for the iPod: a docked iPod will sync now")
+        except OSError as e:
+            log.warning("Couldn't ask for a sync of a docked iPod: %s", e)
+
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run,
-                          on_player=on_player)
+                          on_player=on_player,
+                          on_batch=lambda m: ask_for_sync(m, batch=True))
     except SubsonicError as e:
         if e.network:
             # Wi-Fi or server down: expected now and then, not a failure.
@@ -1388,16 +1453,8 @@ def main(argv=None):
     log.info("Done: %d/%d ready (%d added, %d removed, %d skipped)",
              summary["ready"], summary["total"], summary["added"],
              summary["removed"], len(summary["skipped"]))
-    if changed and not args.dry_run and not args.preview_dir and \
-            cfg["device"].get("auto_resync", True) and has_pending(idle):
-        # A docked (ejected) iPod gets the new music without being re-plugged
-        # by hand: musicdock-resync (root) re-plugs it if one is there.
-        try:
-            import dock_resync
-            dock_resync.request()
-            log.info("New changes for the iPod: a docked iPod will sync now")
-        except OSError as e:
-            log.warning("Couldn't ask for a sync of a docked iPod: %s", e)
+    if changed and not args.dry_run and not args.preview_dir and has_pending(idle):
+        ask_for_sync(read_manifest(cache_dir))
     # Exit non-zero on real errors so `systemctl --failed` shows them; running
     # out of room is a limit, not an error.
     return 1 if any(s["error"] for s in summary["skipped"]) else 0

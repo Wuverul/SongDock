@@ -32,6 +32,7 @@ log = logging.getLogger("dock_resync")
 
 SHARED_DIR = "/var/lib/musicdock"
 REQUEST = os.path.join(SHARED_DIR, "resync.request")
+SYNC_END_WAIT = 120      # seconds: a sync asking for a follow-up is about to end
 STATE_FILE = os.path.join(SHARED_DIR, "dock_status.json")
 DOCK_STATUS = os.path.join(HERE, "dock_status.py")
 RECORD = os.path.join(SHARED_DIR, "dock.db")
@@ -148,9 +149,15 @@ def resync(usb_root=USB_DEVICES, block_root=BLOCK, record=RECORD,
     """
     if sync_running is None:
         from dock_prepare import sync_running
-    if sync_running():
-        log.info("A sync is running; nothing to do")
-        return 0
+    # A sync that's finishing may have asked for the next one (the plan moved
+    # on while it copied): give it a moment to end. A sync still busy after
+    # that keeps its iPod; whoever asks next tries again.
+    start = clock()
+    while sync_running():
+        if clock() - start >= SYNC_END_WAIT:
+            log.info("A sync is running; nothing to do")
+            return 0
+        sleep(5)
     known = known_players(record)
     replugged = 0
     for device_dir, serial in docked_apple_devices(usb_root):

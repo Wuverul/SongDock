@@ -4,6 +4,7 @@ Run from the project folder:  python3 -m unittest discover -s tests -v
 """
 
 import logging
+import json
 import os
 import sys
 import tempfile
@@ -398,6 +399,48 @@ class SetupFileSyncTests(unittest.TestCase):
         screen, args = shown[-1]
         self.assertEqual(screen, "setup")
         self.assertEqual(args[:2], ("--reason", "Forgot Old iPod (model unknown)"))
+
+
+class FollowupSyncTests(unittest.TestCase):
+    """A sync that ends while newer batches are ready asks for the next one."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = tmp.name
+        from dock_record import Record
+        self.db = os.path.join(self.dir, "dock.db")
+        rec = Record(self.db)
+        rec.add_track("G", 1, navidrome_id="a")             # what the sync just copied
+        rec.close()
+        self.cfg = {"sync": {"cache_dir": self.dir}, "device": {"auto_resync": True}}
+
+    def plan(self, generated, ids):
+        return {"generated": generated, "tracks": [{"id": i} for i in ids], "skipped": []}
+
+    def followup(self, applied, newest):
+        with open(os.path.join(self.dir, "manifest.json"), "w") as f:
+            json.dump(newest, f)
+        from dock_record import Record
+        with mock.patch("dock_record.Record", side_effect=lambda: Record(self.db)), \
+                mock.patch("dock_resync.request") as request:
+            asked = dock_sync.ask_for_followup(self.cfg, applied, "G")
+        self.assertEqual(asked, request.called)
+        return asked
+
+    def test_newer_plan_with_more_music_asks_for_the_next_sync(self):
+        self.assertTrue(self.followup(self.plan("t1", ["a"]), self.plan("t2", ["a", "b", "c"])))
+
+    def test_same_plan_never_loops(self):
+        # e.g. the iPod was full or a file was missing: nothing new to try.
+        self.assertFalse(self.followup(self.plan("t1", ["a", "b"]), self.plan("t1", ["a", "b"])))
+
+    def test_newer_plan_with_nothing_new_for_this_ipod(self):
+        self.assertFalse(self.followup(self.plan("t1", ["a"]), self.plan("t2", ["a"])))
+
+    def test_auto_resync_off(self):
+        self.cfg["device"]["auto_resync"] = False
+        self.assertFalse(self.followup(self.plan("t1", ["a"]), self.plan("t2", ["a", "b"])))
 
 
 class ScreenProcessTests(unittest.TestCase):

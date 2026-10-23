@@ -22,7 +22,7 @@ DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
              "playlist_tag": "#ipod", "workers": "auto", "removal_grace_days": 7,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
-             "check_interval_minutes": 5},
+             "check_interval_minutes": 5, "sync_batch_size": 25},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False, "auto_resync": True},
     "display": {"theme": "", "invert": False},     # theme "" = follow invert (older configs)
@@ -108,6 +108,10 @@ def load(path=None):
         raise ConfigError(f"{path}: [display] invert must be true or false")
     if cfg["display"]["theme"] not in ("", "light", "dark"):
         raise ConfigError(f'{path}: [display] theme must be "light" or "dark"')
+    b = cfg["sync"]["sync_batch_size"]
+    if not (isinstance(b, int) and not isinstance(b, bool) and 0 <= b <= 1000):
+        raise ConfigError(f"{path}: sync_batch_size must be a whole number of tracks "
+                          f"from 0 to 1000 (default 25; 0 = only when all are prepared)")
     m = cfg["sync"]["check_interval_minutes"]
     if not (isinstance(m, int) and not isinstance(m, bool) and 1 <= m <= 1440):
         raise ConfigError(f"{path}: check_interval_minutes must be a whole number of "
