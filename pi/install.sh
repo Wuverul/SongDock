@@ -91,6 +91,37 @@ else
   say "Logs: kept across restarts"
 fi
 
+# 3c. Wi-Fi on WPA2/WPA3 networks ------------------------------------------------
+# Known Raspberry Pi OS bug (raspberrypi/linux#7634, 2026): the shipped
+# rpi-brcmfmac.conf hides WPA3 (SAE) from the Wi-Fi driver but misses the
+# SAE_EXT feature, so NetworkManager picks WPA3 on WPA2/WPA3 networks and the
+# Zero 2 W's chip times out ("Authentication ... timed out"): no Wi-Fi at all.
+# Fix: the same options with SAE_EXT added, in a same-named /etc file that
+# shadows the shipped one. SAE_EXT is bit 25 on 6.18 kernels only (the bit
+# numbers move between kernels), so other kernels are left alone.
+WIFI_SHIPPED=/usr/lib/modprobe.d/rpi-brcmfmac.conf
+WIFI_CONF=/etc/modprobe.d/rpi-brcmfmac.conf
+if [ -f "$WIFI_SHIPPED" ] && [[ "$(uname -r)" == 6.18.* ]]; then
+  shipped_opts="$(grep -m1 '^options brcmfmac' "$WIFI_SHIPPED" || true)"
+  shipped_mask="$(sed -n 's/.*feature_disable=\(0x[0-9a-fA-F]*\).*/\1/p' <<<"$shipped_opts")"
+  if [ -n "$shipped_mask" ]; then
+    want_mask="$(printf '0x%x' $(( shipped_mask | 0x2000000 )))"
+    WIFI_WANT="$(printf '%s\n' "# Installed by Music Dock: WPA2/WPA3 Wi-Fi fix (raspberrypi/linux#7634)." \
+      "${shipped_opts/feature_disable=$shipped_mask/feature_disable=$want_mask}")"
+    if [ "$want_mask" = "$shipped_mask" ]; then
+      say "Wi-Fi: no fix needed"
+    elif [ "$(cat "$WIFI_CONF" 2>/dev/null)" != "$WIFI_WANT" ]; then
+      say "Fixing Wi-Fi on WPA2/WPA3 networks (takes effect after a reboot)"
+      if [ $CHECK = 1 ]; then plan "write $WIFI_CONF ($want_mask)"; else
+        printf '%s\n' "$WIFI_WANT" > "$WIFI_CONF"
+      fi
+      REBOOT_NEEDED=1
+    else
+      say "Wi-Fi: WPA2/WPA3 fix in place"
+    fi
+  fi
+fi
+
 # 4. Python packages not in apt (pygpod, mutagen) in a venv --------------------
 # The venv also sees apt's Pillow/gpiozero (--system-site-packages).
 # Raspberry Pi OS blocks system-wide pip installs.
@@ -170,7 +201,7 @@ if [ ${#TODO[@]} -gt 0 ]; then
   for t in "${TODO[@]}"; do echo "  - $t"; done
 fi
 if [ $REBOOT_NEEDED = 1 ]; then
-  echo "  - Reboot so SPI (the display) turns on:  sudo reboot"
+  echo "  - Reboot so the display (SPI) and Wi-Fi settings take effect:  sudo reboot"
 fi
 echo "Watch the dock's log with:"
 echo "  journalctl -u 'musicdock-*' -f"
