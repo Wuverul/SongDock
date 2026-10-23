@@ -293,7 +293,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   reconcile, apply the staged plan, playlists, `sync_player` session. A copy of
   the record is saved on the player at `iPod_Control/musicdock/dock.db`.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
-  log them. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
+  log them. **Fallback addresses (2026-10-23):** `[server] url` may be a
+  list in priority order (e.g. home LAN address, then a public one; user's
+  choice over combining several servers' libraries, which was judged too
+  risky). Before the first request each address gets a 5 s TCP check
+  (`reachable`), so an unreachable home address doesn't cost a 60 s
+  timeout per run; a network error mid-run moves to the next address that
+  answers (a server *answering* with an error never switches). Logs
+  addresses only. `DockSetup.txt` `Server=` takes them comma-separated. `dock_config.py`: loads config.toml (`MUSICDOCK_CONFIG` overrides).
 - **`wifi.txt` verified on a real network change (2026-10-18,** between two
   of the user's SSIDs). WI-FI CHANGED now shows the new IP at the bottom (no
   "Safe to remove" line), so the dock can be found again.

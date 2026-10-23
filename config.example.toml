@@ -5,7 +5,9 @@
 
 [server]
 url = "http://192.168.1.50:4533"   # your Navidrome address, as reachable from the dock.
-                                   # https needs a properly signed certificate.
+                                   # https needs a properly signed certificate. Several
+                                   # addresses for the same server, in the order to try:
+                                   # ["http://192.168.1.50:4533", "https://music.example.com"]
 username = "your-navidrome-username"
 password = "your-navidrome-password"  # only used to sign requests; never sent as is
 

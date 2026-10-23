@@ -872,6 +872,14 @@ class ConfigTests(unittest.TestCase):
                                           'password="p"\n[sync]\ntarget="starred"\n'))
         self.assertEqual(cfg["sync"]["targets"], ["starred"])
 
+    def test_server_url_can_list_addresses(self):
+        base = '[server]\nusername="u"\npassword="p"\n'
+        cfg = dock_config.load(self.write(base + 'url=["http://10.0.0.2:4533", "https://x"]\n'))
+        self.assertEqual(cfg["server"]["url"], ["http://10.0.0.2:4533", "https://x"])
+        for bad in ('url=[]', 'url="music.example.com"', 'url=["https://x", 5]'):
+            with self.assertRaisesRegex(dock_config.ConfigError, "url"):
+                dock_config.load(self.write(base + bad + "\n"))
+
     def test_bad_targets_rejected(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
         for bad in ('targets="starred"', 'targets=["favorites"]', 'targets=["playlist:"]',

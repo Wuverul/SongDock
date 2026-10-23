@@ -118,6 +118,10 @@ The Navidrome server and the account the dock signs in with:
   Server=https://music.example.com
   Username=your-name
   Password=your-password
+  - Several addresses for the same server (e.g. one at home and one for
+    elsewhere) go on one line, comma-separated, in the order to try:
+      Server=http://192.168.1.50:4533, https://music.example.com
+    The dock uses the first one that answers.
   - A new Server= always needs Username= and Password= with it, so the
     dock never signs in to a new address with the old details.
   - Username= and Password= also work on their own (same server).

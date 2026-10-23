@@ -7,7 +7,8 @@ and the list of known iPods written into its MediaDock.txt.
     Keep=Jo's iPod (nano)        bring a forgotten iPod back
     PlaylistTag=#car             sync playlists tagged #car instead ("none" = off)
     SyncStarred=no               don't sync starred songs (also SyncFavorites=)
-    Server=https://music.example.com      a new Navidrome address; needs
+    Server=https://music.example.com      a new Navidrome address (or several,
+                                          comma-separated, in the order to try); needs
     Username=jo                           Username= and Password= with it
     Password=...                          (each also works alone, but Server
     NewLibrary=yes                        never does); NewLibrary=yes when
@@ -129,18 +130,23 @@ def plan_settings(settings, cfg):
             raise SetupFileError("Server= needs Username= and Password= with it")
         if any(not v for v in given.values()):
             raise SetupFileError(f"{next(k for k, v in given.items() if not v)}= is empty")
-        url = given.get("Server", server["url"]).rstrip("/")
-        if not re.fullmatch(r"https?://[^\s/]+(/\S*)?", url):
+        from subsonic import addresses
+        now = [u.rstrip("/") for u in addresses(server["url"])]
+        # Several addresses for one server: comma-separated, in the order to try.
+        urls = ([u.rstrip("/") for u in re.split(r"[,\s]+", given["Server"]) if u]
+                if "Server" in given else now)
+        if not all(re.fullmatch(r"https?://[^\s/,]+(/\S*)?", u) for u in urls):
             raise SetupFileError("Server must start with http:// or https://")
-        login = {"url": url, "username": given.get("Username", server["username"]),
+        login = {"url": urls[0] if len(urls) == 1 else urls,
+                 "username": given.get("Username", server["username"]),
                  "password": given.get("Password", server["password"]),
-                 "moved": url != server["url"].rstrip("/")}
-        for key, value in (("url", url), ("username", login["username"]),
-                           ("password", login["password"])):
-            if value != server.get(key):
-                changes[("server", key)] = value
+                 "moved": urls != now}
         if login["moved"]:
-            done.append(f"Server is now {url}")
+            changes[("server", "url")] = login["url"]
+            done.append(f"Server is now {' or '.join(urls)}")
+        for key in ("username", "password"):
+            if login[key] != server.get(key):
+                changes[("server", key)] = login[key]
         if "Username" in given:
             done.append(f"Signed in as {login['username']}")
         elif "Password" in given:
@@ -155,11 +161,12 @@ def check_login(login, record, guid, new_library, connect):
     sign-in; for a new address, also whether it has this iPod's songs."""
     from subsonic import SubsonicError
     client = connect(login["url"], login["username"], login["password"], timeout=20)
+    where = login["url"] if isinstance(login["url"], str) else " or ".join(login["url"])
     try:
         client.call("ping")
     except SubsonicError as e:
         if e.network:
-            return f"Can't reach {login['url']}"
+            return f"Can't reach {where}"
         if e.code in (40, 41):
             return "The server refused that username and password"
         return f"Server error: {e}"[:60]
@@ -173,7 +180,7 @@ def check_login(login, record, guid, new_library, connect):
             return None                                 # same library
         except SubsonicError as e:
             if e.network:
-                return f"Can't reach {login['url']}"
+                return f"Can't reach {where}"
     if not sample:
         return None
     if not new_library:

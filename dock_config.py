@@ -71,6 +71,13 @@ def load(path=None):
         raise ConfigError(f"{path}: [server] is missing {', '.join(missing)}")
     if server["password"] == PLACEHOLDER_PASSWORD:
         raise ConfigError(f"{path}: still has the placeholder password")
+    urls = [server["url"]] if isinstance(server["url"], str) else server["url"]
+    if not (isinstance(urls, list) and urls and all(
+            isinstance(u, str) and re.fullmatch(r"https?://\S+", u) for u in urls)):
+        raise ConfigError(f'{path}: [server] url must be an address like '
+                          f'"https://music.example.com", or a list of them in the '
+                          f'order to try, e.g. ["http://192.168.1.50:4533", '
+                          f'"https://music.example.com"]')
     cfg["server"] = server
 
     cfg["sync"]["cache_dir"] = expand_home(cfg["sync"]["cache_dir"], path)

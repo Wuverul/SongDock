@@ -263,6 +263,19 @@ class SettingsTests(PlayersBase):
         self.assertNotIn("new-secret", " ".join(result["done"]))
         self.assertEqual(self.server.logins, [("https://new.example.com", "jo")])
 
+    def test_home_and_away_addresses(self):
+        self.assert_unchanged(self.apply("Server=https://a.example.com, ftp://b\n"
+                                         "Username=jo\nPassword=new-secret\n"), "http")
+        result = self.apply("Server=http://192.168.1.50:4533, https://new.example.com\n"
+                            "Username=jo\nPassword=new-secret\n")
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.settings()["server"]["url"],
+                         ["http://192.168.1.50:4533", "https://new.example.com"])
+        self.assertIn("Server is now http://192.168.1.50:4533 or https://new.example.com",
+                      result["done"])
+        self.assertEqual(self.server.logins[0][0],
+                         ["http://192.168.1.50:4533", "https://new.example.com"])
+
     def test_sign_in_is_tried_first(self):
         self.assert_unchanged(self.apply("Password=typo\n"), "refused that username")
         self.server.down = True
