@@ -748,6 +748,13 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   sizes), and the iPod played it and recorded 1 play in `Play Counts`. Without
   a model in SysInfo, pygpod assumes no signature and writes an unsigned
   (rejected) DB - always check `requires_hash` before saving.
+- **pygpod's USB fallback (found 2026-10-23):** if SysInfo has no model,
+  pygpod scans `/sys/bus/usb` (no pyusb needed) and takes the model of the
+  *first Apple USB device* it finds. Harmless on the dock (one port, and
+  `ensure_sysinfo` writes the model before any write; `checked_save` still
+  checks the GUID), but it made `test_refuses_to_save_unsigned` pass the
+  save on the Pi while the Nano was plugged in. Tests that need "no model"
+  must patch `pygpod.device.usb.detect_ipod_usb`.
 - **pygpod deletes `Play Counts` (and `iTunesStats`, `PlayCounts.plist`)
   every time `Database()` opens**, after merging them into memory, even if
   nothing is saved. That violates "never clear play data until the server

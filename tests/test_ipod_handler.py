@@ -454,7 +454,11 @@ class HandlerTests(unittest.TestCase):
     def test_refuses_to_save_unsigned(self):
         with open(h.sysinfo_path(self.mount), "w") as f:
             f.write(f"FirewireGuid: 0x{G}\n")                    # model missing
-        with self.assertRaisesRegex(h.HandlerError, "refusing to save"):
+        # With no model in SysInfo, pygpod borrows the model of the first
+        # Apple USB device it finds (via /sys): on a dock with an iPod
+        # plugged in, that made this test pass the save. Keep it hermetic.
+        with mock.patch("pygpod.device.usb.detect_ipod_usb", return_value=[]), \
+                self.assertRaisesRegex(h.HandlerError, "refusing to save"):
             h.checked_save(self.db(), G)
 
     def test_backup_and_restore(self):
