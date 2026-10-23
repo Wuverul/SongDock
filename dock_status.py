@@ -427,7 +427,7 @@ def render(screen, args):
             d.text((8, 106), f"IP {ip}", font=small_f, fill=0)
 
     wifi_indicator(args.wifi if args.wifi is not None else read_wifi())
-    if display_settings().get("invert"):
+    if dark_mode():
         # Dark mode: white on black, to suit a dark enclosure. E-ink holds
         # either colour without power, so this adds no wear.
         img = Image.eval(img, lambda p: 255 - p)
@@ -451,6 +451,15 @@ def display_settings():
         except (OSError, tomllib.TOMLDecodeError):
             _display = {}
     return _display
+
+
+def dark_mode():
+    """[display] theme = "dark" (or "light"); configs from before themes
+    used invert = true, which still counts when no theme is set."""
+    d = display_settings()
+    if d.get("theme") in ("light", "dark"):
+        return d["theme"] == "dark"
+    return bool(d.get("invert"))
 
 
 # --------------------------------------------------------------- display ----

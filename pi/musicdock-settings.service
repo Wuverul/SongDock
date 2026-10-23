@@ -1,0 +1,14 @@
+# Copy [sync] check_interval_minutes from config.toml into the prepare
+# timer (a systemd drop-in; only root can change it). Started by
+# musicdock-settings.path and by install.sh. install.sh fills in @APP_DIR@
+# and @HOME@.
+#   sudo systemctl start musicdock-settings   # apply by hand
+
+[Unit]
+Description=SongDock: apply the check interval from config.toml
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 @APP_DIR@/dock_timer.py
+Environment=PYTHONUNBUFFERED=1
+Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml

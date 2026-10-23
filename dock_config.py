@@ -21,10 +21,11 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
              "playlist_tag": "#ipod", "workers": "auto", "removal_grace_days": 7,
-             "cache_dir": "~/musicdock/cache", "max_cache_gb": 20},
+             "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
+             "check_interval_minutes": 5},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False, "auto_resync": True},
-    "display": {"invert": False},
+    "display": {"theme": "", "invert": False},     # theme "" = follow invert (older configs)
     "genres": {"unmatched": dock_genres.DEFAULT_UNMATCHED,
                "groups": dock_genres.DEFAULT_GROUPS},
 }
@@ -105,6 +106,12 @@ def load(path=None):
         raise ConfigError(f"{path}: device type must be stock_ipod or rockbox")
     if not isinstance(cfg["display"]["invert"], bool):
         raise ConfigError(f"{path}: [display] invert must be true or false")
+    if cfg["display"]["theme"] not in ("", "light", "dark"):
+        raise ConfigError(f'{path}: [display] theme must be "light" or "dark"')
+    m = cfg["sync"]["check_interval_minutes"]
+    if not (isinstance(m, int) and not isinstance(m, bool) and 1 <= m <= 1440):
+        raise ConfigError(f"{path}: check_interval_minutes must be a whole number of "
+                          f"minutes from 1 to 1440 (default 5)")
     if not isinstance(cfg["device"]["write"], bool):
         raise ConfigError(f"{path}: [device] write must be true or false")
     if not isinstance(cfg["device"]["auto_resync"], bool):

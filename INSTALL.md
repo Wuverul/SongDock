@@ -133,7 +133,8 @@ In Navidrome:
   **`#ipod`** in its **Comment** field (the field is easy to miss). Remove the
   tag to stop syncing that playlist.
 
-Within about 5 minutes the dock notices, then downloads and converts the music
+At its next check (every 5 minutes unless you change
+`check_interval_minutes`) the dock notices, then downloads and converts the music
 (**PREPARING** on the screen). On a Pi Zero W, converting a FLAC song takes a
 bit less time than the song lasts; a Pi Zero 2 W converts about 16 minutes of
 music per minute (see "Which Raspberry Pi" in README.md). Songs that are
@@ -182,12 +183,24 @@ and album art.
 
 ## Optional extras
 
-**Dark mode** (white on black, nice in a dark case): in the settings file add
+**Dark mode** (white on black, nice in a dark case): in the settings file set
 
 ```toml
 [display]
-invert = true
+theme = "dark"       # or "light" (the default)
 ```
+
+**How often the dock checks for new music** (default every 5 minutes): in
+the settings file set, for example,
+
+```toml
+[sync]
+check_interval_minutes = 15
+```
+
+It takes effect a few seconds after you save the file (no restart needed).
+Checking more often means new music reaches a docked iPod sooner; each check
+that finds nothing new takes a few seconds and changes nothing.
 
 **Moving the dock to another Wi-Fi network:** put a file named **`wifi.txt`**
 in the iPod's top folder (next to `MediaDock.txt`):
@@ -316,8 +329,9 @@ cd ~/musicdock/songdock && sudo ./pi/install.sh
 
 ```sh
 sudo systemctl disable --now musicdock-prepare.timer musicdock-boot.service \
-        musicdock-resync.path
-sudo rm /etc/systemd/system/musicdock-* /etc/udev/rules.d/99-musicdock.rules \
+        musicdock-resync.path musicdock-settings.path
+sudo rm -rf /etc/systemd/system/musicdock-*
+sudo rm /etc/udev/rules.d/99-musicdock.rules \
         /etc/systemd/journald.conf.d/50-musicdock-persistent.conf \
         /etc/tmpfiles.d/musicdock.conf \
         /etc/NetworkManager/dispatcher.d/90-musicdock-wifi \

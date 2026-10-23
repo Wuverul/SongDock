@@ -13,7 +13,7 @@ the dock:
 4. **Keeps your playlists** on the iPod (Favorites plus each tagged playlist).
 5. **Charges the iPod**, and shows on its e-ink screen when it's safe to unplug.
 
-Between docks it quietly checks Navidrome every 5 minutes and prepares new
+Between docks it quietly checks Navidrome every 5 minutes (adjustable) and prepares new
 music in the background, so syncs are quick.
 
 **To set one up, follow [INSTALL.md](INSTALL.md).**
@@ -153,7 +153,7 @@ about a day and a half; copying that much to an iPod over USB takes longer
 | ![SYNCING 5/6: copying 12 of 72, do not remove](docs/screen-syncing.png) | ![SAFE TO REMOVE: +12 -3 tracks, 5 plays sent](docs/screen-safe.png) |
 
 Every screen shows the time it was drawn, the Wi-Fi signal, and (when
-idle) the dock's IP address. With dark mode on (`[display] invert = true`,
+idle) the dock's IP address. With dark mode on (`[display] theme = "dark"`,
 for a dark case):
 
 ![SYNCING in dark mode](docs/screen-syncing-dark.png)

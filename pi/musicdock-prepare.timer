@@ -1,4 +1,6 @@
-# Runs the prepare job right after boot, then every 5 minutes (counted from
+# Runs the prepare job right after boot, then every 5 minutes - or every
+# [sync] check_interval_minutes from config.toml, which dock_timer.py writes
+# into a drop-in (musicdock-prepare.timer.d/) - counted from
 # the end of the previous run, so runs never overlap and a long conversion
 # batch isn't followed by an immediate rerun). A check that finds nothing new
 # costs a few seconds of nice-19 CPU and doesn't redraw or write anything. The service waits for
@@ -8,7 +10,7 @@
 #   systemctl list-timers musicdock-prepare   # when it runs next
 
 [Unit]
-Description=SongDock prepare, every 5 minutes
+Description=SongDock prepare (checks for new music)
 
 [Timer]
 OnBootSec=1min

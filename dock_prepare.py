@@ -951,7 +951,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         conv = needs_conversion(t.get("suffix"), device)
         if progress["offline"]:
             # The server dropped out earlier in this run: don't try every
-            # remaining track; the next check (5 min) carries on.
+            # remaining track; the next check carries on.
             with lock:
                 skipped.append({"id": t["id"], "title": label(t),
                                 "reason": "server unreachable", "error": False})
@@ -1117,7 +1117,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         "skipped": skipped, "kept_after_removal": len(kept.items),
         **({"album_types": album_types} if album_types else {}),
     }
-    # Runs every 15 minutes: only write the plan when it changed (spares the
+    # Runs every few minutes: only write the plan when it changed (spares the
     # SD card; "generated" then says when the plan last changed).
     if {k: v for k, v in previous.items() if k != "generated"} != manifest:
         manifest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")

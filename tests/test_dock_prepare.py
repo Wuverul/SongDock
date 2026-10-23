@@ -892,6 +892,22 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(dock_config.ConfigError, "one word"):
             dock_config.load(self.write(base + 'playlist_tag="#my car"\n'))
 
+    def test_theme_and_check_interval_validated(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n'
+        cfg = dock_config.load(self.write(base))
+        self.assertEqual((cfg["display"]["theme"], cfg["sync"]["check_interval_minutes"]),
+                         ("", 5))
+        cfg = dock_config.load(self.write(base + '[sync]\ncheck_interval_minutes = 15\n'
+                                          '[display]\ntheme = "dark"\n'))
+        self.assertEqual((cfg["display"]["theme"], cfg["sync"]["check_interval_minutes"]),
+                         ("dark", 15))
+        for bad, why in (('[display]\ntheme = "blue"', "theme"),
+                         ('[sync]\ncheck_interval_minutes = 0', "check_interval"),
+                         ('[sync]\ncheck_interval_minutes = 2000', "check_interval"),
+                         ('[sync]\ncheck_interval_minutes = "5"', "check_interval")):
+            with self.assertRaisesRegex(dock_config.ConfigError, why):
+                dock_config.load(self.write(base + bad + "\n"))
+
     def test_grace_days_validated(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
         self.assertEqual(dock_config.load(self.write(base))["sync"]["removal_grace_days"], 7)

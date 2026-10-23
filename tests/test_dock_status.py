@@ -100,6 +100,13 @@ class DarkModeTests(unittest.TestCase):
         self.assertTrue(all(a != b for a, b in zip(light.getdata(), dark.getdata())))
         self.assertEqual(dark.getpixel((125, 60)), 0)       # background now black
 
+    def test_theme_wins_and_invert_still_works_without_one(self):
+        for settings, dark in (({"theme": "dark"}, True), ({"theme": "light"}, False),
+                               ({"theme": "light", "invert": True}, False),   # theme wins
+                               ({"invert": True}, True), ({}, False)):
+            with mock.patch.object(dock_status, "display_settings", return_value=settings):
+                self.assertEqual(dock_status.dark_mode(), dark, settings)
+
 
 @unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
 class SyncingBarTests(unittest.TestCase):

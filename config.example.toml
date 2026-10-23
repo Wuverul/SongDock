@@ -25,6 +25,10 @@ workers = "auto"                   # parallel conversions: "auto" = CPU cores - 
 removal_grace_days = 7             # 0-30: keep tracks that left every list cached this
                                    # long (re-adding is instant); deleted oldest-first
                                    # sooner if the SD card drops below 25% free
+check_interval_minutes = 5         # how often the dock checks Navidrome for new music
+                                   # and sends waiting plays (1-1440). A docked iPod syncs
+                                   # right after a check finds something. Takes effect by
+                                   # itself within a few seconds of saving this file.
 
 [device]
 type = "stock_ipod"                # stock_ipod: music converted for stock iPods (MP3/ALAC);
@@ -42,8 +46,11 @@ auto_resync = true                 # an iPod left docked syncs again by itself w
                                    # music is ready (interrupts playback while docked)
 
 [display]
-invert = false                     # true: dark mode (white on black) for a dark case;
-                                   # e-ink holds either colour without power: no extra wear
+theme = "light"                    # "light" (black on white) or "dark" (white on black,
+                                   # e.g. for a dark case). E-ink holds either colour
+                                   # without power: no extra wear. (Older configs used
+                                   # invert = true for dark; that still works when no
+                                   # theme is set.)
 
 [genres]
 # The iPod's Genres menu. Navidrome gives songs several genre tags, and the

@@ -1,0 +1,12 @@
+# Apply settings that need root (the check interval) whenever config.toml
+# changes - edited by hand or by a DockSetup.txt. Starts
+# musicdock-settings.service. install.sh fills in @HOME@.
+
+[Unit]
+Description=SongDock: apply settings when config.toml changes
+
+[Path]
+PathChanged=@HOME@/.config/musicdock/config.toml
+
+[Install]
+WantedBy=multi-user.target

@@ -147,7 +147,7 @@ def main(argv=None, record=None):
             print("\n".join(done))
             if args.command == "forget":
                 print("Its songs no longer hold files in the cache; the next prepare run "
-                      "(within 5 min) can make room for the other iPods. Docking it "
+                      "(at the next check) can make room for the other iPods. Docking it "
                       "again brings it back.")
             return 0
         if not players:

@@ -456,11 +456,24 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.
-- **Dark mode:** `[display] invert = true` (user's Pi: on, for a black PETG
-  case) inverts every rendered frame as the last step of `render()`. No extra
-  e-ink wear (bistable; wear comes from refreshes, not colour). `dock_status`
-  reads `[display]` straight from the config (`MUSICDOCK_CONFIG`, set in every
-  unit), so screens work before server settings exist.
+- **Dark mode:** `[display] theme = "dark"` / `"light"` (2026-10-23, user
+  request); `invert = true` is the older spelling and still counts when no
+  theme is set (`dock_status.dark_mode()`; the user's Pi config still uses
+  `invert = true`, for a black PETG case). Inverts every rendered frame as
+  the last step of `render()`. No extra e-ink wear (bistable; wear comes
+  from refreshes, not colour). `dock_status` reads `[display]` straight
+  from the config (`MUSICDOCK_CONFIG`, set in every unit), so screens work
+  before server settings exist.
+- **Check interval:** `[sync] check_interval_minutes` (1-1440, default 5;
+  2026-10-23, user request) is how often the prepare timer runs. Only root
+  can change the timer, so `musicdock-settings.path` (PathChanged on
+  config.toml) starts `musicdock-settings.service` (root), which runs
+  `dock_timer.py`: reads just that setting (invalid/missing = 5), writes
+  `/etc/systemd/system/musicdock-prepare.timer.d/50-check-interval.conf`
+  (empty `OnUnitInactiveSec=` first, or the values add up), daemon-reload,
+  restart the timer - only when the value changed. install.sh runs it once.
+  PathChanged firing on DockSetup.txt's atomic replace (rename) is
+  unverified on hardware.
 - **Removal grace period:** `[sync] removal_grace_days` (0-30, default 7). A
   track that leaves every target leaves the plan at once (so the next sync
   removes it from the player) but its cache file is kept that long
