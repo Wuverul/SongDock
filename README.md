@@ -7,7 +7,7 @@ the dock:
 1. **Logs what you played** on the iPod to your Navidrome account (play counts
    and "last played"). If the server is offline, plays wait on the dock and are
    sent later. Nothing is lost.
-2. **Copies new music** from your Navidrome **Favorites** and from any playlist
+2. **Copies new music** from your Navidrome **Favorites** and/or from any playlist
    you tag with `#ipod`, converted for the iPod (MP3), with album art.
 3. **Removes music** that has left those lists.
 4. **Keeps your playlists** on the iPod (Favorites plus each tagged playlist).
