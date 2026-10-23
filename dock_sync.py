@@ -497,7 +497,10 @@ def make_ipod_work(cfg, guid, product, write):
             record.close()
         if mac_formatted:
             raise SyncError("Mac-formatted iPod (see guide)")
-        summary["setup"] = handle_setup_file(device, writing, guid)
+        # Wi-Fi first: a new server in DockSetup.txt is tried on the network
+        # the dock ends up on.
+        summary["wifi"] = handle_wifi_file(device, write, client)
+        summary["setup"] = handle_setup_file(device, writing, guid, cfg)
         if writing:
             try:
                 import dock_guide
@@ -505,15 +508,15 @@ def make_ipod_work(cfg, guid, product, write):
                     log.info("Updated %s on the iPod", dock_guide.GUIDE_FILE)
             except Exception:
                 log.exception("Couldn't write the guide (continuing)")
-        summary["wifi"] = handle_wifi_file(device, write, client)
         log.info("Session summary: %s", summary)
         return summary
     return work
 
 
-def handle_setup_file(device, write, guid):
-    """DockSetup.txt on an opted-in player (forget/keep other iPods; write
-    mode only, since success deletes it), then MediaDock.txt rewritten with
+def handle_setup_file(device, write, guid, cfg=None):
+    """DockSetup.txt on an opted-in player (forget/keep other iPods, change
+    settings in config.toml; write mode only, since success deletes it -
+    and any password in it), then MediaDock.txt rewritten with
     the iPods the dock knows. Returns the DockSetup.txt result or None.
     Never fails the sync."""
     import dock_setup
@@ -530,7 +533,7 @@ def handle_setup_file(device, write, guid):
         record = Record()
         try:
             if found:
-                result = dock_setup.apply_setup_file(device.root, record, guid)
+                result = dock_setup.apply_setup_file(device.root, record, guid, cfg)
             dock_setup.write_marker(device.root, MARKER, record.players(), guid,
                                     MARKER_TEXT, result)
         finally:

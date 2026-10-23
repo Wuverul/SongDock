@@ -874,10 +874,15 @@ class ConfigTests(unittest.TestCase):
 
     def test_bad_targets_rejected(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
-        for bad in ('targets="starred"', 'targets=[]', 'targets=["favorites"]',
-                    'targets=["playlist:"]'):
+        for bad in ('targets="starred"', 'targets=["favorites"]', 'targets=["playlist:"]',
+                    'targets=[]\nplaylist_tag=""'):
             with self.assertRaisesRegex(dock_config.ConfigError, "targets"):
                 dock_config.load(self.write(base + bad + "\n"))
+        # Playlists only: no fixed targets, just the tag.
+        cfg = dock_config.load(self.write(base + 'targets=[]\nplaylist_tag="#car"\n'))
+        self.assertEqual((cfg["sync"]["targets"], cfg["sync"]["playlist_tag"]), ([], "#car"))
+        with self.assertRaisesRegex(dock_config.ConfigError, "one word"):
+            dock_config.load(self.write(base + 'playlist_tag="#my car"\n'))
 
     def test_grace_days_validated(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'

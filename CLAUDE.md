@@ -199,13 +199,29 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 - `dock_setup.py`: **`DockSetup.txt` on an opted-in iPod** (write mode
   only; user's choice of name, 2026-10-23), like wifi.txt: `Forget=` /
   `Keep=` lines, all or nothing (a bad line changes nothing and the file
-  stays), deleted on success; can't forget the iPod being synced. Screens
-  `setup` (IPODS UPDATED) / `setupfail` (SETUP NOT USED); a wifi.txt
+  stays), deleted on success; can't forget the iPod being synced.
+  **Settings lines** (written to config.toml by `dock_config.update`:
+  edited in place, comments and column kept, loaded and checked before an
+  atomic swap, mode 600, owner kept when run as root): `PlaylistTag=`
+  (`none` = off; one word), `SyncStarred=` / `SyncFavorites=` yes|no
+  (adds/removes "starred" in `targets`; `targets = []` is now valid when a
+  tag is set = playlists only; both off is refused), `Server=` +
+  `Username=` + `Password=` (Server always needs both: the current
+  sign-in is never sent to an address someone typed; user/password alone
+  are fine), `NewLibrary=yes`. A new sign-in is tried first (`ping`;
+  code 40/41 = refused); a new address must have one of up to 5 of this
+  iPod's songs (`getSong`), else it's another library: needs
+  NewLibrary=yes and no unsent plays (they'd be lost). Passwords are
+  never logged or shown. Runs after wifi.txt, so a new server is checked
+  on the final network. Anyone who can dock an opted-in iPod can use it,
+  like wifi.txt (physical access = control). Screens
+  `setup` (DOCK UPDATED) / `setupfail` (SETUP NOT USED); a wifi.txt
   result takes precedence on screen. Every write sync then rewrites
   **MediaDock.txt** (existing spelling kept) with the known iPods (name,
   model, ID end, tracks, last sync / forgotten), a one-line DockSetup.txt
-  example pointing to the README, and the last DockSetup.txt outcome (carried over between syncs). Runs
-  after the music, before wifi.txt; never fails the sync.
+  example pointing to the README, and the last DockSetup.txt outcome
+  (carried over between syncs). Runs after the music and wifi.txt; never
+  fails the sync.
 - `dock_guide.py`: **`MediaDock README.txt`**, a user manual on every
   write-synced iPod (user request, 2026-10-23): the files a person can add
   or edit there (MediaDock.txt, wifi.txt, DockSetup.txt) with every

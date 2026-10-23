@@ -223,6 +223,11 @@ what the dock is doing and lists anything that needs attention.
 iPod's top folder explains every file you can add there (`wifi.txt`,
 `DockSetup.txt`, `MediaDock.txt`) and what the screens mean.
 
+**Changing what syncs, or the server, from the iPod:** a `DockSetup.txt`
+can also hold `PlaylistTag=#car`, `SyncStarred=no` (playlists only),
+or `Server=` with `Username=` and `Password=`. `MediaDock README.txt` on
+the iPod lists every option.
+
 **Switching to a new iPod:** the dock keeps songs cached until every iPod
 it syncs has them, so an old, smaller iPod can stop a bigger new one from
 filling up once the dock's storage runs short. Once you stop using the old
@@ -237,7 +242,7 @@ one, retire it:
    The model in brackets is only needed if two iPods share a name; use
    `Forget=all others` to retire every iPod except this one, and
    `Keep=<name>` to bring one back.
-3. Dock the iPod. The screen shows **IPODS UPDATED** (or **SETUP NOT
+3. Dock the iPod. The screen shows **DOCK UPDATED** (or **SETUP NOT
    USED** and why), the dock deletes `DockSetup.txt`, and the outcome is
    noted at the end of `MediaDock.txt`.
 

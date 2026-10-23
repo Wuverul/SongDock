@@ -5,6 +5,7 @@ The real file lives on the Pi at ~/.config/musicdock/config.toml, mode 600.
 MUSICDOCK_CONFIG overrides the path (e.g. for a root-run service).
 """
 
+import json
 import logging
 import os
 import re
@@ -80,12 +81,19 @@ def load(path=None):
         cfg["sync"]["targets"] = [sync_raw["target"]]
     cfg["sync"].pop("target", None)
     targets = cfg["sync"]["targets"]
-    if (not isinstance(targets, list) or not targets
+    if (not isinstance(targets, list)
             or not all(t == "starred" or (isinstance(t, str) and t.startswith("playlist:")
                                           and len(t) > len("playlist:"))
                        for t in targets)):
         raise ConfigError(f'{path}: targets must be a list like '
                           f'["starred", "playlist:Road Trip"]')
+    if not isinstance(cfg["sync"]["playlist_tag"], str) or \
+            any(c.isspace() for c in cfg["sync"]["playlist_tag"]):
+        raise ConfigError(f'{path}: playlist_tag must be one word, e.g. "#ipod" ("" = off)')
+    if not targets and not cfg["sync"]["playlist_tag"]:
+        # targets = [] is fine: playlists found by their tag only.
+        raise ConfigError(f'{path}: nothing to sync: targets is empty and playlist_tag '
+                          f'is "" (set one, e.g. targets = ["starred"])')
     if cfg["device"]["type"] not in ("stock_ipod", "rockbox"):
         raise ConfigError(f"{path}: device type must be stock_ipod or rockbox")
     if not isinstance(cfg["display"]["invert"], bool):
@@ -127,3 +135,111 @@ def check_genres(genres, path):
     if not ok:
         raise ConfigError(f"{path}: each [[genres.groups]] needs a name and a match "
                           f'list, e.g. name = "Rock" / match = ["rock", "punk"]')
+
+
+# ------------------------------------------------------------------ edits ----
+# The dock changes a few settings itself (DockSetup.txt on an iPod). The file
+# is edited in place - comments and layout kept - checked by loading it, and
+# swapped in whole with its owner and mode 600.
+
+def toml_literal(value):
+    """A TOML value for a string, bool, int or list of strings."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(toml_literal(v) for v in value) + "]"
+    return json.dumps(value, ensure_ascii=False)   # a valid TOML basic string
+
+
+def _value_end(text, start):
+    """Index just past the TOML value starting at text[start] (a string,
+    array - possibly over several lines - or bare word)."""
+    i, depth, quote = start, 0, None
+    while i < len(text):
+        c = text[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 2
+                continue
+            if c == quote:
+                quote = None
+                if depth == 0:
+                    return i + 1
+        elif c in "\"'":
+            quote = c
+        elif c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        elif c == "#" and depth:                        # comment inside an array
+            i = text.find("\n", i)
+            if i < 0:
+                return len(text)
+            continue
+        elif depth == 0 and (c in "#\n" or c.isspace()):
+            return i
+        i += 1
+    return i
+
+
+def set_value(text, section, key, value):
+    """`text` (a config.toml) with [section] key set to `value`."""
+    literal = toml_literal(value)
+    head = re.search(rf"^\[{re.escape(section)}\][ \t]*(#.*)?$", text, re.M)
+    if not head:
+        return text.rstrip("\n") + f"\n\n[{section}]\n{key} = {literal}\n"
+    nxt = re.search(r"^\[", text[head.end():], re.M)
+    end = head.end() + nxt.start() if nxt else len(text)
+    line = re.compile(rf"^[ \t]*{re.escape(key)}[ \t]*=[ \t]*", re.M).search(text, head.end(), end)
+    if line:
+        stop = _value_end(text, line.end())
+        rest = text[stop:]
+        pad = (stop - line.end()) - len(literal)       # keep a trailing comment's column
+        if pad > 0 and re.match(r"[ \t]+#", rest):
+            literal += " " * pad
+        return text[:line.end()] + literal + rest
+    return text[:head.end()] + f"\n{key} = {literal}" + text[head.end():]
+
+
+def update(changes, path=None):
+    """Apply {(section, key): value} to config.toml. Raises ConfigError (and
+    changes nothing) if the result wouldn't load or doesn't say what was
+    asked. Returns the loaded new config."""
+    path = os.path.expanduser(path or DEFAULT_PATH)
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    for (section, key), value in changes.items():
+        text = set_value(text, section, key, value)
+    st = os.stat(path)
+    tmp = path + ".new"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        if os.geteuid() == 0:
+            os.chown(tmp, st.st_uid, st.st_gid)        # stays the login user's file
+        try:
+            cfg = load(tmp)
+            with open(tmp, "rb") as f:
+                raw = tomllib.load(f)
+        except ConfigError as e:
+            raise ConfigError(str(e).replace(tmp, path)) from None
+        wrong = [f"{s}.{k}" for (s, k), v in changes.items() if raw.get(s, {}).get(k) != v]
+        if wrong:
+            raise ConfigError(f"{path}: couldn't set {', '.join(wrong)}")
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    fd = os.open(os.path.dirname(path), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    return cfg

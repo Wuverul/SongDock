@@ -316,7 +316,7 @@ def render(screen, args):
         # Result of a DockSetup.txt on the player (the sync itself succeeded).
         minus = "\u2212" if has_glyphs else "-"
         if screen == "setup":
-            header(f"{check}IPODS UPDATED", inverted=False)
+            header(f"{check}DOCK UPDATED", inverted=False)
             rows = [(fit(args.reason or "", body_f), body_f),
                     (f"+{args.added}  {minus}{args.removed} tracks", body_f)]
         else:

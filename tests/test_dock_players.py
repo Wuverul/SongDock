@@ -160,5 +160,150 @@ class SetupFileTests(PlayersBase):
             self.assertIn("Sam's iPod", f.read())
 
 
+CONFIG = """[server]
+url = "https://old.example.com"   # where Navidrome is
+username = "jo"
+password = "old-secret"
+
+[sync]
+targets = ["starred"]              # what to sync
+playlist_tag = "#ipod"             # tagged playlists
+"""
+
+
+class FakeServer:
+    """subsonic.Client stand-in: `songs` exist; `password` signs in."""
+
+    def __init__(self, songs=("n1",), password="new-secret", down=False):
+        self.songs, self.password, self.down = set(songs), password, down
+        self.logins = []
+
+    def __call__(self, url, username, password, timeout=None):
+        self.logins.append((url, username))
+        server = self
+
+        class Client:
+            def call(self, endpoint, **params):
+                from subsonic import SubsonicError
+                if server.down:
+                    raise SubsonicError("ping: can't reach server", network=True)
+                if password != server.password:
+                    raise SubsonicError("Wrong username or password (code 40)", code=40)
+                if endpoint == "getSong" and params["id"] not in server.songs:
+                    raise SubsonicError("Song not found (code 70)", code=70)
+                return {}
+        return Client()
+
+
+class SettingsTests(PlayersBase):
+    def setUp(self):
+        super().setUp()
+        self.config = os.path.join(self.dir, "config.toml")
+        with open(self.config, "w") as f:
+            f.write(CONFIG)
+        os.chmod(self.config, 0o600)
+        self.server = FakeServer()
+
+    def apply(self, text, this=NANO):
+        import dock_config
+        with open(os.path.join(self.dir, "DockSetup.txt"), "w") as f:
+            f.write(text)
+        return dock_setup.apply_setup_file(self.dir, self.record(), this,
+                                           dock_config.load(self.config), self.config,
+                                           connect=self.server)
+
+    def settings(self):
+        import tomllib
+        with open(self.config, "rb") as f:
+            return tomllib.load(f)
+
+    def assert_unchanged(self, result, why):
+        self.assertFalse(result["ok"])
+        self.assertIn(why, result["reason"])
+        with open(self.config) as f:
+            self.assertEqual(f.read(), CONFIG)
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "DockSetup.txt")))
+
+    def test_playlists_only_with_a_new_tag(self):
+        result = self.apply("PlaylistTag=#car\nSyncFavorites=no\n")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["done"], ["Playlists tagged #car sync",
+                                          "Starred songs don't sync"])
+        self.assertEqual(self.settings()["sync"], {"targets": [], "playlist_tag": "#car"})
+        with open(self.config) as f:
+            text = f.read()
+        self.assertIn('playlist_tag = "#car"              # tagged playlists', text)
+        self.assertEqual(os.stat(self.config).st_mode & 0o777, 0o600)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "DockSetup.txt")))
+        self.assertEqual(self.server.logins, [])                  # no sign-in to test
+
+    def test_starred_back_on_goes_first(self):
+        self.apply("SyncStarred=no\n")
+        self.apply("SyncStarred=yes\n")
+        self.assertEqual(self.settings()["sync"]["targets"], ["starred"])
+
+    def test_refused_settings_change_nothing(self):
+        for text, why in (("SyncStarred=no\nPlaylistTag=none\n", "Nothing would sync"),
+                          ("PlaylistTag=my car\n", "one word"),
+                          ("PlaylistTag=\n", "needs a tag"),
+                          ("SyncStarred=maybe\n", "yes or no"),
+                          ("PlaylistTag=#a\nPlaylistTag=#b\n", "given twice"),
+                          ("Server=https://new.example.com\n", "needs Username"),
+                          ("Server=ftp://x\nUsername=jo\nPassword=p\n", "http"),
+                          ("Password=\n", "is empty")):
+            self.assert_unchanged(self.apply(text), why)
+
+    def test_new_address_for_the_same_server(self):
+        result = self.apply("Server=https://new.example.com/\nUsername=jo\n"
+                            "Password=new-secret\n")
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.settings()["server"], {"url": "https://new.example.com",
+                                                     "username": "jo",
+                                                     "password": "new-secret"})
+        self.assertNotIn("new-secret", " ".join(result["done"]))
+        self.assertEqual(self.server.logins, [("https://new.example.com", "jo")])
+
+    def test_sign_in_is_tried_first(self):
+        self.assert_unchanged(self.apply("Password=typo\n"), "refused that username")
+        self.server.down = True
+        self.assert_unchanged(self.apply("Password=new-secret\n"), "Can't reach")
+        self.server.down = False
+        self.assertEqual(self.apply("Password=new-secret\n")["done"], ["Password changed"])
+        self.assertEqual(self.settings()["server"]["password"], "new-secret")
+
+    def test_other_library_needs_new_library_and_no_waiting_plays(self):
+        self.server.songs = set()                              # none of this iPod's songs
+        login = "Server=https://other.example.com\nUsername=sam\nPassword=new-secret\n"
+        self.assert_unchanged(self.apply(login), "NewLibrary=yes")
+        rec = self.record()
+        rec.queue_plays(NANO, [{"dbid": 1, "seq": 0, "played_at": 1792100000,
+                                "navidrome_id": "n1"}])
+        self.assert_unchanged(self.apply(login + "NewLibrary=yes\n"),
+                              "1 plays not yet sent")
+        rec.mark_sent([p["id"] for p in rec.unsent_plays()])
+        self.assertTrue(self.apply(login + "NewLibrary=yes\n")["ok"])
+        self.assertEqual(self.settings()["server"]["url"], "https://other.example.com")
+
+    def test_settings_and_players_together(self):
+        result = self.apply("Forget=Sam's iPod\nPlaylistTag=#car\n")
+        self.assertEqual(dock_setup.summary_line(result), "2 changes made")
+        self.assertEqual(self.forgotten(), {FRIEND})
+
+
+class ConfigEditTests(unittest.TestCase):
+    def test_missing_key_section_and_multiline_array(self):
+        import tomllib
+        import dock_config
+        text = ('[sync]\ntargets = [\n  "starred",   # mine\n  "playlist:Road ]",\n]\n'
+                'cache_dir = "x"\n')
+        out = dock_config.set_value(text, "sync", "targets", ["playlist:Road ]"])
+        out = dock_config.set_value(out, "sync", "playlist_tag", "#car")
+        out = dock_config.set_value(out, "server", "url", 'https://a"b')
+        data = tomllib.loads(out)
+        self.assertEqual(data["sync"], {"targets": ["playlist:Road ]"], "cache_dir": "x",
+                                        "playlist_tag": "#car"})
+        self.assertEqual(data["server"]["url"], 'https://a"b')
+
+
 if __name__ == "__main__":
     unittest.main()

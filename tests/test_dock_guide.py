@@ -26,6 +26,8 @@ class GuideTests(unittest.TestCase):
                                          playlist_tag="#car", removal_grace_days=0))
         for needle in ("MediaDock.txt", "wifi.txt", "SSID=", "Password=", "Hidden=yes",
                        "DockSetup.txt", "Forget=all others", "Keep=",
+                       "PlaylistTag=", "SyncStarred=no", "Server=", "Username=",
+                       "NewLibrary=yes",
                        "comment contains #car", "the playlist \"Road Trip\"",
                        "\"Favorites\"", "deleted right away", "SAFE TO REMOVE"):
             self.assertIn(needle, text)

@@ -98,27 +98,59 @@ The password is stored only on the dock, readable by its administrator,
 and never written to its log.
 
 
-{setup}  (retire an iPod you've replaced, or bring one back)
+{setup}  (change what syncs, the server, or retire an old iPod)
 -------------
-The dock keeps a copy of each song until every iPod it syncs has it, so
-an old, smaller iPod you no longer use can stop a bigger new one from
-filling up. Retiring the old one fixes that. Lines it understands:
+Create it with one or more of the lines below, then dock the iPod. Lines
+starting with # are ignored.
+
+Which music syncs:
+  PlaylistTag=#car       sync the playlists whose Navidrome comment has
+                         #car (instead of {tag or "no tag"}); PlaylistTag=none stops
+                         syncing tagged playlists
+  SyncStarred=no         stop syncing starred songs, e.g. to keep a big
+                         library starred in a desktop app while the iPod
+                         gets playlists only; SyncStarred=yes turns it back
+                         on (SyncFavorites= means the same)
+  Songs that no longer belong to anything synced leave the iPod at the
+  next sync. At least one of the two must stay on.
+
+The Navidrome server and the account the dock signs in with:
+  Server=https://music.example.com
+  Username=your-name
+  Password=your-password
+  - A new Server= always needs Username= and Password= with it, so the
+    dock never signs in to a new address with the old details.
+  - Username= and Password= also work on their own (same server).
+  - The dock signs in with them first; if that fails, nothing changes.
+  - If the new server doesn't have this iPod's music (another library,
+    not just a new address for the same one), add NewLibrary=yes. The
+    iPod's music is then replaced at the next syncs, and the change waits
+    until plays from this iPod have been sent to the old server.
+  - The password is saved only on the dock (readable by its owner) and is
+    deleted from the iPod with this file. If the change can't be made,
+    the file stays - delete it yourself if you give up.
+
+Retiring an iPod you've replaced:
+  The dock keeps a copy of each song until every iPod it syncs has it,
+  so an old, smaller iPod you no longer use can stop a bigger new one
+  from filling up. Retiring the old one fixes that:
   Forget=Jo's iPod (nano)    retire that iPod
   Forget=all others          retire every iPod except this one
   Keep=Jo's iPod (nano)      bring a retired iPod back
   - Use the names listed in {marker}. The model in brackets, e.g.
     (nano) or (classic), is only needed when two iPods share a name; the
     last characters of the ID, e.g. (AB12), work too.
-  - Several lines are fine. Lines starting with # are ignored.
   - You can't retire the iPod you're docking.
-After the music is synced:
-  - Done: the screen says IPODS UPDATED, {setup} is deleted, and the
-    result is noted at the end of {marker}.
-  - Not done (an unknown setting, no iPod by that name, two with the same
-    name): nothing changes, the screen says SETUP NOT USED with the
-    reason, and {setup} stays for you to fix.
-Retiring changes nothing on any iPod. A retired iPod's plays are still
-sent to Navidrome, and docking it again brings it back by itself.
+  Retiring changes nothing on any iPod. A retired iPod's plays are still
+  sent to Navidrome, and docking it again brings it back by itself.
+
+After the music (and any {wifi}) is done:
+  - Done: the screen says DOCK UPDATED, {setup} is deleted, and the
+    result is noted at the end of {marker}. Music changes show up from
+    the next sync (the dock re-syncs a docked iPod by itself).
+  - Not done (an unknown setting, a sign-in the server refuses, no iPod
+    by that name, ...): nothing at all changes, the screen says SETUP NOT
+    USED with the reason, and {setup} stays for you to fix.
 
 
 WHAT THE SCREEN MEANS
@@ -131,7 +163,7 @@ WHAT THE SCREEN MEANS
   CONNECTING         New music is ready for a docked iPod; it syncs again
                      by itself. Do not unplug.
   DOCK READY         Idle. Shows what the next sync will add and remove.
-  WI-FI CHANGED / WI-FI UNCHANGED, IPODS UPDATED / SETUP NOT USED
+  WI-FI CHANGED / WI-FI UNCHANGED, DOCK UPDATED / SETUP NOT USED
                      Results of {wifi} and {setup} (see above).
 Plays are never lost: if Navidrome can't be reached, the dock keeps them
 and sends them later.
@@ -139,8 +171,8 @@ and sends them later.
 
 EVERYTHING ELSE
 ---------------
-Other settings (the server, the music format, the dock's screen) live in
-the dock's own configuration file, which its owner edits over the
+Other settings (the music format, the cache size, the dock's screen) live
+in the dock's own configuration file, which its owner edits over the
 network. They can't be changed from the iPod.
 """
 
