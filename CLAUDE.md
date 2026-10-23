@@ -453,6 +453,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   1238 of 1240 tracks from the Nano (plays were sent first; nothing lost on
   the server). Now `sync_player` only reads and sends plays when the manifest
   has no `tracks` key, and `apply_plan` raises on one.
+- **Playlists re-adopted after a lost record (2026-10-23):** after the move
+  to the Zero 2 W (fresh record), tracks were re-adopted by Navidrome ID but
+  the 7 dock playlists were treated as "the player's own" and never updated
+  (111 new songs missing from them). `sync_playlists` now adopts a playlist
+  whose name matches a planned one and whose tracks *all* carry a Navidrome
+  ID (Rockbox: every line is under `/MediaDock/`); anything else stays
+  hands-off. The record copy on the player can't help here: the new dock's
+  first sync had already overwritten it.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

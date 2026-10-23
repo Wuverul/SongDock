@@ -164,6 +164,15 @@ class RockboxTests(unittest.TestCase):
         summary = self.sync(self.manifest(songs))
         self.assertEqual((summary["added"], summary["reconcile"]["adopted"]), (0, 2))
 
+    def test_lost_record_readopts_the_docks_playlists(self):
+        a, b = self.song("n1", "One"), self.song("n2", "Two", track=2)
+        self.sync(self.manifest([a], [("playlist:Mix", "Mix", ["n1"])]))
+        self.rec.close()
+        self.rec = Record(os.path.join(self.tmp, "new-dock.db"))
+        self.sync(self.manifest([a, b], [("playlist:Mix", "Mix", ["n1", "n2"])]))
+        with open(os.path.join(self.mount, "Playlists", "Mix.m3u8")) as f:
+            self.assertEqual(len(f.read().splitlines()), 3)          # header + 2 songs
+
     def test_names_and_genre_follow_the_plan_without_recopying(self):
         a = self.song("n1", "One", album="Inertia")
         self.sync(self.manifest([a]))

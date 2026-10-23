@@ -653,8 +653,17 @@ def sync_playlists(db, record, guid, manifest):
         old_name = managed.get(target)
         current = existing.get(old_name) if old_name else None
         if current is None and name in existing and name not in managed.values():
-            log_info(f"Not touching the player's own playlist {name!r}")
-            continue
+            # Made by the dock but not in its record (e.g. a new dock or a
+            # lost record: tracks are re-adopted by their Navidrome ID, so
+            # are playlists holding only such tracks). Anything else is the
+            # user's: hands off.
+            mine = existing[name].tracks
+            if mine and all(navidrome_id_from(t) for t in mine):
+                log_info(f"Adopting playlist {name!r} (all its tracks are the dock's)")
+                current = existing[name]
+            else:
+                log_info(f"Not touching the player's own playlist {name!r}")
+                continue
         if current is not None and current.name == name and \
                 [t.dbid for t in current.tracks] == [t.dbid for t in want]:
             now_managed[target] = name

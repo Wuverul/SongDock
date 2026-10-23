@@ -384,8 +384,16 @@ def sync_playlists(record, guid, mount, manifest):
         name = safe_name(pl["name"]) + ".m3u8"
         path = os.path.join(folder, name)
         if os.path.exists(path) and name not in managed.values():
-            log_info(f"Not touching the player's own playlist {name!r}")
-            continue
+            # A lost record: re-adopt a playlist that only lists the dock's
+            # own files (as their tags re-adopt the files); else hands off.
+            with open(path, encoding="utf-8", errors="replace") as f:
+                entries = [ln for ln in f.read().splitlines()
+                           if ln.strip() and not ln.startswith("#")]
+            if entries and all(ln.startswith(f"/{MUSIC_DIR}/") for ln in entries):
+                log_info(f"Adopting playlist {name!r} (it only lists the dock's music)")
+            else:
+                log_info(f"Not touching the player's own playlist {name!r}")
+                continue
         lines = ["#EXTM3U"] + ["/" + by_nid[i].replace(os.sep, "/")
                                for i in pl["song_ids"] if i in by_nid]
         text = "\n".join(lines) + "\n"

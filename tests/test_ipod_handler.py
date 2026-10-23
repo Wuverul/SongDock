@@ -347,6 +347,32 @@ class HandlerTests(unittest.TestCase):
         favs = [p for p in self.db().playlists if p.name == "Favorites"]
         self.assertEqual([len(p.tracks) for p in favs], [0])
 
+    def test_lost_record_readopts_the_docks_playlists(self):
+        # A new dock (or a lost record) re-adopts tracks by their Navidrome
+        # ID; its playlists, holding only such tracks, must follow, or they
+        # never update again (seen 2026-10-23 after moving to a new Pi).
+        a, b = self.song("n1", "One"), self.song("n2", "Two")
+        self.apply(self.manifest([a], [("playlist:Mix", "Mix", ["n1"])]))
+        self.rec.close()
+        self.rec = Record(os.path.join(self.tmp, "new-dock.db"))
+        summary = self.apply(self.manifest([a, b], [("playlist:Mix", "Mix", ["n1", "n2"])]))
+        self.assertEqual(summary["playlists_changed"], 1)
+        mixes = [p for p in self.db().playlists if p.name == "Mix"]
+        self.assertEqual([[t.title for t in p.tracks] for p in mixes], [["One", "Two"]])
+        self.assertEqual(self.rec.managed_playlists(G), {"playlist:Mix": "Mix"})
+
+    def test_playlist_with_a_track_the_dock_didnt_add_is_left_alone(self):
+        own = fx.make_mp3(os.path.join(self.tmp, "own.mp3"), "Mine", seconds=2)
+        db = self.db()
+        mine = db.add_track(own)                                 # no Navidrome ID
+        pl = db.create_playlist("Mix")
+        db.add_track_to_playlist(pl, mine)
+        db.save()
+        a = self.song("n1", "One")
+        self.apply(self.manifest([a], [("playlist:Mix", "Mix", ["n1"])]))
+        mixes = [p for p in self.db().playlists if p.name == "Mix"]
+        self.assertEqual([[t.title for t in p.tracks] for p in mixes], [["Mine"]])
+
     def test_quality_change_replaces_track(self):
         a = self.song("n1", "One")
         self.apply(self.manifest([a]))
