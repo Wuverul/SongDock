@@ -40,6 +40,17 @@ music in the background, so syncs are quick.
   | iPod 1st-3rd generation (2001-2003) | Not supported | Not practical: the 1st/2nd generation connect only by FireWire, and the 3rd generation charges only by FireWire |
   | iPod nano 5th generation and later, iPod shuffle, iPod touch | Not supported | Rockbox doesn't run on them |
 
+  Rockbox itself decides which iPods it runs on, and its list changes over
+  time: check [Rockbox's device status page](https://www.rockbox.org/wiki/TargetStatus)
+  for the current, accurate list.
+
+  **Other Rockbox players** (not iPods) should work too, in theory: the
+  dock treats any player with a `.rockbox` folder and a `MediaDock.txt` the
+  same way. Your mileage may vary: no non-iPod player has been tried, and a
+  player that also has a memory card syncs only the drive with Rockbox on
+  it. Leaving one docked won't make it sync again by itself when new music
+  arrives (that only works for iPods); unplug and replug it.
+
   On stock firmware, an unsupported iPod gets **SYNC FAILED** with its
   model name, before anything on it is changed. Rockbox support in the
   dock is built and tested in software but not yet on a real player (see
@@ -135,6 +146,17 @@ about a day and a half; copying that much to an iPod over USB takes longer
   (fixed; it now stays around 75-150 MB while converting).
 
 ## What the screen means
+
+| | |
+|---|---|
+| ![DOCK READY: next sync +12 -3 tracks](docs/screen-ready.png) | ![PREPARING 37/120: converting a song](docs/screen-preparing.png) |
+| ![SYNCING 5/6: copying 12 of 72, do not remove](docs/screen-syncing.png) | ![SAFE TO REMOVE: +12 -3 tracks, 5 plays sent](docs/screen-safe.png) |
+
+Every screen shows the time it was drawn, the Wi-Fi signal, and (when
+idle) the dock's IP address. With dark mode on (`[display] invert = true`,
+for a dark case):
+
+![SYNCING in dark mode](docs/screen-syncing-dark.png)
 
 | Screen | Meaning |
 |---|---|
