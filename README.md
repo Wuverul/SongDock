@@ -31,14 +31,14 @@ music in the background, so syncs are quick.
 
   | iPod | Stock firmware | Rockbox |
   |---|---|---|
-  | iPod nano 4th generation | **Tested** | Rockbox doesn't run on it |
-  | iPod nano 3rd generation | Should work; not tested | Rockbox doesn't run on it |
+  | iPod nano 4th generation | **Tested** | Rockbox Unsupported |
+  | iPod nano 3rd generation | Should work; not tested | Rockbox Unsupported |
   | iPod classic (6th/6.5th/7th generation, 2007-2009) | Should work; not tested | Should work; not tested |
   | iPod video (5th/5.5th generation) | Should work; not tested | Should work; not tested |
   | iPod nano 1st/2nd generation | Should work; not tested | Should work; not tested |
   | iPod photo/color, iPod 4th generation, iPod mini | Not supported | Should work; not tested |
-  | iPod 1st-3rd generation (2001-2003) | Not supported | Not practical: the 1st/2nd generation connect only by FireWire, and the 3rd generation charges only by FireWire |
-  | iPod nano 5th generation and later, iPod shuffle, iPod touch | Not supported | Rockbox doesn't run on them |
+  | iPod 1st-3rd generation (2001-2003) | Not supported | N/A |
+  | iPod nano 5th generation and later, iPod shuffle, iPod touch | Not supported | Rockbox Unsupported |
 
   Rockbox itself decides which iPods it runs on, and its list changes over
   time: check [Rockbox's device status page](https://www.rockbox.org/wiki/TargetStatus)
