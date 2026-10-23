@@ -75,8 +75,8 @@ Measured on the real hardware (FLAC music converted to MP3 V0):
 | Time to convert music | a little under 1 minute per minute of music | **3.7 seconds per minute of music** (16 minutes of music per minute) |
 | Preparing a first batch of ~900 songs (~2,600 minutes of music) | about 1.5-2 days | **about 3 hours** |
 | A weekly handful of new songs (~30) | about 1.5 hours | 5-10 minutes |
-| Copying to an iPod nano 4G | ~11 s per song (the iPod's USB speed, ~1.3-1.5 MB/s, is the limit) | not measured yet; the same iPod limit applies |
-| Temperature while converting | no throttling seen | ~50 °C with a small stick-on heatsink, never throttled |
+| Copying to an iPod nano 4G | ~11 s per song (~1.3-1.5 MB/s; about half of it is the Pi updating the iPod's database and album art) | not measured yet; should be quicker, but the iPod's USB speed still limits it |
+| Temperature while converting | no throttling seen | ~50 °C with a small heatsink, never throttled |
 
 **Which to get:** the **Pi Zero 2 W** is about 16 times faster at preparing
 music, which matters for the first fill of an iPod, for big libraries, and
