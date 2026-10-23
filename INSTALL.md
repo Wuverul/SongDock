@@ -9,6 +9,10 @@ exactly what to type.
 **Hardware** (the tested setup):
 - **Raspberry Pi Zero 2 W** (or Zero W) **with a soldered pin header**
 - **Waveshare 2.13" e-Paper HAT, V4** (250x122, black and white)
+  - *Have a spare Pwnagotchi?* It's usually this display family on a Pi Zero
+    W, so it can become a SongDock. Check the version printed on the back of
+    the screen: SongDock's driver is for **V4** only, and many Pwnagotchi
+    builds used V2 or V3, which need a different driver and won't work as is.
 - **microSD card**, 32 GB or larger (64 GB recommended: the dock caches your music)
 - **micro-USB OTG adapter** + an iPod **USB-to-30-pin cable** (the iPod plugs
   into the Pi's "USB" port, not the "PWR" one)
