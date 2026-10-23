@@ -22,26 +22,42 @@ music in the background, so syncs are quick.
 
 ## Before you start: read these
 
-- **Which iPods work.** The dock writes the iPod's own music database, which
-  newer iPods sign in different ways.
+- **Which iPods work.** It depends on the firmware. On Apple's own
+  (stock) firmware, the dock writes the iPod's music database, which newer
+  iPods sign in ways the dock can't reproduce. With
+  [Rockbox](https://www.rockbox.org/) installed, the dock just copies files,
+  but Rockbox itself only runs on some iPods. So Rockbox adds the older
+  iPods, but doesn't help the newer nanos.
 
-  | iPod | Status |
-  |---|---|
-  | iPod nano 4th generation | **Tested** |
-  | iPod classic (6th/7th generation, 2007-2009) | Should work (same database signature); not yet tested |
-  | iPod nano 3rd generation | Should work (same signature); not tested |
-  | iPod video (5th/5.5th generation), iPod nano 1st/2nd generation | Should work (no signature needed); not tested |
-  | iPod nano 5th generation and later | **Not supported** (signatures the dock can't make) |
-  | iPod touch, iPod shuffle, older iPods (mini, photo, 4th gen and earlier) | **Not supported** |
+  | iPod | Stock firmware | Rockbox |
+  |---|---|---|
+  | iPod nano 4th generation | **Tested** | Rockbox doesn't run on it |
+  | iPod nano 3rd generation | Should work; not tested | Rockbox doesn't run on it |
+  | iPod classic (6th/6.5th/7th generation, 2007-2009) | Should work; not tested | Should work; not tested |
+  | iPod video (5th/5.5th generation) | Should work; not tested | Should work; not tested |
+  | iPod nano 1st/2nd generation | Should work; not tested | Should work; not tested |
+  | iPod photo/color, iPod 4th generation, iPod mini | Not supported | Should work; not tested |
+  | iPod 1st-3rd generation (2001-2003) | Not supported | Not practical: the 1st/2nd generation connect only by FireWire, and the 3rd generation charges only by FireWire |
+  | iPod nano 5th generation and later, iPod shuffle, iPod touch | Not supported | Rockbox doesn't run on them |
 
-  An unsupported iPod gets **SYNC FAILED** with its model name, before
-  anything on it is changed.
+  On stock firmware, an unsupported iPod gets **SYNC FAILED** with its
+  model name, before anything on it is changed. Rockbox support in the
+  dock is built and tested in software but not yet on a real player (see
+  "Known limitations").
 
-  **Rockbox** players are supported too (untested on real hardware so
-  far): the dock spots Rockbox by its `.rockbox` folder and syncs plain
-  files into a `MediaDock` folder, `.m3u8` playlists and `cover.jpg` album
-  art, and reads plays from Rockbox's play log. See "Rockbox players" in
-  INSTALL.md.
+  **How the two differ in the dock:**
+
+  | | Stock firmware | Rockbox |
+  |---|---|---|
+  | How the dock spots it | Apple's firmware folders | its `.rockbox` folder |
+  | Where music goes | the iPod's own music database | files in a `MediaDock` folder (artist/album), with `cover.jpg` art; your other files are left alone |
+  | Playlists | in the iPod's database | `.m3u8` files in `Playlists` |
+  | Plays sent to Navidrome | a play count and the last play's time (earlier plays get estimated times) | every play with its exact time; skips don't count (turn on Rockbox's Last.fm log) |
+  | Music formats | MP3 (default), ALAC or AAC | the same by default; FLAC, Ogg and Opus as-is on a Rockbox-only dock (below) |
+  | Browsing by artist/album | built in | turn on Rockbox's database auto-update |
+  | Formatting | FAT32 ("Windows format") | FAT32 as well |
+
+  See "Rockbox players" in INSTALL.md for setting one up.
 
   **Music format for Rockbox:** by default a Rockbox player gets the same
   files as stock iPods (FLAC converted to MP3, or ALAC if you choose it), so
@@ -167,9 +183,11 @@ proven yet:
 a Pi Zero 2 W, with a Navidrome server. Everything else below is either
 untested on hardware or not built.
 
-- **Other iPods are untested.** The iPod classic, iPod video and iPod nano
-  1st-3rd generation should work (see the table above) but haven't been
-  tried. Newer nanos, the iPod touch and the shuffle aren't supported.
+- **Other iPods are untested.** On stock firmware, the iPod classic, iPod
+  video and iPod nano 1st-3rd generation should work but haven't been
+  tried; with Rockbox, so should the iPod photo/color, 4th generation and
+  mini (see the table above). Newer nanos, the iPod touch and the shuffle
+  work with neither.
 - **Rockbox support is untested on a real player.** It's built and tested
   in software. The main unknown is how a Rockbox player identifies itself
   over USB: if the dock can't identify it, the sync stops with "Can't
