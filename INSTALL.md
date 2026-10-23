@@ -321,10 +321,21 @@ sudo rm /etc/systemd/system/musicdock-* /etc/udev/rules.d/99-musicdock.rules \
         /etc/systemd/journald.conf.d/50-musicdock-persistent.conf \
         /etc/tmpfiles.d/musicdock.conf \
         /etc/NetworkManager/dispatcher.d/90-musicdock-wifi \
-        /usr/local/bin/musicdock-status
+        /usr/local/bin/musicdock-status /usr/local/bin/musicdock-players
 sudo systemctl daemon-reload
 rm -rf ~/musicdock ~/.config/musicdock
 sudo rm -rf /var/lib/musicdock
 ```
 
 The music already on your iPod stays there.
+
+Two things are left in place on purpose, because removing them could cut
+the Pi off from Wi-Fi:
+
+- Wi-Fi networks added with `wifi.txt`: list them with
+  `nmcli connection show` (they're named `musicdock: <network>`) and delete
+  one with `sudo nmcli connection delete "musicdock: <network>"`.
+- The Wi-Fi driver fix for WPA2/WPA3 networks,
+  `/etc/modprobe.d/rpi-brcmfmac.conf` (written by the installer on 6.18
+  kernels). Delete it only if you know your network doesn't need it, then
+  restart.

@@ -650,8 +650,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    `dist/music-dock/` + `dist/music-dock-<date>.tar.gz`: only Pi code, pi/,
    vendor/, docs; refuses to build on failing tests or personal data; no macOS
    tar metadata). Verified by unpacking on the Pi, importing every module and
-   running `install.sh --check`. A fresh-Pi install is untested until the
-   friend (iPod classic) does it. Original plan:
+   running `install.sh --check`. **Fresh install, 2026-10-23:** the Pi Zero 2
+   W was set up from scratch; the only problem was Wi-Fi (WPA2/WPA3 + the
+   Raspberry Pi OS brcmfmac bug, now fixed by install.sh); once connected,
+   everything worked (user). Not yet done from the release tarball itself.
+   The friend (iPod classic) is still the first outside install. Original plan:
    README (hardware list, OS image, SSH key setup, one-command install);
    `install.sh` installs apt deps (ffmpeg, rsync, python3-pil/-gpiozero/
    -spidev/-lgpio, fonts-dejavu-core), enables SPI (`raspi-config nonint

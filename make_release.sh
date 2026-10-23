@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Build the package to give to someone setting up their own dock:
-#   ./make_release.sh   ->  dist/music-dock/  and  dist/music-dock-<date>.tar.gz
+#   ./make_release.sh   ->  dist/music-dock/  and  dist/music-dock-<version>.tar.gz
+# The version comes from the VERSION file (e.g. 0.5.0); tag it as v<version>.
 # Contains only what runs on the Pi plus the docs; refuses to build if the
 # tests fail or anything personal (servers, hosts, IDs, emails) slipped in.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 NAME="music-dock"
-STAMP="$(date +%Y%m%d)"
+VERSION="$(tr -d '[:space:]' < VERSION)"
 OUT="dist/$NAME"
-TARBALL="dist/$NAME-$STAMP.tar.gz"
+TARBALL="dist/$NAME-$VERSION.tar.gz"
 
 echo "== Running tests"
 python3 -m unittest discover -s tests -q
@@ -17,7 +18,7 @@ python3 -m unittest discover -s tests -q
 echo "== Assembling $OUT"
 rm -rf "$OUT" "$TARBALL"
 mkdir -p "$OUT"
-cp README.md INSTALL.md config.example.toml status.sh "$OUT/"
+cp README.md INSTALL.md LICENSE CHANGELOG.md config.example.toml status.sh "$OUT/"
 cp dock_*.py ipod_handler.py rockbox_handler.py subsonic.py "$OUT/"
 mkdir -p "$OUT/pi"
 cp pi/install.sh pi/requirements.txt pi/99-musicdock.rules pi/90-musicdock-wifi \
@@ -25,7 +26,8 @@ cp pi/install.sh pi/requirements.txt pi/99-musicdock.rules pi/90-musicdock-wifi 
 cp -R vendor "$OUT/vendor"
 find "$OUT" -name '__pycache__' -prune -exec rm -rf {} + -o -name '.DS_Store' -delete
 chmod +x "$OUT/pi/install.sh" "$OUT/pi/90-musicdock-wifi"
-printf 'Music Dock %s (%s)\n' "$STAMP" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+printf 'Music Dock %s (%s, %s)\n' "$VERSION" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+  "$(date +%Y-%m-%d)" \
   > "$OUT/VERSION"
 
 echo "== Checking for personal data"

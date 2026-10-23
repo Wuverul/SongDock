@@ -158,8 +158,73 @@ All settings are in `~/.config/musicdock/config.toml` on the Pi. See
 explanations: which lists to sync, MP3 quality, how long removed songs stay
 cached, dark mode, and more.
 
+## Known limitations
+
+This is an early release, built and used with one iPod. What hasn't been
+proven yet:
+
+**Tested on real hardware:** an iPod nano 4th generation on a Pi Zero W and
+a Pi Zero 2 W, with a Navidrome server. Everything else below is either
+untested on hardware or not built.
+
+- **Other iPods are untested.** The iPod classic, iPod video and iPod nano
+  1st-3rd generation should work (see the table above) but haven't been
+  tried. Newer nanos, the iPod touch and the shuffle aren't supported.
+- **Rockbox support is untested on a real player.** It's built and tested
+  in software. The main unknown is how a Rockbox player identifies itself
+  over USB: if the dock can't identify it, the sync stops with "Can't
+  identify the player" before changing anything.
+- **iPods bigger than the dock's storage** fill over several syncs. This is
+  built and tested in software, but hasn't run on a real iPod bigger than
+  the SD card.
+- **Navidrome only, one library per dock.** Other Subsonic-compatible
+  servers may work but aren't tested. Several addresses for the same server
+  (e.g. at home and away) are fine; combining several servers' libraries
+  isn't supported.
+- **Play times from a stock iPod are partly estimated.** The iPod only
+  records how many times a song was played and when it was *last* played,
+  so earlier plays since the last sync get estimated times. The dock's time
+  zone must match the iPod's clock. Rockbox records every play's real time.
+- **Plays since the last sync are lost if the iPod is wiped or restored**
+  before it's docked again. Everything already synced is safe.
+- **Mac-formatted iPods can't receive music.** The dock reads their plays,
+  then asks for a restore to Windows format (FAT32), which erases the iPod.
+- **Don't mix the dock with Finder, iTunes or Apple Music** on the same
+  iPod: they replace its whole music database, including the dock's songs.
+- **Anyone who can dock an opted-in iPod can reconfigure the dock** with
+  `wifi.txt` or `DockSetup.txt` (Wi-Fi, server, what syncs). Fine at home;
+  think about it before lending a dock. Opt-in iPods are the ones with
+  `MediaDock.txt`.
+- **Hardware is specific:** the Waveshare 2.13" e-Paper HAT V4 screen,
+  2.4 GHz Wi-Fi only (both Pi Zero models), and FAT32-formatted iPods.
+- **Not built yet:** marking songs to keep from the iPod (a "keep" list),
+  and a progress screen for a multi-day rebuild of a very large iPod.
+- **Cosmetic:** on the iPod nano, album art can replace the icons of the
+  built-in games.
+
+## Legal notes
+
+- **Not affiliated with Apple.** Music Dock is an independent project, not
+  affiliated with, endorsed by, or sponsored by Apple Inc. iPod, iTunes,
+  Finder and Apple Music are trademarks of Apple Inc., used here only to say
+  which devices and software the dock works with. Rockbox and Navidrome are
+  the names of their respective projects.
+- **Your own music, on your own devices.** The dock copies music from your
+  Navidrome server to iPods you've opted in. It's meant for music you have
+  the right to use and copy. It doesn't remove copy protection (DRM) and
+  can't play or copy protected purchases. Putting your library on other
+  people's iPods may not be allowed where you live; that's up to you.
+
+## License
+
+Music Dock is released under the [MIT License](LICENSE): free to use,
+change and share, as long as the copyright notice stays with it. It comes
+with no warranty. The libraries it installs keep their own licenses (below).
+
 ## Credits
 
-- iPod database handling: [pygpod](https://github.com/Bionded/pygpod) (LGPL)
-- E-ink display driver: Waveshare (MIT), bundled in `vendor/`
-- Conversion: ffmpeg with LAME
+- iPod database handling: [pygpod](https://github.com/Bionded/pygpod) (LGPL-2.1)
+- Tags and album art: [mutagen](https://github.com/quodlibet/mutagen) (GPL-2.0-or-later),
+  [Pillow](https://python-pillow.org/)
+- E-ink display driver: Waveshare (MIT), bundled in `vendor/`; GPIO via gpiozero (BSD)
+- Conversion: ffmpeg with LAME (run as a separate program)
