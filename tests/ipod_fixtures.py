@@ -35,7 +35,8 @@ def make_mp3(path, title, artist="Artist", album="Album", track=1, seconds=5, co
         import io
         from PIL import Image
         buf = io.BytesIO()
-        Image.new("RGB", (300, 300), (40, 120, 200)).save(buf, "JPEG")
+        colour = cover if isinstance(cover, tuple) else (40, 120, 200)
+        Image.new("RGB", (300, 300), colour).save(buf, "JPEG")
         tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="", data=buf.getvalue()))
     tags.save(path, v2_version=3)
     return path

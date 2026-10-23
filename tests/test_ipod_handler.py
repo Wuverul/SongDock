@@ -37,6 +37,68 @@ class HandlerTests(unittest.TestCase):
         self.addCleanup(self.rec.close)
 
     # ------------------------------------------------------------ helpers ----
+    def art(self):
+        """{(image_id, format): thumbnail bytes} as stored on the player."""
+        import glob
+        mgr = self.db()._get_artwork_manager()
+        out = {}
+        for mhii in mgr._get_or_create_mhli().children:
+            for child in mhii.children:
+                for mhni in [child] + list(getattr(child, "children", [])):
+                    if mhni.magic != b"mhni":
+                        continue
+                    f = mhni.fields
+                    path = glob.glob(os.path.join(self.mount, "iPod_Control", "Artwork",
+                                                  f"F{f['format_id']}_1.ithmb"))[0]
+                    with open(path, "rb") as fh:
+                        fh.seek(f["ithumb_offset"])
+                        out[(mhii.fields["image_id"], f["format_id"])] = fh.read(f["image_size"])
+        return out
+
+    def ithmb_sizes(self):
+        import glob
+        return {os.path.basename(p): os.path.getsize(p) for p in
+                glob.glob(os.path.join(self.mount, "iPod_Control", "Artwork", "*.ithmb"))}
+
+    def covered(self, n):
+        """n songs, each with a cover of its own colour."""
+        out = []
+        for i in range(n):
+            path = os.path.join(self.cache, "tracks", f"c{i}.mp3")
+            fx.make_mp3(path, f"Song {i}", album=f"Album {i}", seconds=2,
+                        cover=(20 * i % 256, 255 - 25 * i % 256, 90))
+            out.append({"id": f"c{i}", "file": f"tracks/c{i}.mp3", "title": f"Song {i}",
+                        "artist": "Artist", "album": f"Album {i}", "track": 1,
+                        "duration": 2, "encoding": "mp3 v0"})
+        return out
+
+    def test_a_few_removals_leave_the_art_files_alone(self):
+        songs = self.covered(8)
+        self.apply(self.manifest(songs))
+        before, sizes = self.art(), self.ithmb_sizes()
+        self.apply(self.manifest(songs[1:]))                     # 1 of 8: 12.5% unused
+        after = self.art()
+        self.assertEqual(self.ithmb_sizes(), sizes)             # nothing rewritten
+        self.assertEqual(len(after), len(before) - len(before) // 8)
+        self.assertTrue(all(before[k] == v for k, v in after.items()))
+
+    def test_many_removals_compact_without_mixing_up_covers(self):
+        songs = self.covered(8)
+        self.apply(self.manifest(songs))
+        before, sizes = self.art(), self.ithmb_sizes()
+        self.apply(self.manifest(songs[:3]))                    # 5 of 8 gone
+        after = self.art()
+        self.assertTrue(all(before[k] == v for k, v in after.items()))   # same pictures
+        self.assertEqual(len({k[0] for k in after}), 3)
+        for name, size in self.ithmb_sizes().items():
+            self.assertLess(size, sizes[name])                  # files shrank ...
+        used = {}
+        for (image, fmt), data in after.items():
+            used[fmt] = used.get(fmt, 0) + len(data)
+        self.assertEqual(sorted(used.values()), sorted(self.ithmb_sizes().values()))
+        self.apply(self.manifest(songs[:3] + self.covered(9)[8:]))   # new art still fits
+        self.assertTrue(all(v == self.art()[k] for k, v in after.items()))
+
     def song(self, nid, title, album="Album", track=1, cover=False):
         path = os.path.join(self.cache, "tracks", f"{nid}.mp3")
         if not os.path.exists(path):

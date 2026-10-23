@@ -14,6 +14,7 @@ Play data, and why the order of operations matters:
     the live database. (CLAUDE.md safety rules.)
 """
 
+import gc
 import os
 import shutil
 import warnings
@@ -73,7 +74,7 @@ def read_play_entries(folder):
     return []
 
 
-def plays_from_snapshot(workdir, record, guid, now=None):
+def plays_from_snapshot(workdir, record, guid, now=None, tracks=None):
     """Turn a snapshot into play dicts for Record.queue_plays.
 
     Each logged play becomes one row; for a count of N, seq 0 is the last
@@ -85,7 +86,8 @@ def plays_from_snapshot(workdir, record, guid, now=None):
     entries = read_play_entries(workdir)
     if not entries:
         return []
-    tracks = pygpod.Database.from_file(os.path.join(workdir, "iTunesDB")).tracks
+    if tracks is None:        # the snapshot's tracks, if the caller has them loaded
+        tracks = pygpod.Database.from_file(os.path.join(workdir, "iTunesDB")).tracks
     plays = []
     for entry, track in zip(entries, tracks):
         count = entry.play_count
@@ -435,6 +437,78 @@ def mark_sort_order(mount):
         f.write(SORT_ORDER_VERSION + "\n")
 
 
+# pygpod 0.0.6 compacts the album-art files (.ithmb, one per thumbnail
+# size) after any artwork removal by reading every image of a size into
+# memory - 169 MB per size on the Nano with 1465 tracks, which ran the Pi
+# Zero 2 W out of memory mid-save (2026-10-23) - and rewriting all of them
+# (460 MB over USB, minutes per sync). Instead: copy one image at a time to
+# a new file, swap it in, and only once removed art leaves this share of a
+# file unused (until then the gaps just stay; new art goes at the end).
+COMPACT_WASTE = 0.25
+
+
+def install_artwork_compaction():
+    """Replace pygpod's .ithmb compaction (see COMPACT_WASTE). Applied once
+    per process; checked_save calls it before every save."""
+    from pygpod.model import artwork_manager as am
+    if getattr(am.ArtworkManager._rebuild_ithmb, "_musicdock", False):
+        return
+
+    def rebuild_ithmb(self):
+        by_format = {}                      # format id -> [(mhni, offset, size)]
+        for mhii in self._get_or_create_mhli().children:
+            for child in mhii.children:
+                if child.magic == am.MHNI_MAGIC:
+                    mhnis = [child]
+                elif child.magic == am.MHOD_MAGIC:
+                    mhnis = [c for c in child.children if c.magic == am.MHNI_MAGIC]
+                else:
+                    continue
+                for mhni in mhnis:
+                    fmt, size = mhni.fields.get("format_id"), mhni.fields.get("image_size", 0)
+                    if fmt is not None and size > 0:
+                        by_format.setdefault(fmt, []).append(
+                            (mhni, mhni.fields.get("ithumb_offset", 0), size))
+        for fmt, entries in by_format.items():
+            path = os.path.join(self._artwork_dir, f"F{fmt}_1.ithmb")
+            if not os.path.isfile(path):
+                continue
+            total = os.path.getsize(path)
+            if total - sum(size for _, _, size in entries) <= total * COMPACT_WASTE:
+                continue                    # a few gaps: not worth rewriting the file
+            tmp, moved, offset = path + ".compact", [], 0
+            with open(path, "rb") as src, open(tmp, "wb") as dst:
+                for mhni, old, size in entries:      # one image in memory at a time
+                    src.seek(old)
+                    dst.write(src.read(size))
+                    moved.append((mhni, offset))
+                    offset += size
+                dst.flush()
+                os.fsync(dst.fileno())
+            os.replace(tmp, path)
+            for mhni, new in moved:                  # only once the new file is in place
+                header = bytearray(mhni.raw_header)
+                am.put32lint(header, 0x14, new)
+                mhni.raw_header = bytes(header)
+                mhni.fields["ithumb_offset"] = new
+            self._ithmb_offsets[fmt] = offset
+            log_info(f"Compacted album art (format {fmt}): {total / 1e6:.0f} -> "
+                     f"{offset / 1e6:.0f} MB")
+        if os.path.isdir(self._artwork_dir):        # sizes with no art left (as pygpod)
+            for name in os.listdir(self._artwork_dir):
+                parts = name[1:].replace(".ithmb", "").split("_")
+                if name.startswith("F") and name.endswith(".ithmb") and len(parts) == 2:
+                    try:
+                        if int(parts[0]) not in by_format:
+                            os.unlink(os.path.join(self._artwork_dir, name))
+                            self._ithmb_offsets.pop(int(parts[0]), None)
+                    except ValueError:
+                        pass
+
+    rebuild_ithmb._musicdock = True
+    am.ArtworkManager._rebuild_ithmb = rebuild_ithmb
+
+
 def checked_save(db, guid):
     """Save only if pygpod will sign the DB the way this player needs."""
     d = db._device
@@ -449,6 +523,7 @@ def checked_save(db, guid):
     if (d.firewire_guid or "").upper() != guid.upper():
         raise HandlerError("refusing to save: SysInfo FireWire GUID doesn't match the player")
     install_sort_order()
+    install_artwork_compaction()
     db.save()
 
 
@@ -726,7 +801,12 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
         snap = pygpod.Database.from_file(os.path.join(work_dir, "iTunesDB"))
         name = getattr(snap.master_playlist, "name", None)
         reconcile(snap, record, guid, mount, delete_orphans=False, manifest=manifest)
-        plays = plays_from_snapshot(work_dir, record, guid)
+        plays = plays_from_snapshot(work_dir, record, guid, tracks=snap.tracks)
+        # Let the snapshot go before the live database is opened: two full
+        # copies at once was ~37 MB extra at 1443 tracks (sync peak 139 vs
+        # 102 MB measured on the Pi, 2026-10-23).
+        del snap
+        gc.collect()
         summary["plays_new"] = record.queue_plays(guid, plays)
         record.rematch_plays(guid)
         if summary["plays_new"]:
