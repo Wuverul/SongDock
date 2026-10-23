@@ -33,7 +33,11 @@ trap 'rm -f "$patterns"' EXIT
 grep -vE '^[[:space:]]*(#|$)' .personal-patterns | sed 's/ /[[:space:]]+/g' > "$patterns"
 
 scan() {        # stdin: text; $1: label for the report
-  tr -s '[:space:]' ' ' | grep -oiE ".{0,40}($(paste -sd'|' "$patterns")).{0,40}" \
+  # Byte by byte (LC_ALL=C): in a UTF-8 locale macOS tr stops at the first
+  # invalid byte ("Illegal byte sequence"), so the rest of a binary file, or
+  # of a text file with one stray byte, went unchecked.
+  LC_ALL=C tr -s '[:space:]' ' ' \
+    | LC_ALL=C grep -aoiE ".{0,40}($(paste -sd'|' "$patterns")).{0,40}" \
     | sed "s|^|$1: |" || true
 }
 
