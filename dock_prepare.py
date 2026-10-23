@@ -775,7 +775,7 @@ class KeptTracks:
 
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
-            on_player=None, on_batch=None, cpu_count=None):
+            on_player=None, on_batch=None, cpu_count=None, on_progress=None):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -786,6 +786,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     them. A player bigger than the cache then fills over several syncs.
     on_batch(manifest): called each time a batch of [sync] sync_batch_size
     new tracks is handed over mid-run (only with 2+ CPU cores).
+    on_progress(started, total, batches): as each track starts.
     """
     device = cfg["device"]["type"]
     fmt = cfg["device"]["convert_to"]
@@ -967,6 +968,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 with show_lock:
                     show("preparing", "--done", str(n), "--total", str(len(missing)),
                          "--detail", f"{'Converting' if conv else 'Downloading'}: {label(t)}")
+            if on_progress:
+                on_progress(n, len(missing), handed["batches"])
             src = os.path.join(tmp_dir, f"src-{name}.{(t.get('suffix') or 'bin').lower()}")
             log.info("Downloading %s (%s, %.1f MB)", label(t), t.get("suffix"),
                      int(t.get("size") or 0) / 1e6)
@@ -1069,7 +1072,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # Concurrent batches (Pi with 2+ cores): every `batch` newly prepared
     # tracks, hand the plan so far to the sync (on_batch asks for a sync of a
     # docked iPod), while the remaining conversions carry on.
-    batch = int(cfg["sync"].get("sync_batch_size", 25) or 0)
+    batch = int(cfg["sync"].get("sync_batch_size", 0) or 0)     # off by default
     if batch and (cpu_count or os.cpu_count() or 1) < 2:
         batch = 0                    # one core: a sync would only slow conversion
     handed = {"added": 0, "batches": 0}
@@ -1420,9 +1423,33 @@ def main(argv=None):
         except OSError as e:
             log.warning("Couldn't ask for a sync of a docked iPod: %s", e)
 
+    # PREPARE & SYNC: while a batch sync runs, the sync draws the combined
+    # screen; this keeps its "Converting n/total" current between the
+    # sync's own redraws (dock_status rate-limits both).
+    import dock_progress
+    run_id = int(time.time())
+
+    def on_progress(done, total, batches):
+        if args.dry_run or args.preview_dir:
+            return
+        dock_progress.write_prepare(run_id, done, total, batches)
+        try:
+            import dock_status
+            state = dock_status.load_state()
+            if state.get("screen") != "prepsync" or \
+                    time.time() - state.get("last_draw", 0) < dock_status.MIN_PROGRESS_INTERVAL:
+                return
+            synced, syncs = dock_progress.copied(run_id)
+            screen.show(*dock_progress.screen_args(dock_progress.running_prepare() or
+                                                   {"done": done, "total": total},
+                                                   synced, syncs),
+                        "--only-over", "prepsync")
+        except Exception:
+            log.exception("PREPARE & SYNC redraw failed (continuing)")
+
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run,
-                          on_player=on_player,
+                          on_player=on_player, on_progress=on_progress,
                           on_batch=lambda m: ask_for_sync(m, batch=True))
     except SubsonicError as e:
         if e.network:
@@ -1434,6 +1461,8 @@ def main(argv=None):
     except PrepareError as e:
         log.error("Prepare failed: %s", e)
         return 1
+    finally:
+        dock_progress.clear_prepare()       # conversion is over: back to SYNCING
 
     idle = ["idle", "--ready", str(summary["ready"]), "--total", str(summary["total"])]
     if not args.dry_run:

@@ -353,6 +353,8 @@ def run_sync(device, show, work=None, total=None):
     Returns True if the player was synced and is safe to remove.
     """
     total = total or (IPOD_STEPS if work else TOTAL_STEPS)
+    import dock_progress
+    batch = {}     # concurrent batches: this sync's place in the prepare run
 
     def step(n, detail, part_done=None, part_total=None):
         # Progress redraws are nice-to-have: SYNCING is already on screen,
@@ -361,8 +363,19 @@ def run_sync(device, show, work=None, total=None):
         part = (["--part-done", str(part_done), "--part-total", str(part_total)]
                 if part_total else [])
         try:
-            show("syncing", "--step", str(n), "--total", str(total),
-                 "--detail", detail, *part)
+            prep = dock_progress.running_prepare() if part_total else None
+            if prep:
+                # Music is still converting while this batch copies: PREPARE &
+                # SYNC, counting every batch of the run so far.
+                if batch.get("run") != prep["run"]:
+                    base, syncs = dock_progress.copied(prep["run"])
+                    batch.update(run=prep["run"], base=base, syncs=syncs + 1)
+                synced = batch["base"] + (part_done or 0)
+                dock_progress.write_copied(prep["run"], synced, batch["syncs"])
+                show(*dock_progress.screen_args(prep, synced, batch["syncs"]))
+            else:
+                show("syncing", "--step", str(n), "--total", str(total),
+                     "--detail", detail, *part)
         except Exception:
             log.exception("Progress redraw failed (continuing)")
 
@@ -381,6 +394,10 @@ def run_sync(device, show, work=None, total=None):
         device.mount()
         if work:
             summary = work(device, step) or {}
+            if batch.get("run"):                  # the whole batch is on the player now
+                dock_progress.write_copied(batch["run"],
+                                           batch["base"] + summary.get("added", 0),
+                                           batch["syncs"])
         else:
             step(2, "Reading player")
             list_contents(device.root)

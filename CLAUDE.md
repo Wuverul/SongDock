@@ -641,8 +641,23 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   (`generated` differs) than the one it applied and has changes for this
   player - only then, so a full player or missing file never loops - and
   `dock_resync` now waits up to `SYNC_END_WAIT` (120 s) for that sync to
-  end instead of skipping at once (unit timeout raised to 5 min). Not yet
-  run on hardware.
+  end instead of skipping at once (unit timeout raised to 5 min).
+  **Verified on hardware 2026-10-23:** 47 tracks; batch 1 (25) handed over
+  at 13:25:52, synced 13:25:55-13:29:17 while the other 22 converted
+  (done 13:29:58), final sync of 22 done 13:31:54, removed 0 both times.
+  The follow-up path wasn't needed (batch sync ended before the run).
+- **PREPARE & SYNC screen (`prepsync`, 2026-10-23, user design):** while a
+  batch sync copies during a prepare run: header PREPARE & SYNC (inverted),
+  "Converting done/total", "Synced n/total (k batches)", "Do not remove ·
+  time", bar = (converted + synced) / (2 x total). `dock_progress.py` keeps
+  one JSON per writer in /run/musicdock (prepare: run id, started/total,
+  batches, pid; sync: copied so far this run, syncs), and a run only counts
+  while its prepare pid is alive (cleared in a `finally`). The sync draws
+  it from its copy step instead of SYNCING; the prepare job redraws it
+  (only over prepsync, 30 s rate limit) to keep the conversion count
+  current. Treated like SYNCING everywhere: in SYNC_SCREENS (prepare
+  screens never cover it), dock_boot turns a leftover one into "Sync
+  interrupted by restart", not in CONNECTING_OVER.
   Tested end to end (`test_player_bigger_than_cache_fills_over_several_syncs`);
   not yet on hardware with a full cache. Not built: a `Restoring 12,340 /
   40,000` screen (the sync shows `Copying n/N` per batch).
@@ -755,6 +770,28 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   sizes), and the iPod played it and recorded 1 play in `Play Counts`. Without
   a model in SysInfo, pygpod assumes no signature and writes an unsigned
   (rejected) DB - always check `requires_hash` before saving.
+- **Sync memory (investigated 2026-10-23, after a batch sync ran the Zero 2
+  W out of memory):** (1) **Removals:** pygpod's `remove_artwork` flags a
+  rebuild, and `_rebuild_ithmb` rewrites each `.ithmb` in place - opening
+  it `"wb"` truncates it, so it first reads *every* surviving image of that
+  size into a list. The Nano's art is 460 MB in 6 sizes (two of 169 MB,
+  one ~115 KB image per track per size: per-track covers, not per-album
+  like iTunes), so a removal sync held 169+ MB (likely more: 115 KB
+  blocks sit under glibc's 128 KB mmap threshold, so freed memory may not
+  return before the next size) and rewrote 460 MB over USB (7.5 min).
+  Replaced by `install_artwork_compaction()`: stream one image at a time to
+  `.compact` + fsync + rename, offsets updated only after; and only when a
+  file is >= `COMPACT_WASTE` (25%) unused. Measured: 60 covers, half
+  removed: 3.52 -> 0.15 MB peak, same files; real Nano, 30 removed: save
+  2 s, no rewrite. (2) **Baseline:** opening the DB = 21 MB (python +
+  pygpod) + 37 MB for 1443 tracks (~26 KB/track from a 3 MB file) + 24 MB
+  parsing a 1.6 MB ArtworkDB = 83 MB; a save adds ~14 MB (peak 102). The
+  sync also kept the play snapshot (a second full DB) alive all session
+  and `plays_from_snapshot` loaded it a third time: now reused and `del`'d
+  before the live DB opens (scratch test 139 -> 102 MB). Real sync peak
+  148 -> 96 MB. Concurrent batches stay off: 96 MB sync + ~100-150 MB
+  prepare + 3 ffmpeg on 415 MB is still tight; pause conversions during a
+  sync before re-enabling.
 - **pygpod's USB fallback (found 2026-10-23):** if SysInfo has no model,
   pygpod scans `/sys/bus/usb` (no pyusb needed) and takes the model of the
   *first Apple USB device* it finds. Harmless on the dock (one port, and

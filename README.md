@@ -119,7 +119,7 @@ operating system it was tested with:
 | Preparing a first batch of ~900 songs (~2,600 minutes of music) | about 1.5-2 days | **about 3 hours** |
 | A weekly handful of new songs (~30) | about 1.5 hours | 5-10 minutes |
 | Copying to an iPod nano 4G | ~11 s per song (~1.3-1.5 MB/s; about half of it is the Pi updating the iPod's database and album art) | **~2.8 s per song, ~2.2 MB/s** (902 songs, 5.4 GB, in 41 minutes) |
-| When copying happens | **after** all the music is converted, so it adds its own time (one core can't do both) | **during** conversion, every 25 finished songs; copying is faster than converting, so it isn't extra time: the iPod is done minutes after the last song converts* |
+| When copying happens | **after** all the music is converted, so it adds its own time (one core can't do both) | after conversion too, by default; copying is fast, so it adds little: 41 minutes for ~900 songs after ~3 hours of converting* |
 | Temperature while converting | no throttling seen | ~50 °C with a small heatsink, never throttled |
 
 **Which to get:** the **Pi Zero 2 W** is about 16 times faster at preparing
@@ -128,20 +128,17 @@ after changing the music format (everything is converted again). Day to
 day - a few new songs a week - a Pi Zero W keeps up fine; songs that are
 already MP3 or AAC on the server need no conversion on either.
 
-\* Copying alongside conversion is built and tested in software but hasn't
-run on a real iPod yet. When the two overlap, the slower one sets the total
-time. For the ~900-song example: conversion took ~3 hours and copying 41
-minutes, so with the overlap the iPod is full a few minutes after
-conversion ends, instead of ~3.7 hours if done one after the other. Most of
-the Zero W's 11 seconds per song was the processor (updating the iPod's
-database and album art), not the USB link.
+\* Copying *while* converting (`sync_batch_size`) exists but is off by
+default: on a Pi Zero 2 W it worked once, but a second test ran the Pi out
+of memory during the sync (512 MB isn't enough for a sync beside three
+conversions yet). Most of the Zero W's 11 seconds per song was the
+processor (updating the iPod's database and album art), not the USB link.
 
 For a very large library (200 GB of FLAC): the Pi Zero 2 W converts it in
-about a day and a half and could copy it in about a day (at ~2.2 MB/s);
-overlapped, the whole fill takes about as long as the conversion, ~1.5
-days. On a Zero W they add up: about 20 days of conversion, then ~40 hours
-of copying. Batches are 25 songs by default (`sync_batch_size` in the
-settings).
+about a day and a half, then copies it in about a day (at ~2.2 MB/s),
+~2.5 days in all; a bigger iPod fills over several rounds anyway (see
+"Known limitations"). On a Zero W: about 20 days of conversion, then ~40
+hours of copying.
 
 **32-bit or 64-bit Raspberry Pi OS:**
 - The **Pi Zero W can only run the 32-bit** version (its processor has no
@@ -164,6 +161,12 @@ settings).
 | ![DOCK READY: next sync +12 -3 tracks](docs/screen-ready.png) | ![PREPARING 37/120: converting a song](docs/screen-preparing.png) |
 | ![SYNCING 5/6: copying 12 of 72, do not remove](docs/screen-syncing.png) | ![SAFE TO REMOVE: +12 -3 tracks, 5 plays sent](docs/screen-safe.png) |
 
+While new music is still converting and a docked iPod is already copying
+the first batches (Pi Zero 2 W), both show at once, with one bar for the
+whole job:
+
+![PREPARE & SYNC: converting 32/167, synced 25/167 in 1 batch](docs/screen-prepsync.png)
+
 Every screen shows the time it was drawn, the Wi-Fi signal, and (when
 idle) the dock's IP address. With dark mode on (`[display] theme = "dark"`,
 for a dark case):
@@ -176,6 +179,7 @@ for a dark case):
 | **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date") |
 | **PREPARING 3/12** | Downloading and converting new music. The iPod is safe to unplug |
 | **SYNCING 5/6** | **Don't unplug.** Reading plays, copying music. The bar shows progress within the current step |
+| **PREPARE & SYNC** | **Don't unplug.** New music is still converting while the first batches copy to the iPod (Pi Zero 2 W). Shows both counts; the bar covers both |
 | **SAFE TO REMOVE** | Done: tracks added/removed and plays sent. Unplug whenever you like |
 | **SYNC FAILED** | Something went wrong; the iPod was put back the way it was. Safe to unplug. See the log |
 | **NOT SYNCED** | The iPod has no `MediaDock.txt`, or it isn't an iPod. Nothing was read or changed |

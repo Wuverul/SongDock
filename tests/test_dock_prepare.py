@@ -938,7 +938,7 @@ class ConfigTests(unittest.TestCase):
                                           '[display]\ntheme = "dark"\n'))
         self.assertEqual((cfg["display"]["theme"], cfg["sync"]["check_interval_minutes"]),
                          ("dark", 15))
-        self.assertEqual(cfg["sync"]["sync_batch_size"], 25)
+        self.assertEqual(cfg["sync"]["sync_batch_size"], 0)               # off by default
         for bad, why in (('[sync]\nsync_batch_size = -1', "sync_batch_size"),
                          ('[sync]\nsync_batch_size = 2.5', "sync_batch_size"),
                          ('[display]\ntheme = "blue"', "theme"),

@@ -401,6 +401,59 @@ class SetupFileSyncTests(unittest.TestCase):
         self.assertEqual(args[:2], ("--reason", "Forgot Old iPod (model unknown)"))
 
 
+class PrepareAndSyncScreenTests(unittest.TestCase):
+    """While the prepare job converts, a batch sync's copy progress shows as
+    PREPARE & SYNC, counting the whole run; otherwise plain SYNCING."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = tmp.name
+        os.environ["DOCK_STATE_FILE"] = os.path.join(self.root, "state", "s.json")
+        self.addCleanup(os.environ.pop, "DOCK_STATE_FILE")
+        import dock_progress
+        self.dp = dock_progress
+
+    def sync(self, added=3):
+        shown = []
+
+        def work(device, step):
+            for n in range(added):
+                step(5, f"Copying {n + 1}/{added}", part_done=n, part_total=added)
+            return {"added": added}
+        run_sync(RecordingDevice(self.root, []),
+                 lambda s, *a, force=False: shown.append((s,) + a), work=work)
+        return shown
+
+    def test_combined_screen_counts_every_batch_of_the_run(self):
+        self.dp.write_prepare(run=111, done=32, total=167, batches=1)   # this process: alive
+        first = [s for s in self.sync(added=25) if s[0] == "prepsync"]
+        self.assertEqual(first[-1][:9], ("prepsync", "--done", "32", "--total", "167",
+                                         "--synced", "24", "--batches", "1"))
+        self.assertEqual(self.dp.copied(111), (25, 1))                  # batch 1 done
+        second = self.sync(added=2)
+        self.assertIn(("prepsync", "--done", "32", "--total", "167", "--synced", "26",
+                       "--batches", "2"), second)
+        self.assertEqual(self.dp.copied(111), (27, 2))
+
+    def test_plain_syncing_once_conversion_is_over(self):
+        self.dp.write_prepare(run=111, done=167, total=167, batches=2)
+        self.dp.clear_prepare()                                           # run finished
+        shown = self.sync()
+        self.assertFalse(any(s[0] == "prepsync" for s in shown))
+
+    def test_dead_prepare_job_doesnt_count(self):
+        self.dp.write_prepare(run=111, done=5, total=50, batches=0)
+        path = os.path.join(self.dp.folder(), self.dp.PREPARE_FILE)
+        with open(path) as f:
+            data = json.load(f)
+        data["pid"] = 999999                                              # crashed run
+        with open(path, "w") as f:
+            json.dump(data, f)
+        self.assertIsNone(self.dp.running_prepare())
+        self.assertFalse(any(s[0] == "prepsync" for s in self.sync()))
+
+
 class FollowupSyncTests(unittest.TestCase):
     """A sync that ends while newer batches are ready asks for the next one."""
 
@@ -526,6 +579,14 @@ class StatusGuardTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         dock_status.main(["syncing", "--wifi", "off"])
         self.drawn.clear()
+
+    def test_prepare_screens_cannot_cover_prepare_and_sync(self):
+        self.ds.main(["prepsync", "--done", "32", "--total", "167", "--synced", "25",
+                      "--batches", "1", "--wifi", "off", "--force"])
+        self.drawn.clear()
+        self.ds.main(["idle", "--wifi", "off", "--ip", "10.0.0.2"])
+        self.ds.main(["preparing", "--wifi", "off"])
+        self.assertEqual(self.drawn, [])
 
     def test_idle_cannot_cover_syncing(self):
         self.ds.main(["idle", "--wifi", "off", "--ip", "10.0.0.2"])

@@ -35,6 +35,8 @@ class BootScreenTests(unittest.TestCase):
 
     def test_first_boot_with_no_state(self):
         self.assertEqual(boot_screen(None)[0], "idle")
+        self.assertEqual(boot_screen("prepsync")[:3],                  # also mid-sync
+                         ["failed", "--reason", "Sync interrupted by restart"])
 
     def test_recovered_after_offline_doesnt_claim_powered_on_now(self):
         self.assertNotIn("--boot", boot_screen("offline", recovered=True))

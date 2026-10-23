@@ -68,7 +68,8 @@ RUNTIME_DIR = "/run/musicdock"      # RAM; cleared at every boot
 MIN_PROGRESS_INTERVAL = 30         # seconds between progress-only redraws
 FULL_REFRESH_EVERY = 20             # partial (flash-free) updates before a full anti-ghost refresh
 
-PROGRESS_SCREENS = {"syncing", "preparing"}   # rate-limited when repeated
+PROGRESS_SCREENS = {"syncing", "preparing", "prepsync"}   # rate-limited when repeated
+SYNC_SCREENS = {"syncing", "prepsync"}         # "do not remove": nothing else covers them
 PREPARE_SCREENS = {"idle", "preparing"}       # drawn by the prepare job
 # Resting screens --refresh may redraw when Wi-Fi connects or drops. Active
 # screens (syncing, preparing, boot) redraw often enough on their own.
@@ -255,7 +256,20 @@ def render(screen, args):
     check = "\u2713 " if has_glyphs else ""
     warn = "\u26a0 " if has_glyphs else "! "
 
-    if screen == "syncing":
+    if screen == "prepsync":
+        # Concurrent batches: music still converting while a batch is copied
+        # to the docked iPod. Bar: converted + copied out of twice the total.
+        header("PREPARE & SYNC", inverted=True)
+        batches = f"{args.batches} batch" + ("es" if (args.batches or 1) > 1 else "")
+        sep = "\u00b7" if has_glyphs else "-"
+        lines([(f"Converting {args.done or 0}/{args.total or 0}", body_f),
+               (fit(f"Synced {args.synced or 0}/{args.total or 0} ({batches})", body_f),
+                body_f),
+               (f"Do not remove {sep} {now}", small_f)])
+        if args.total:
+            progress_bar((args.done or 0) + (args.synced or 0), 2 * args.total)
+
+    elif screen == "syncing":
         step = f"  {args.step}/{args.total}" if args.step and args.total else ""
         header(f"SYNCING{step}", inverted=True)
         rows = [("Do not remove player", body_f)]
@@ -591,7 +605,7 @@ def build_parser():
     p = argparse.ArgumentParser(description="Dock e-ink status screen")
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
                                       "failed", "starting", "offline", "notsynced", "wifi", "wififail",
-                                      "setup", "setupfail",
+                                      "setup", "setupfail", "prepsync",
                                       "connecting"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
@@ -604,6 +618,8 @@ def build_parser():
     p.add_argument("--added", type=int, default=0)
     p.add_argument("--removed", type=int, default=0)
     p.add_argument("--plays", type=int, default=0)
+    p.add_argument("--synced", type=int, help="prepsync: tracks copied so far this run")
+    p.add_argument("--batches", type=int, help="prepsync: syncs so far this run")
     p.add_argument("--pending-add", type=int,
                    help="idle: tracks the next sync will add to the iPod")
     p.add_argument("--pending-remove", type=int, default=0,
@@ -682,7 +698,7 @@ def main(argv=None):
 
         # The prepare job (idle/preparing) must never cover the "do not remove"
         # warning. If a sync crashed, SYNCING stays up until the next sync runs.
-        if (state.get("screen") == "syncing" and args.screen in PREPARE_SCREENS
+        if (state.get("screen") in SYNC_SCREENS and args.screen in PREPARE_SCREENS
                 and not args.force):
             return
 

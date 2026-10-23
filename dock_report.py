@@ -25,6 +25,7 @@ sys.path.insert(0, HERE)
 
 SCREEN_NAMES = {
     "idle": "DOCK READY", "preparing": "PREPARING", "syncing": "SYNCING",
+    "prepsync": "PREPARE & SYNC",
     "safe": "SAFE TO REMOVE", "failed": "SYNC FAILED", "starting": "STARTING UP",
     "offline": "NO WI-FI", "notsynced": "NOT SYNCED",
     "wifi": "WI-FI CHANGED", "wififail": "WI-FI UNCHANGED",

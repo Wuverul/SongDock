@@ -185,6 +185,8 @@ After the music (and any {wifi}) is done:
 WHAT THE SCREEN MEANS
 ---------------------
   SYNCING            Do not unplug the iPod.
+  PREPARE & SYNC     Do not unplug: new music is still being converted
+                     while the first of it copies to the iPod.
   SAFE TO REMOVE     Done: the iPod can be unplugged (or left to charge).
   SYNC FAILED        Safe to unplug; nothing was lost. The reason is shown,
                      and the next dock tries again.

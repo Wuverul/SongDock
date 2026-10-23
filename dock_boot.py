@@ -134,7 +134,7 @@ def wait_for_network(read, show_problem, sleep=time.sleep, poll=POLL):
 
 def boot_screen(last_screen, recovered=False):
     """Return the dock_status.py arguments for the final boot screen."""
-    if last_screen == "syncing":
+    if last_screen in ("syncing", "prepsync"):
         argv = ["failed", "--reason", "Sync interrupted by restart"]
     elif recovered:
         argv = ["idle", "--detail", "Network connected"]   # "Since <time>"
