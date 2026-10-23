@@ -201,8 +201,9 @@ class BlockDevice:
 
 def opt_in_status(root, known):
     """"not_ipod", "marked" (has MediaDock.txt), "known" (no marker, but the
-    dock already syncs this player), or "unmarked"."""
-    if not os.path.isdir(os.path.join(root, "iPod_Control")):
+    dock already syncs this player), or "unmarked". A player is an iPod (its
+    iPod_Control folder) or runs Rockbox (its .rockbox folder)."""
+    if not any(os.path.isdir(os.path.join(root, d)) for d in ("iPod_Control", ".rockbox")):
         return "not_ipod"
     try:
         names = {n.lower() for n in os.listdir(root)}
@@ -442,8 +443,11 @@ def whole_disk(dev_path):
 
 
 def make_ipod_work(cfg, guid, product, write):
-    """The stock-iPod session for run_sync (needs the venv: pygpod)."""
+    """The player session for run_sync (needs the venv: pygpod, mutagen):
+    ipod_handler for stock iPods, rockbox_handler for players with a
+    .rockbox folder. Both take the same staged plan."""
     import ipod_handler
+    import rockbox_handler
     from dock_record import SHARED_DIR, Record
     from subsonic import Client
 
@@ -480,6 +484,14 @@ def make_ipod_work(cfg, guid, product, write):
                     f.flush()
                     os.fsync(f.fileno())
                 log.info("Created %s on this already-synced iPod", MARKER)
+        rockbox = rockbox_handler.is_rockbox(device.root)
+        if not rockbox and cfg.get("device", {}).get("type") == "rockbox":
+            # type = "rockbox" keeps FLAC in the cache, which a stock iPod can't play.
+            record.close()
+            raise SyncError("Stock iPod: dock is set up for Rockbox")
+        handler = rockbox_handler if rockbox else ipod_handler
+        if rockbox:
+            log.info("Rockbox player: syncing files and playlists")
         client = Client(cfg["server"]["url"], cfg["server"]["username"],
                         cfg["server"]["password"])
 
@@ -487,7 +499,7 @@ def make_ipod_work(cfg, guid, product, write):
             step(5, f"Copying {n + 1}/{total}: {t.get('artist')} - {t.get('title')}",
                  part_done=n, part_total=total)
         try:
-            summary = ipod_handler.sync_player(
+            summary = handler.sync_player(
                 device.root, guid, record, manifest, cache_dir,
                 work_dir=os.path.join(base, "work", guid),
                 backup_root=os.path.join(base, "backups", guid),
@@ -504,7 +516,7 @@ def make_ipod_work(cfg, guid, product, write):
         if writing:
             try:
                 import dock_guide
-                if dock_guide.write_guide(device.root, cfg):
+                if dock_guide.write_guide(device.root, cfg, rockbox=rockbox):
                     log.info("Updated %s on the iPod", dock_guide.GUIDE_FILE)
             except Exception:
                 log.exception("Couldn't write the guide (continuing)")
@@ -607,9 +619,6 @@ def build_work(args, device):
         cfg = dock_config.load()
     except dock_config.ConfigError as e:
         log.warning("No usable config (%s): listing the player only", e)
-        return None
-    if cfg["device"]["type"] != "stock_ipod":
-        log.warning("Device type %r has no handler yet: listing only", cfg["device"]["type"])
         return None
     if isinstance(device, FakeDevice):
         guid, product = sysinfo_guid(device.root), None

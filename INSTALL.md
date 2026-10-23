@@ -203,6 +203,23 @@ UNCHANGED** means it went back to its old network and left the file there,
 with the reason on screen. Add `Hidden=yes` for a hidden network; leave out
 the password for an open one.
 
+**Rockbox players** (untested on real hardware so far): opt in the same way,
+with `MediaDock.txt` in the player's top folder. The dock recognizes Rockbox
+by its `.rockbox` folder and then:
+
+- copies music into a **`MediaDock`** folder (`MediaDock/Artist/Album/01
+  Title.mp3`, with `cover.jpg`), and playlists into **`Playlists`**. Music
+  you keep anywhere else on the player is never touched;
+- reads plays from Rockbox's **`.scrobbler.log`**: turn on **Settings >
+  Playback Settings > Last.fm Log**. Skipped songs don't count. The log is
+  emptied once its plays are saved on the dock;
+- for browsing by artist/album, turn on **Settings > General Settings >
+  Database > Auto Update** (or use **Update Now** after a sync).
+
+Rockbox gets the same MP3 files as stock iPods, so one dock serves both. A
+dock set to `type = "rockbox"` keeps FLAC instead (lossless, larger), and
+then refuses stock iPods, which can't play FLAC.
+
 ## Troubleshooting
 
 | What you see | What to do |

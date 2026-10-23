@@ -1088,6 +1088,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         return {
             "id": t["id"],
             "title": t.get("title"), "artist": t.get("artist"),
+            "album_artist": t.get("displayAlbumArtist") or t.get("albumArtist"),
             "album": t.get("album"), "track": t.get("track"),
             "disc": t.get("discNumber"), "year": t.get("year"),
             "duration": t.get("duration"), "genre": genres.get(t["id"]),

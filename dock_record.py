@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     track_no      INTEGER,
     duration      INTEGER,
     encoding      TEXT,
+    genre         TEXT,
     added_at      INTEGER NOT NULL,
     state         TEXT NOT NULL DEFAULT 'present',   -- present | removed
     changed_at    INTEGER NOT NULL,
@@ -90,7 +91,7 @@ CREATE TABLE IF NOT EXISTS playlists (
 """
 
 TRACK_FIELDS = ("ipod_path", "navidrome_id", "mbid", "artist", "album", "title",
-                "track_no", "duration", "encoding")
+                "track_no", "duration", "encoding", "genre")
 
 
 class Record:
@@ -110,6 +111,7 @@ class Record:
             self.db.executescript(SCHEMA)
         self._add_column("players", "forgotten_at INTEGER")      # added 2026-10-23
         self._add_column("players", "name TEXT")                 # added 2026-10-23
+        self._add_column("tracks", "genre TEXT")                 # Rockbox re-tags (2026-10-23)
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
             # login user) so the prepare job can write it too.

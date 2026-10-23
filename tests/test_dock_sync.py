@@ -259,6 +259,32 @@ class OptInTests(unittest.TestCase):
         dev.make_writable.assert_not_called()
         self.assertFalse(sp.call_args.kwargs["write"])          # plays only
 
+    def test_rockbox_player_goes_to_the_rockbox_handler(self):
+        os.makedirs(os.path.join(self.root, ".rockbox"))         # e.g. a non-iPod Rockbox
+        self.assertEqual(dock_sync.opt_in_status(self.root, known=False), "unmarked")
+        open(os.path.join(self.root, "MediaDock.txt"), "w").close()
+        with mock.patch("rockbox_handler.sync_player", return_value={"added": 2}) as rb:
+            summary, sp, _ = self.run_work(known=False)
+        rb.assert_called_once()
+        sp.assert_not_called()
+        self.assertEqual(summary["added"], 2)
+        with open(os.path.join(self.root, "MediaDock README.txt")) as f:
+            self.assertIn("This player runs Rockbox", f.read())
+
+    def test_flac_dock_refuses_a_stock_ipod(self):
+        self.ipod(marker="MediaDock.txt")
+        cfg = {"sync": {"cache_dir": self.root}, "device": {"type": "rockbox"},
+               "server": {"url": "https://x", "username": "u", "password": "p"}}
+        fake_record = mock.Mock()
+        fake_record.player.return_value = None
+        dev = FakeDevice(self.root)
+        dev.make_writable = mock.Mock()
+        with mock.patch("dock_record.Record", return_value=fake_record), \
+                mock.patch("ipod_handler.sync_player") as sp, \
+                self.assertRaisesRegex(dock_sync.SyncError, "set up for Rockbox"):
+            dock_sync.make_ipod_work(cfg, "G", 0x1261, True)(dev, lambda *a, **k: None)
+        sp.assert_not_called()
+
     def test_not_synced_screen_shown(self):
         events, shown = [], []
         dev = RecordingDevice(self.root, events)

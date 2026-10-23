@@ -16,7 +16,7 @@ GUIDE_FILE = dock_setup.GUIDE_FILE
 
 
 def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
-               setup=dock_setup.SETUP_FILE):
+               setup=dock_setup.SETUP_FILE, rockbox=False):
     sync = cfg.get("sync", {})
     tag = sync.get("playlist_tag", "")
     favorites = sync.get("favorites_playlist", "")
@@ -40,6 +40,19 @@ def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
   {tag} takes the playlist off the iPod at the next sync.
 """ if tag else "")
 
+    if rockbox:
+        hands_off = """This player runs Rockbox. The dock's music goes in the MediaDock folder
+(one folder per artist and album, with cover.jpg), its playlists in the
+Playlists folder. Music you put anywhere else is left alone; don't add or
+change files inside MediaDock. To browse the dock's music by artist and
+album, turn on Settings > General Settings > Database > Auto Update (or
+run Update Now after a sync). Plays are read from Rockbox's .scrobbler.log
+(Settings > Playback Settings > Last.fm Log: on); skipped songs aren't
+counted."""
+    else:
+        hands_off = """Don't add music with Finder, iTunes or the Apple Music app: they replace
+the iPod's music list, and the dock loses track of everything it added.
+Don't change the hidden iPod_Control folder."""
     return f"""MUSIC DOCK - HOW TO USE AND RECONFIGURE IT FROM THIS IPOD
 ==========================================================
 
@@ -54,9 +67,7 @@ text editor (TextEdit: Format > Make Plain Text; Windows: Notepad). The
 files go in the iPod's top folder, next to this one. Their names can be
 any mix of upper and lower case.
 
-Don't add music with Finder, iTunes or the Apple Music app: they replace
-the iPod's music list, and the dock loses track of everything it added.
-Don't change the hidden iPod_Control folder.
+{hands_off}
 
 
 WHAT ENDS UP ON THE IPOD
@@ -181,11 +192,11 @@ network. They can't be changed from the iPod.
 """
 
 
-def write_guide(root, cfg):
+def write_guide(root, cfg, rockbox=False):
     """Write the guide to the player's top folder if its text changed.
     Returns True if it was (re)written."""
     path = os.path.join(root, GUIDE_FILE)
-    text = guide_text(cfg)
+    text = guide_text(cfg, rockbox=rockbox)
     try:
         with open(path, encoding="utf-8") as f:
             if f.read() == text:

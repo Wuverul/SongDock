@@ -62,13 +62,13 @@ Two independent jobs share one e-ink screen:
 **Device handlers.** One sync engine, with one handler per player type. Only
 the "write tracks / read plays" step differs:
 
-| | Stock iPod (now) | Rockbox (later) |
+| | Stock iPod (now) | Rockbox (`rockbox_handler.py`, built 2026-10-23) |
 |---|---|---|
-| Library | `iTunesDB` (signed), via **pygpod** | Plain files + `.m3u8` playlists |
-| Play data | Play-count changes since last sync | `.scrobbler.log`, timestamped |
-| Formats | FLAC → MP3 LAME V0 (`convert_to`, `mp3_quality`: `v0`–`v9` or constant `128k`–`320k`; `alac`/`aac` also supported). The manifest records each track's `encoding`; changing settings re-converts on the next run | FLAC copied as-is |
+| Library | `iTunesDB` (signed), via **pygpod** | Plain files in `MediaDock/<album artist>/<album>/NN title.ext` + `Playlists/*.m3u8` (absolute paths) |
+| Play data | Play-count changes since last sync | `.scrobbler.log`, timestamped (`#TZ/UNKNOWN` = local clock); `S` (skipped) ignored; matched by artist+title(+album, length) to the record |
+| Formats | FLAC → MP3 LAME V0 (`convert_to`, `mp3_quality`: `v0`–`v9` or constant `128k`–`320k`; `alac`/`aac` also supported). The manifest records each track's `encoding`; changing settings re-converts on the next run | Same MP3 cache as stock (user's choice, 2026-10-23: one dock serves both). `type = "rockbox"` keeps FLAC instead and then refuses stock iPods |
 | Keep signal | Unskipped play count (user, 2026-10-18): played a lot = keep. Plays already reach Navidrome; how keepers are marked there is TBD | `Keep.m3u8` playlist |
-| Album art | Thumbnails in `iPod_Control/Artwork/` (ArtworkDB), made from the embedded cover when each track is added. Ignores art inside the file. | `cover.jpg` (baseline, not progressive JPEG) in the album folder |
+| Album art | Thumbnails in `iPod_Control/Artwork/` (ArtworkDB), made from the embedded cover when each track is added. Ignores art inside the file. | `cover.jpg` (baseline JPEG, <= 600 px, made from the embedded cover) in the album folder |
 
 pygpod is **pre-alpha** and untested on the Nano 4G, so prove it with a manual
 test (read DB, add one track **with album art**, play it, check the art shows,
@@ -297,6 +297,24 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   SysInfo recovery, backup/restore (on the Pi under `backups/<GUID>/`, last 3),
   reconcile, apply the staged plan, playlists, `sync_player` session. A copy of
   the record is saved on the player at `iPod_Control/musicdock/dock.db`.
+- `rockbox_handler.py`: **Rockbox players** (2026-10-23; built against fake
+  players, **untested on hardware**: the USB identity under Rockbox - serial
+  used as the GUID, whether udev's trigger fires - is the main unknown).
+  Chosen per player by a `.rockbox` folder (`opt_in_status` accepts
+  `.rockbox` or `iPod_Control`; MediaDock.txt still required). Same plan,
+  cache and record; the record's dbid is the file's path. Only
+  `MediaDock/` is managed: files there carry the plan's title/artist/album/
+  genre + `MUSICDOCK_NAVIDROME_ID` (mutagen easy tags), so `reconcile`
+  re-adopts them if the record is lost; untagged files there are left
+  alone; `.musicdock-tmp-*` leftovers deleted. Copies go to a temp name,
+  get tagged, fsync, then rename, then the record. Removals delete the file
+  and emptied album/artist folders. Name/genre changes re-tag in place
+  (record `genre` column, added 2026-10-23). Playlists only written when
+  their text changes; ones the dock didn't make are never touched. Plays:
+  log snapshotted, queued (committed), and only then deleted, in write
+  mode only; unmatched plays queue without a song. Record copy at
+  `MediaDock/.musicdock/dock.db`. The iPod README gets a Rockbox paragraph
+  (Last.fm Log setting, Database Auto Update). Keep.m3u8: not built.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. **Fallback addresses (2026-10-23):** `[server] url` may be a
   list in priority order (e.g. home LAN address, then a public one; user's
@@ -610,7 +628,8 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 5. Large stock-firmware players: hybrid cache, rolling batches, rebuild
    (see "Resilience without a mirror"). Reset detection, SysInfo recovery,
    record backup and the cache side are built; hardware test with a cache
-   smaller than the library pending. Rockbox handler deprioritized.
+   smaller than the library pending. Rockbox handler built 2026-10-23
+   (fake players only; see `rockbox_handler.py`).
 6. 3D-printed dock enclosure
 7. Documentation, setup guide, and packaging for friends. **Built
    2026-10-16:** README.md, INSTALL.md, `make_release.sh` (builds

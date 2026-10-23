@@ -37,7 +37,12 @@ music in the background, so syncs are quick.
   An unsupported iPod gets **SYNC FAILED** with its model name, before
   anything on it is changed.
 
-  Stock Apple firmware only (not Rockbox).
+  **Rockbox** players are supported too (untested on real hardware so
+  far): the dock spots Rockbox by its `.rockbox` folder and syncs plain
+  files into a `MediaDock` folder, `.m3u8` playlists and `cover.jpg` album
+  art, and reads plays from Rockbox's play log. They get the same MP3 files
+  as stock iPods, so one dock can serve both. See "Rockbox players" in
+  INSTALL.md.
 
 - **The iPod must be formatted FAT32 ("Windows format").** An iPod restored
   with Finder/iTunes on a **Mac** is usually formatted for Mac (HFS+), which the
