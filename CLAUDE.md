@@ -792,6 +792,27 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   148 -> 96 MB. Concurrent batches stay off: 96 MB sync + ~100-150 MB
   prepare + 3 ffmpeg on 415 MB is still tight; pause conversions during a
   sync before re-enabling.
+- **Shared album art (2026-10-23):** one image per album instead of per
+  track on SIGNED_GENERATIONS (Classic 1-3, Nano 3G/4G): tracks with the
+  same album name and source cover size share an image via mhii_link
+  (`install_shared_artwork` wraps pygpod's `_add_artwork_for_track` and
+  `remove_track`: an image another track still shows is never deleted, and
+  its owner (`mhii` song_id) moves to a remaining track). Existing art is
+  converted once (`share_existing_artwork`, marker `iPod_Control/musicdock/
+  shared-art`). On the real Nano: 1413 images -> 118 (15 of 95 albums keep
+  several: genuinely different covers), .ithmb 451 -> 39 MB, conversion
+  sync ~1 min, peak 103 MB. **Right after the conversion (iPod docked
+  through it) the album list showed no art and playing a song crashed the
+  iPod; after a restart (Menu + center) everything was correct** - covers
+  in the list, Now Playing, per-track variants (verified by the user).
+  Cause unknown (likely stale state in the iPod across a big art change);
+  README tells users to restart once. Video / nano 1G-2G keep per-track
+  art (their firmware finds art per track, unverified). Also fixed:
+  pygpod's ArtworkDB writer wrote an emptied list record back with its old
+  entries (`if not rec.children: return rec.raw_bytes`), resurrecting the
+  last image removed; compaction now swaps files in together with their
+  ArtworkDB and keeps `.before-compact` until the sync succeeds
+  (`undo_compaction` on restore, `recover_compaction` after a crash).
 - **pygpod's USB fallback (found 2026-10-23):** if SysInfo has no model,
   pygpod scans `/sys/bus/usb` (no pyusb needed) and takes the model of the
   *first Apple USB device* it finds. Harmless on the dock (one port, and

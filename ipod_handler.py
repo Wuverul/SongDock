@@ -259,6 +259,7 @@ def backup_player(mount, dest_root, keep=3):
 
 def restore_backup(mount, backup):
     """Put a backup's iTunesDB/ArtworkDB back (after a failed write)."""
+    undo_compaction(mount)            # the backup's ArtworkDB points into the old art
     for parts in BACKED_UP:
         src = os.path.join(backup, *parts)
         out = os.path.join(mount, *parts)
@@ -476,7 +477,7 @@ def install_artwork_compaction():
             total = os.path.getsize(path)
             if total - sum(size for _, _, size in entries) <= total * COMPACT_WASTE:
                 continue                    # a few gaps: not worth rewriting the file
-            tmp, moved, offset = path + ".compact", [], 0
+            tmp, moved, offset = path + COMPACT_SUFFIX, [], 0
             with open(path, "rb") as src, open(tmp, "wb") as dst:
                 for mhni, old, size in entries:      # one image in memory at a time
                     src.seek(old)
@@ -485,13 +486,13 @@ def install_artwork_compaction():
                     offset += size
                 dst.flush()
                 os.fsync(dst.fileno())
-            os.replace(tmp, path)
-            for mhni, new in moved:                  # only once the new file is in place
+            for mhni, new in moved:      # the ArtworkDB about to be written uses these
                 header = bytearray(mhni.raw_header)
                 am.put32lint(header, 0x14, new)
                 mhni.raw_header = bytes(header)
                 mhni.fields["ithumb_offset"] = new
             self._ithmb_offsets[fmt] = offset
+            self._musicdock_swaps = getattr(self, "_musicdock_swaps", []) + [(path, tmp)]
             log_info(f"Compacted album art (format {fmt}): {total / 1e6:.0f} -> "
                      f"{offset / 1e6:.0f} MB")
         if os.path.isdir(self._artwork_dir):        # sizes with no art left (as pygpod)
@@ -505,8 +506,300 @@ def install_artwork_compaction():
                     except ValueError:
                         pass
 
+    def save(self):
+        """pygpod's save, with compacted files swapped in together with the
+        ArtworkDB that matches them; the old files stay as .before-compact
+        until the sync succeeds (see finish_compaction / undo_compaction)."""
+        if self._root is None:
+            return
+        if getattr(self, "_needs_rebuild", False):
+            self._rebuild_ithmb()
+            self._needs_rebuild = False
+        data = am.write_artworkdb(self._root)
+        tmp = self._artworkdb_path + ".new"
+        with open(tmp, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        for path, compacted in getattr(self, "_musicdock_swaps", []):
+            os.replace(path, path + BEFORE_COMPACT)
+            os.replace(compacted, path)
+        self._musicdock_swaps = []
+        os.replace(tmp, self._artworkdb_path)
+
+    # pygpod's ArtworkDB writer emits a record's original bytes when it has
+    # no children - right for leaves, wrong for lists: an emptied image list
+    # was written back with its old entries, so the last image ever removed
+    # came back, pointing into deleted .ithmb files. Empty lists are written
+    # as their header with a count of 0.
+    from pygpod.db import artwork_writer as aw
+    original_write = aw._write_artwork_record
+
+    def write_artwork_record(rec):
+        if not rec.children and rec.magic in aw._COUNT_MAGICS:
+            header = bytearray(rec.raw_header)
+            aw.put32lint(header, 8, 0)
+            return bytes(header)
+        return original_write(rec)
+
+    aw._write_artwork_record = write_artwork_record
+
     rebuild_ithmb._musicdock = True
     am.ArtworkManager._rebuild_ithmb = rebuild_ithmb
+    am.ArtworkManager.save = am.ArtworkManager._save = save
+
+
+COMPACT_SUFFIX = ".compact"
+BEFORE_COMPACT = ".before-compact"
+
+
+def _artwork_dir(mount):
+    return os.path.join(mount, "iPod_Control", "Artwork")
+
+
+def _ithmb_leftovers(mount, suffix):
+    folder = _artwork_dir(mount)
+    try:
+        return [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(suffix)]
+    except OSError:
+        return []
+
+
+def finish_compaction(mount):
+    """The sync succeeded: the art from before compaction can go."""
+    for old in _ithmb_leftovers(mount, BEFORE_COMPACT):
+        os.remove(old)
+
+
+def undo_compaction(mount):
+    """The sync failed and its backup ArtworkDB is going back: put back the
+    art files it points into."""
+    for old in _ithmb_leftovers(mount, BEFORE_COMPACT):
+        os.replace(old, old[:-len(BEFORE_COMPACT)])
+    for tmp in _ithmb_leftovers(mount, COMPACT_SUFFIX):
+        os.remove(tmp)
+
+
+def art_files_consistent(mount):
+    """True if every image the ArtworkDB lists lies within its .ithmb file."""
+    from pygpod.db.artwork_parser import parse_artworkdb
+    path = os.path.join(_artwork_dir(mount), "ArtworkDB")
+    try:
+        with open(path, "rb") as f:
+            root = parse_artworkdb(f.read())
+    except (OSError, ValueError):
+        return False
+    sizes = {}
+
+    def walk(record):
+        for child in getattr(record, "children", None) or []:
+            if child.magic == b"mhni":
+                fmt = child.fields.get("format_id")
+                if fmt not in sizes:
+                    try:
+                        sizes[fmt] = os.path.getsize(
+                            os.path.join(_artwork_dir(mount), f"F{fmt}_1.ithmb"))
+                    except OSError:
+                        sizes[fmt] = -1
+                end = child.fields.get("ithumb_offset", 0) + child.fields.get("image_size", 0)
+                if end > sizes[fmt]:
+                    raise ValueError(fmt)
+            walk(child)
+    try:
+        walk(root)
+        return True
+    except ValueError:
+        return False
+
+
+def recover_compaction(mount):
+    """At the start of a sync: art files left over from a compaction that a
+    crash interrupted. Keep whichever set the ArtworkDB on the player fits."""
+    for tmp in _ithmb_leftovers(mount, COMPACT_SUFFIX):
+        os.remove(tmp)
+    if not _ithmb_leftovers(mount, BEFORE_COMPACT):
+        return None
+    if art_files_consistent(mount):
+        finish_compaction(mount)
+        return "kept compacted art"
+    undo_compaction(mount)
+    log_info("Album art: the last compaction was interrupted; put the old files back")
+    return "restored art from before compaction"
+
+
+# One cover per album instead of per track (2026-10-23). pygpod gives every
+# track its own image in all 6 thumbnail sizes: 1413 tracks on 95 albums
+# made 451 MB of .ithmb on the Nano, a 24 MB ArtworkDB in memory, and a
+# compaction that ran the Pi out of memory. iTunes shares one image per
+# album ("sparse artwork": the track's mhii_link points at it). Verified on
+# the Nano 4G: covers right in the album list, Now Playing and per-track
+# variants - but only after a restart: straight after the one-time
+# conversion (docked through the sync) the album list showed no art and
+# playing a song crashed the iPod. Older generations (video, nano 1G/2G)
+# find art per track and keep one image each.
+SHARED_ART_GENERATIONS = SIGNED_GENERATIONS
+SHARED_ART_VERSION = "1"
+SHARED_ART_MARKER = os.path.join("iPod_Control", "musicdock", "shared-art")
+
+
+def _art_key(album, size):
+    """Tracks share an image when their album name and source cover size
+    match: the prepare job encodes an album's cover once, so its tracks'
+    covers are byte-identical, and a different cover is all but certain to
+    differ in size."""
+    return ((album or "").strip().casefold(), int(size or 0))
+
+
+def _shares_art(db):
+    d = db._device
+    return bool(d) and d.generation.name in SHARED_ART_GENERATIONS
+
+
+def _link_art(mhit, image_id, size):
+    """Point a track at an image, as pygpod does when it adds one."""
+    from pygpod.utils.compat import put8int, put16lint, put32lint
+    header = bytearray(mhit.raw_header)
+    if len(header) > 0x7D:
+        put16lint(header, 0x7C, 1)                  # artwork_count
+    if len(header) > 0x83:
+        put32lint(header, 0x80, size)               # artwork_size
+    if len(header) > 0xA4:
+        put8int(header, 0xA4, 1)                    # has_artwork
+    if len(header) > 0x163:
+        put32lint(header, 0x160, image_id)          # mhii_link
+    mhit.raw_header = bytes(header)
+    mhit.fields.update(artwork_count=1, artwork_size=size, has_artwork=1,
+                       mhii_link=image_id)
+
+
+def _images(db):
+    """{image_id: mhii record} in the ArtworkDB ({} if it has none yet)."""
+    mgr = db._get_artwork_manager()
+    if mgr._root is None:
+        return {}
+    return {m.fields.get("image_id"): m for m in mgr._get_or_create_mhli().children}
+
+
+def _set_owner(mhii, dbid):
+    """The track an image records as its own (mhii song_id)."""
+    from pygpod.utils.compat import put64lint
+    header = bytearray(mhii.raw_header)
+    put64lint(header, 0x14, dbid)
+    mhii.raw_header = bytes(header)
+    mhii.fields["song_id"] = dbid
+
+
+def _art_index(db):
+    """{_art_key: image_id} for art already on the player (built once)."""
+    index = getattr(db, "_musicdock_art", None)
+    if index is None:
+        images = _images(db)
+        index = {}
+        for t in db.tracks:
+            if t.has_artwork and t.mhii_link in images:
+                index.setdefault(_art_key(t.album, t.artwork_size), t.mhii_link)
+        db._musicdock_art = index
+    return index
+
+
+def install_shared_artwork():
+    """Make pygpod reuse an album's image for its other tracks, and never
+    delete an image another track still shows. Applied once per process."""
+    from pygpod.model import database as pdb
+    if getattr(pdb.Database._add_artwork_for_track, "_musicdock", False):
+        return
+    original_add, original_remove = pdb.Database._add_artwork_for_track, pdb.Database.remove_track
+
+    def add_artwork_for_track(self, mhit, dbid, filepath, cover_art=None):
+        if not self._mountpoint or not _shares_art(self):
+            return original_add(self, mhit, dbid, filepath, cover_art)
+        try:
+            art = pdb.extract_artwork(filepath)
+            if not art and cover_art and os.path.isfile(cover_art):
+                with open(cover_art, "rb") as f:
+                    art = f.read()
+        except Exception:
+            art = None
+        if not art:
+            return original_add(self, mhit, dbid, filepath, cover_art)
+        track = next((t for t in reversed(self._tracks) if t.dbid == dbid), None)
+        key = _art_key(track.album if track else None, len(art))
+        index = _art_index(self)
+        if index.get(key) in _images(self):
+            _link_art(mhit, index[key], len(art))           # the album's image
+            return
+        original_add(self, mhit, dbid, filepath, cover_art)
+        if mhit.fields.get("mhii_link"):
+            index[key] = mhit.fields["mhii_link"]
+
+    def remove_track(self, track, delete_file=False):
+        link = track.mhii_link if track.has_artwork else 0
+        if link and self._mountpoint:
+            others = [t for t in self._tracks if t.track_id != track.track_id
+                      and t.has_artwork and t.mhii_link == link]
+            if others:
+                # Still shown by other tracks: keep the image (pygpod would
+                # delete it) and hand it to one of them if this track owned it.
+                track.record.fields["mhii_link"] = 0
+                mhii = _images(self).get(link)
+                if mhii is not None and mhii.fields.get("song_id") == track.dbid:
+                    _set_owner(mhii, others[0].dbid)
+            else:
+                index = getattr(self, "_musicdock_art", None) or {}
+                for k in [k for k, v in index.items() if v == link]:
+                    del index[k]
+        return original_remove(self, track, delete_file)
+
+    add_artwork_for_track._musicdock = True
+    pdb.Database._add_artwork_for_track = add_artwork_for_track
+    pdb.Database.remove_track = remove_track
+
+
+def share_existing_artwork(db):
+    """One cover per album for art added before sharing: point each album's
+    tracks at one of its images and drop the rest (compaction then shrinks
+    the .ithmb files). Returns how many images were dropped."""
+    if not _shares_art(db):
+        return 0
+    images = _images(db)
+    keep, dropped = {}, set()
+    for t in db.tracks:
+        if not (t.has_artwork and t.mhii_link in images):
+            continue
+        key = _art_key(t.album, t.artwork_size)
+        image = keep.setdefault(key, t.mhii_link)
+        if t.mhii_link != image:
+            dropped.add(t.mhii_link)
+            _link_art(t.record, image, t.artwork_size)
+    still_shown = {t.mhii_link for t in db.tracks if t.has_artwork}
+    owners = {t.dbid for t in db.tracks}
+    mgr = db._get_artwork_manager()
+    for image_id in dropped - still_shown:
+        mgr.remove_artwork(image_id)
+    for image_id in set(keep.values()):           # each kept image owned by a track it shows
+        mhii = images[image_id]
+        if mhii.fields.get("song_id") not in owners or not any(
+                t.dbid == mhii.fields.get("song_id") and t.mhii_link == image_id
+                for t in db.tracks):
+            shown_by = next(t for t in db.tracks if t.has_artwork and t.mhii_link == image_id)
+            _set_owner(mhii, shown_by.dbid)
+    db._musicdock_art = {k: v for k, v in keep.items()}
+    return len(dropped - still_shown)
+
+
+def shared_art_outdated(mount):
+    try:
+        with open(os.path.join(mount, SHARED_ART_MARKER)) as f:
+            return f.read().strip() != SHARED_ART_VERSION
+    except OSError:
+        return True
+
+
+def mark_shared_art(mount):
+    path = os.path.join(mount, SHARED_ART_MARKER)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(SHARED_ART_VERSION + "\n")
 
 
 def checked_save(db, guid):
@@ -524,6 +817,7 @@ def checked_save(db, guid):
         raise HandlerError("refusing to save: SysInfo FireWire GUID doesn't match the player")
     install_sort_order()
     install_artwork_compaction()
+    install_shared_artwork()
     db.save()
 
 
@@ -588,6 +882,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
     """
     if "tracks" not in manifest:
         raise ValueError("No staged plan: refusing to apply it (it would remove every track)")
+    install_shared_artwork()
     wanted = {t["id"]: t for t in manifest["tracks"]}
     saved = False
     on_player = {t.dbid: t for t in db.tracks}
@@ -826,9 +1121,11 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
     if write:
         step(4, "Backing up player")
         ensure_sysinfo(mount, guid, record, usb_product, block_device)
+        recover_compaction(mount)        # before the backup, so it matches the art files
         os.makedirs(backup_root, exist_ok=True)
         backup = backup_player(mount, backup_root)
         try:
+            install_shared_artwork()
             db = pygpod.Database(mount)
             report = reconcile(db, record, guid, mount, manifest=manifest)
             if report["reset"]:
@@ -837,10 +1134,17 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             resort = sort_order_outdated(mount)
             if resort:
                 log_info("Re-sorting the player's album lists by disc and track")
+            reshare = _shares_art(db) and shared_art_outdated(mount)
+            if reshare:
+                dropped = share_existing_artwork(db)
+                log_info(f"Album art: one cover per album ({dropped} duplicate images dropped)")
             result = apply_plan(db, record, guid, mount, manifest, cache_dir,
-                                progress=progress, dirty=report["dirty"] or resort)
+                                progress=progress, dirty=report["dirty"] or resort or reshare)
             if resort:
                 mark_sort_order(mount)
+            if reshare:
+                mark_shared_art(mount)
+            finish_compaction(mount)
         except Exception:
             log_info("Sync failed: restoring the player's database from the backup")
             restore_backup(mount, backup)

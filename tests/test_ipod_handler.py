@@ -72,6 +72,121 @@ class HandlerTests(unittest.TestCase):
                         "duration": 2, "encoding": "mp3 v0"})
         return out
 
+    def album(self, name, n, colour, first=0):
+        """n tracks of one album sharing one cover colour."""
+        out = []
+        for i in range(first, first + n):
+            nid = f"{name}{i}"
+            path = os.path.join(self.cache, "tracks", f"{nid}.mp3")
+            fx.make_mp3(path, f"{name} {i}", album=name, track=i + 1, seconds=2, cover=colour)
+            out.append({"id": nid, "file": f"tracks/{nid}.mp3", "title": f"{name} {i}",
+                        "artist": "Artist", "album": name, "track": i + 1, "duration": 2,
+                        "encoding": "mp3 v0"})
+        return out
+
+    def links(self):
+        return {t.title: t.mhii_link for t in self.db().tracks if t.has_artwork}
+
+    def pictures(self):
+        """{track title: its largest thumbnail's bytes}, as the iPod would show it."""
+        art = self.art()
+        out = {}
+        for t in self.db().tracks:
+            mine = {fmt: data for (image, fmt), data in art.items() if image == t.mhii_link}
+            if mine:
+                out[t.title] = mine[max(mine)]
+        return out
+
+    def test_an_albums_tracks_share_one_image(self):
+        a, b = self.album("Red", 3, (200, 30, 30)), self.album("Blue", 2, (30, 30, 200))
+        self.apply(self.manifest(a + b))
+        links = self.links()
+        self.assertEqual(len(set(links.values())), 2)                     # 5 tracks, 2 images
+        self.assertEqual(len({links[f"Red {i}"] for i in range(3)}), 1)
+        self.assertNotEqual(links["Red 0"], links["Blue 0"])
+        self.assertEqual(len({k[0] for k in self.art()}), 2)
+        more = self.album("Red", 1, (200, 30, 30), first=3)                # later sync
+        self.apply(self.manifest(a + b + more))
+        self.assertEqual(self.links()["Red 3"], links["Red 0"])
+
+    def test_removing_tracks_keeps_the_shared_cover_until_the_last(self):
+        a = self.album("Red", 3, (200, 30, 30))
+        self.apply(self.manifest(a))
+        before = self.pictures()
+        owner = next(m for m in self.db()._get_artwork_manager()._get_or_create_mhli().children)
+        owner_dbid = owner.fields["song_id"]
+        owner_title = next(t.title for t in self.db().tracks if t.dbid == owner_dbid)
+        keep = [s for s in a if s["title"] != owner_title]                # remove the owner
+        self.apply(self.manifest(keep))
+        after = self.pictures()
+        self.assertEqual(set(after), {s["title"] for s in keep})
+        self.assertTrue(all(after[t] == before[t] for t in after))         # same picture
+        mhii = self.db()._get_artwork_manager()._get_or_create_mhli().children[0]
+        self.assertIn(mhii.fields["song_id"], {t.dbid for t in self.db().tracks})   # re-owned
+        self.apply(self.manifest([]))
+        self.assertEqual(self.art(), {})                                   # last one: gone
+
+    def test_existing_per_track_art_is_shared_once(self):
+        from unittest import mock as m
+        a, b = self.album("Red", 4, (200, 30, 30)), self.album("Blue", 2, (30, 30, 200))
+        with m.patch.object(h, "_shares_art", return_value=False):        # the old way
+            self.apply(self.manifest(a + b))
+        self.assertEqual(len(set(self.links().values())), 6)
+        before = self.pictures()
+        db = self.db()
+        self.assertEqual(h.share_existing_artwork(db), 4)                  # 6 images -> 2
+        h.checked_save(db, G)
+        self.assertEqual(len(set(self.links().values())), 2)
+        self.assertEqual(self.pictures(), before)                          # every cover kept
+        images = self.db()._get_artwork_manager()._get_or_create_mhli().children
+        dbids = {t.dbid for t in self.db().tracks}
+        self.assertTrue(all(i.fields["song_id"] in dbids for i in images))
+
+    def test_failed_sync_puts_the_old_art_files_back(self):
+        songs = self.covered(8)
+        self.apply(self.manifest(songs))
+        backups = os.path.join(self.tmp, "backups")
+        os.makedirs(backups)
+        backup = h.backup_player(self.mount, backups)
+        before, sizes = self.art(), self.ithmb_sizes()
+        db = self.db()
+        for t in list(db.tracks)[:5]:
+            db.remove_track(t, delete_file=False)
+        h.checked_save(db, G)                                              # compacts
+        self.assertNotEqual(self.ithmb_sizes(), sizes)
+        self.assertTrue(h._ithmb_leftovers(self.mount, h.BEFORE_COMPACT))
+        h.restore_backup(self.mount, backup)                               # ...then fails
+        self.assertEqual(self.ithmb_sizes(), sizes)
+        self.assertEqual(self.art(), before)
+
+    def test_crash_mid_compaction_keeps_the_matching_files(self):
+        songs = self.covered(8)
+        self.apply(self.manifest(songs))
+        before = self.art()
+        db = self.db()
+        for t in list(db.tracks)[:5]:
+            db.remove_track(t, delete_file=False)
+        h.checked_save(db, G)
+        compacted = self.art()
+        # Crash after the swap, before the sync finished: the new ArtworkDB is
+        # on disk and fits the new files, so they stay.
+        self.assertEqual(h.recover_compaction(self.mount), "kept compacted art")
+        self.assertEqual(self.art(), compacted)
+        # Crash before the new ArtworkDB landed: old ArtworkDB, new files.
+        self.apply(self.manifest(self.covered(8)))
+        artdb = os.path.join(self.mount, "iPod_Control", "Artwork", "ArtworkDB")
+        with open(artdb, "rb") as f:
+            old_artdb = f.read()
+        before = self.art()
+        db = self.db()
+        for t in list(db.tracks)[:5]:
+            db.remove_track(t, delete_file=False)
+        h.checked_save(db, G)
+        with open(artdb, "wb") as f:
+            f.write(old_artdb)
+        self.assertEqual(h.recover_compaction(self.mount), "restored art from before compaction")
+        self.assertEqual(self.art(), before)
+
     def test_a_few_removals_leave_the_art_files_alone(self):
         songs = self.covered(8)
         self.apply(self.manifest(songs))
@@ -575,7 +690,8 @@ class HandlerTests(unittest.TestCase):
         ids = [m.fields.get("image_id") for m in db._get_artwork_manager()._iter_mhii()] \
             if hasattr(db._get_artwork_manager(), "_iter_mhii") else None
         nxt = db._get_artwork_manager()._next_image_id
-        self.assertGreaterEqual(nxt, 102)                        # used 100 and 101
+        self.assertGreaterEqual(nxt, 101)                        # used 100 ...
+        self.assertEqual({t.mhii_link for t in db.tracks}, {100})   # ... shared (one album)
         if ids is not None:
             self.assertTrue(all(i >= 100 for i in ids))
 

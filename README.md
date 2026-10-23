@@ -257,6 +257,12 @@ untested on hardware or not built.
   and a progress screen for a multi-day rebuild of a very large iPod.
 - **Cosmetic:** on the iPod nano, album art can replace the icons of the
   built-in games.
+- **Restart the iPod once after its album art is converted.** The dock
+  stores one cover per album rather than one per song (about 12 times
+  less space). The first sync after updating converts the art already on
+  the iPod; straight after it, the iPod showed no album art and froze when
+  a song played, until it was restarted (hold **Menu** and the **center
+  button** until the Apple logo appears). After that everything worked.
 
 ## Legal notes
 
