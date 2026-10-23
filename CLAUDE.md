@@ -342,6 +342,12 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   `dock_sync` reads their plays read-only (the Pi kernel has `hfsplus`),
   then fails with "Mac-formatted iPod (see guide)": a restore to FAT32
   would wipe unread plays.
+- **No plan = no music changes (2026-10-23):** a fresh install has no
+  `manifest.json` until its first prepare run *finishes* (hours for a big
+  library). A sync before that used to apply `{}` as the plan and removed
+  1238 of 1240 tracks from the Nano (plays were sent first; nothing lost on
+  the server). Now `sync_player` only reads and sends plays when the manifest
+  has no `tracks` key, and `apply_plan` raises on one.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

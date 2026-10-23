@@ -509,7 +509,9 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
     tracks) and must be saved even if the plan changes nothing.
     Returns a summary dict.
     """
-    wanted = {t["id"]: t for t in manifest.get("tracks", [])}
+    if "tracks" not in manifest:
+        raise ValueError("No staged plan: refusing to apply it (it would remove every track)")
+    wanted = {t["id"]: t for t in manifest["tracks"]}
     saved = False
     on_player = {t.dbid: t for t in db.tracks}
     present = {}
@@ -715,6 +717,12 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
         step(3, f"Sending {record.unsent_count()[0]} plays")
         summary["plays_sent"] = dock_plays.upload_plays(client, record)[0]
     summary["plays_queued"] = record.unsent_count()[0]
+
+    # No staged plan (fresh install: the first prepare run hasn't finished)
+    # is not an empty plan: applying {} would remove every track. Plays only.
+    if write and "tracks" not in (manifest or {}):
+        log_info("No staged plan yet: plays only, the player's music is left as is")
+        write = False
 
     if write:
         step(4, "Backing up player")

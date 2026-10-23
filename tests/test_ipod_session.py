@@ -90,6 +90,21 @@ class SessionTests(unittest.TestCase):
         again = self.session(write=True, server=server)
         self.assertEqual((again["added"], again["plays_new"]), (0, 0))
 
+    def test_no_staged_plan_sends_plays_but_removes_nothing(self):
+        # Fresh dock: the first prepare run hasn't written a plan yet
+        # (2026-10-23: an empty plan removed 1238 tracks from the Nano).
+        self.session(write=True, server=FakeScrobbler())      # BLOOM adopted, ML added
+        fx.write_play_counts(self.mount, [(1, MAC_TIME + 60), (0, 0)])
+        before = tree_digest(self.mount)
+        self.manifest = {}
+        server = FakeScrobbler()
+        summary = self.session(write=True, server=server)
+        self.assertEqual((summary["removed"], summary["wrote"]), (0, False))
+        self.assertEqual(summary["plays_sent"], 1)
+        self.assertEqual(tree_digest(self.mount), before)    # player untouched
+        with self.assertRaises(ValueError):
+            h.apply_plan(None, self.rec, G, self.mount, {}, self.cache)
+
     def test_server_down_keeps_plays_and_still_syncs_music(self):
         server = FakeScrobbler(down_after=0)
         summary = self.session(write=True, server=server)
