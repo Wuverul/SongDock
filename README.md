@@ -1,7 +1,7 @@
 # SongDock
 
-A Raspberry Pi dock that keeps a classic stock firmware iPod in sync with a
-[Navidrome](https://www.navidrome.org/) music server. Plug the iPod in, and
+A Raspberry Pi dock that keeps a stock-firmware iPod or a Rockbox player in
+sync with a [Navidrome](https://www.navidrome.org/) music server. Plug the iPod in, and
 the dock:
 
 1. **Logs what you played** on the iPod to your Navidrome account (play counts
