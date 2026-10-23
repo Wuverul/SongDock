@@ -27,7 +27,10 @@ removal_grace_days = 7             # 0-30: keep tracks that left every list cach
                                    # sooner if the SD card drops below 25% free
 
 [device]
-type = "stock_ipod"                # stock Apple firmware (the only kind supported)
+type = "stock_ipod"                # stock_ipod: music converted for stock iPods (MP3/ALAC);
+                                   # Rockbox players get the same files. "rockbox": copy
+                                   # music as-is, FLAC included, for a Rockbox-only dock
+                                   # (stock iPods are then refused).
 convert_to = "mp3"                 # stock iPod can't play FLAC. mp3 = LAME V0 (recommended);
                                    # alac = lossless, ~3x larger; aac = ffmpeg's encoder (artifacts)
 mp3_quality = "v0"                 # v0 = variable, best (~260k avg); or constant "320k", "256k".

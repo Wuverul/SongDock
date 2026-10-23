@@ -40,9 +40,17 @@ music in the background, so syncs are quick.
   **Rockbox** players are supported too (untested on real hardware so
   far): the dock spots Rockbox by its `.rockbox` folder and syncs plain
   files into a `MediaDock` folder, `.m3u8` playlists and `cover.jpg` album
-  art, and reads plays from Rockbox's play log. They get the same MP3 files
-  as stock iPods, so one dock can serve both. See "Rockbox players" in
+  art, and reads plays from Rockbox's play log. See "Rockbox players" in
   INSTALL.md.
+
+  **Music format for Rockbox:** by default a Rockbox player gets the same
+  files as stock iPods (FLAC converted to MP3, or ALAC if you choose it), so
+  one dock serves both kinds. If the dock only serves Rockbox players, you
+  can turn stock-iPod compatibility off (`type = "rockbox"` in the
+  settings): music is then copied **as it is on the server, FLAC
+  included**, lossless and with no conversion. FLAC takes about 2-3 times
+  the space on the dock's SD card and the player, and a dock set this way
+  refuses stock iPods, which can't play FLAC.
 
 - **The iPod must be formatted FAT32 ("Windows format").** An iPod restored
   with Finder/iTunes on a **Mac** is usually formatted for Mac (HFS+), which the

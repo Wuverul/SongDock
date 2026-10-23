@@ -216,9 +216,20 @@ by its `.rockbox` folder and then:
 - for browsing by artist/album, turn on **Settings > General Settings >
   Database > Auto Update** (or use **Update Now** after a sync).
 
-Rockbox gets the same MP3 files as stock iPods, so one dock serves both. A
-dock set to `type = "rockbox"` keeps FLAC instead (lossless, larger), and
-then refuses stock iPods, which can't play FLAC.
+**Music format:** by default Rockbox gets the same files as stock iPods (MP3,
+or ALAC with `convert_to = "alac"`), so one dock serves both. To send FLAC
+as-is instead (lossless, no conversion, about 2-3 times larger), turn off
+stock-iPod compatibility in the settings:
+
+```toml
+[device]
+type = "rockbox"     # copy music as it is on the server (FLAC included)
+```
+
+The cache is then re-filled in the new format at the next check, and songs
+already on the player are swapped for their FLAC versions at the next syncs.
+A dock set this way refuses stock iPods (they can't play FLAC); set it back
+to `"stock_ipod"` to serve them again.
 
 ## Troubleshooting
 
