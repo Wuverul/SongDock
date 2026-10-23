@@ -561,12 +561,28 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 - **Throughput:** Wi-Fi ~2-4 MB/s (estimate; 200 GB ~15-30 h); **USB to the
   Nano measured ~1.3-1.5 MB/s effective** (first full sync; the Nano reports
   its write cache disabled, and the vfat mount uses `flush` - try without
-  `flush` on a later sync and compare), so 200 GB of copying ~40+ h; FLAC->MP3 conversion is the bottleneck
-  (~song length per track on the Zero W, so 200 GB of FLAC ~20 days; run
-  conversions in parallel on a Zero 2 W, ~2 days). **Measured on the Zero 2
-  W (2026-10-23):** ~6 tracks/min with 3 workers at ~50 C (heatsink, no
-  throttling); downloads ~2.5 MB/s on a good Wi-Fi network. Plays recorded since the
-  last sync are lost in a wipe; server-purged discovery tracks can't return.
+  `flush` on a later sync and compare), so 200 GB of copying ~40+ h.
+  FLAC->MP3 conversion was the bottleneck on the Zero W (~song length per
+  track, ~60 s per audio minute: 200 GB of FLAC ~20 days).
+  **Measured on the Zero 2 W (2026-10-23, 903-track run, 3 workers):**
+  - Per ffmpeg: **9.6 s per minute of audio** (6.2x real time).
+  - Whole job (3 workers, downloads/covers overlapping): **3.7 s per minute
+    of audio**, i.e. 16 audio min per wall min = 87% of 3x ideal; ~16x the
+    Zero W. Short tracks make track counts misleading: measure audio
+    minutes (start = journal `Converting <label>`, end = cache file mtime,
+    length from the MP3; script kept on the Pi as `~/convrate.py`).
+  - Rate fell ~18% (17.4 -> 14.2 audio min/min) on large FLACs (Pendulum,
+    40-60 MB each: slower downloads and decodes).
+  - 200 GB of FLAC (~35,000 audio min) ~1.5 days of conversion, so USB
+    copying to the iPod (~40 h) is now the bottleneck.
+  - ~50 C with a heatsink, never throttled; downloads ~2.5 MB/s on a good
+    Wi-Fi network.
+  - Memory with `limit_malloc_arenas()`: the job (RSS + swap) held ~75-100
+    MB for 300+ tracks (vs ~230 MB RSS and OOM at 116 before), then rose to
+    ~120-150 MB during the large FLACs and stayed there - watch on longer
+    runs; profile with `tracemalloc` if it passes ~200 MB.
+  Plays recorded since the last sync are lost in a wipe; server-purged
+  discovery tracks can't return.
 - **Optional accelerators (not required):** "Mac mode" - run the dock's own
   sync engine on the Mac against the mounted player and hand the resulting
   record to the Pi (never Finder); or a larger microSD card so the cache can
