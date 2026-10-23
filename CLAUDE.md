@@ -654,8 +654,14 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
     length from the MP3; script kept on the Pi as `~/convrate.py`).
   - Rate fell ~18% (17.4 -> 14.2 audio min/min) on large FLACs (Pendulum,
     40-60 MB each: slower downloads and decodes).
-  - 200 GB of FLAC (~35,000 audio min) ~1.5 days of conversion, so USB
-    copying to the iPod (~40 h) is now the bottleneck.
+  - 200 GB of FLAC (~35,000 audio min) ~1.5 days of conversion.
+  - **USB copy to the Nano on the Zero 2 W (2026-10-23, auto re-sync after
+    the run):** 902 tracks / 5.41 GB in 41 min (11:31-12:12) = **2.75
+    s/track, 2.2 MB/s** (USB measured 1.7 MB/s instantaneous) vs ~11
+    s/track, 1.3-1.5 MB/s on the Zero W: most of the Zero W's time was CPU
+    (pygpod DB + artwork), not USB. So on the Zero 2 W conversion is the
+    bottleneck again (200 GB: ~26 h copying vs ~36 h conversion), and with
+    concurrent batches copying adds almost nothing.
   - ~50 C with a heatsink, never throttled; downloads ~2.5 MB/s on a good
     Wi-Fi network.
   - Memory with `limit_malloc_arenas()`: the job (RSS + swap) held ~75-100
