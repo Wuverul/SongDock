@@ -626,9 +626,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   - ~50 C with a heatsink, never throttled; downloads ~2.5 MB/s on a good
     Wi-Fi network.
   - Memory with `limit_malloc_arenas()`: the job (RSS + swap) held ~75-100
-    MB for 300+ tracks (vs ~230 MB RSS and OOM at 116 before), then rose to
-    ~120-150 MB during the large FLACs and stayed there - watch on longer
-    runs; profile with `tracemalloc` if it passes ~200 MB.
+    MB for 300+ tracks (vs ~230 MB RSS and OOM at 116 before), rose to
+    ~120-150 MB during the large FLACs (~track 330) and then **stayed flat
+    at ~135-150 MB to the end** (903 tracks, 2 h 52 min, finished 11:30;
+    1292/1292 ready, 0 skipped, no OOM). Confirmed fixed for a full run;
+    profile with `tracemalloc` if a run ever passes ~200 MB.
   Plays recorded since the last sync are lost in a wipe; server-purged
   discovery tracks can't return.
 - **Optional accelerators (not required):** "Mac mode" - run the dock's own
