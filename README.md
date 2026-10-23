@@ -1,4 +1,4 @@
-# Music Dock
+# SongDock
 
 A Raspberry Pi dock that keeps a classic stock firmware iPod in sync with a
 [Navidrome](https://www.navidrome.org/) music server. Plug the iPod in, and
@@ -204,7 +204,7 @@ untested on hardware or not built.
 
 ## Legal notes
 
-- **Not affiliated with Apple.** Music Dock is an independent project, not
+- **Not affiliated with Apple.** SongDock is an independent project, not
   affiliated with, endorsed by, or sponsored by Apple Inc. iPod, iTunes,
   Finder and Apple Music are trademarks of Apple Inc., used here only to say
   which devices and software the dock works with. Rockbox and Navidrome are
@@ -215,9 +215,16 @@ untested on hardware or not built.
   can't play or copy protected purchases. Putting your library on other
   people's iPods may not be allowed where you live; that's up to you.
 
+## Related projects
+
+- [iOpenPod](https://github.com/TheRealSavi/iOpenPod): an open-source
+  desktop app for managing an iPod without iTunes, syncing music from a
+  folder on your computer. SongDock instead keeps an iPod in step with a
+  Navidrome server, hands-off, from a dock.
+
 ## License
 
-Music Dock is released under the [MIT License](LICENSE): free to use,
+SongDock is released under the [MIT License](LICENSE): free to use,
 change and share, as long as the copyright notice stays with it. It comes
 with no warranty. The libraries it installs keep their own licenses (below).
 

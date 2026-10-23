@@ -4,7 +4,7 @@
 # install.sh fills in @APP_DIR@ and @HOME@.
 
 [Unit]
-Description=Music Dock screen back to ready (%i)
+Description=SongDock screen back to ready (%i)
 
 [Service]
 Type=oneshot

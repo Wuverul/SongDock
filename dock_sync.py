@@ -54,7 +54,7 @@ REST_AFTER_MIN = 10       # SAFE -> DOCK READY if the player stays docked
 # friend's iPod docked by mistake isn't filled with this library or credited
 # to this account. Players the dock already syncs get it created for them.
 MARKER = "MediaDock.txt"
-MARKER_TEXT = ("This iPod is synced by Music Dock "
+MARKER_TEXT = ("This iPod is synced by SongDock "
                "(plays, tracks and playlists).\n"
                "Delete this file to stop syncing it.\n")
 
@@ -650,7 +650,7 @@ def build_work(args, device):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Music dock sync job")
+    p = argparse.ArgumentParser(description="SongDock sync job")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--device", help="block device, e.g. /dev/sda1 "
                      "(default: detect the one USB filesystem)")

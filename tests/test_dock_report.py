@@ -32,9 +32,9 @@ class JournalParseTests(unittest.TestCase):
 class PrepareSummaryTests(unittest.TestCase):
     def test_counts_checks_and_changes(self):
         s = dock_report.summarize_prepare([
-            ev(0, "Starting musicdock-prepare.service - Music Dock prepare"),
+            ev(0, "Starting musicdock-prepare.service - SongDock prepare"),
             ev(5, "INFO Done: 10/10 ready (2 added, 1 removed, 0 skipped)"),
-            ev(300, "Starting musicdock-prepare.service - Music Dock prepare"),
+            ev(300, "Starting musicdock-prepare.service - SongDock prepare"),
             ev(305, "INFO Done: 10/10 ready (0 added, 3 removed, 0 skipped)"),
         ])
         self.assertEqual((s["checks"], s["added"], s["removed"]), (2, 2, 4))
@@ -90,11 +90,11 @@ class SyncSummaryTests(unittest.TestCase):
     def test_session_with_summary_and_outcome(self):
         sessions = dock_report.summarize_syncs([
             ev(-5, "INFO Screen: SAFE (left over from before the window)"),
-            ev(0, "Starting musicdock-sync@sda.service - Music Dock sync"),
+            ev(0, "Starting musicdock-sync@sda.service - SongDock sync"),
             ev(60, "INFO Session summary: {'plays_new': 3, 'plays_sent': 3, 'added': 5, "
                    "'removed': 1, 'wrote': True, 'wifi': None}"),
             ev(61, "INFO Screen: SAFE --only-over x"),
-            ev(500, "Starting musicdock-sync@sda.service - Music Dock sync"),
+            ev(500, "Starting musicdock-sync@sda.service - SongDock sync"),
             ev(530, "INFO Screen: FAILED --detail Unknown iPod model"),
         ])
         self.assertEqual(len(sessions), 2)

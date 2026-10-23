@@ -5,7 +5,7 @@
 #   journalctl -u 'musicdock-sync@*' -e
 
 [Unit]
-Description=Music Dock sync (/dev/%I)
+Description=SongDock sync (/dev/%I)
 # If the player is docked at power-on, let the boot screen draw first.
 After=musicdock-boot.service
 

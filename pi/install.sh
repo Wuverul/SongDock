@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Set up (or update) a Music Dock on this Pi. Run from the unpacked folder:
+# Set up (or update) a SongDock on this Pi. Run from the unpacked folder:
 #   sudo ./pi/install.sh           install / update
 #   sudo ./pi/install.sh --check   only report what would change
 # Safe to run again: every step checks first and only acts if needed.
@@ -33,7 +33,7 @@ if [ "$LOGIN_USER" = "root" ]; then
   exit 1
 fi
 if ! command -v nmcli >/dev/null || ! systemctl is-active --quiet NetworkManager; then
-  echo "NetworkManager isn't running. Music Dock needs Raspberry Pi OS Bookworm" >&2
+  echo "NetworkManager isn't running. SongDock needs Raspberry Pi OS Bookworm" >&2
   echo "or newer (which uses NetworkManager for Wi-Fi)." >&2
   exit 1
 fi
@@ -177,7 +177,7 @@ else
   # Status report command, also usable over SSH: ssh user@dock musicdock-status
   cat > /usr/local/bin/musicdock-status <<EOF
 #!/bin/sh
-# Music Dock status report (read-only). Installed by $APP_DIR/pi/install.sh.
+# SongDock status report (read-only). Installed by $APP_DIR/pi/install.sh.
 MUSICDOCK_CONFIG="\${MUSICDOCK_CONFIG:-$USER_HOME/.config/musicdock/config.toml}" \\
   exec "$VENV/bin/python" "$APP_DIR/dock_report.py" "\$@"
 EOF
@@ -185,7 +185,7 @@ EOF
   # List the iPods the dock knows; forget one you've stopped using.
   cat > /usr/local/bin/musicdock-players <<EOF
 #!/bin/sh
-# Music Dock players (list / forget). Installed by $APP_DIR/pi/install.sh.
+# SongDock players (list / forget). Installed by $APP_DIR/pi/install.sh.
 exec "$VENV/bin/python" "$APP_DIR/dock_players.py" "\$@"
 EOF
   chmod 755 /usr/local/bin/musicdock-players
@@ -201,7 +201,7 @@ echo
 if [ $CHECK = 1 ]; then
   echo "Check only: nothing was changed."
 else
-  echo "Music Dock is installed in $APP_DIR."
+  echo "SongDock is installed in $APP_DIR."
 fi
 if [ ${#TODO[@]} -gt 0 ]; then
   echo "Next:"

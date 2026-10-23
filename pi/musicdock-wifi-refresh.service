@@ -4,7 +4,7 @@
 #   journalctl -u musicdock-wifi-refresh -e
 
 [Unit]
-Description=Music Dock Wi-Fi indicator refresh
+Description=SongDock Wi-Fi indicator refresh
 
 [Service]
 Type=oneshot

@@ -8,7 +8,7 @@
 #   systemctl list-timers musicdock-prepare   # when it runs next
 
 [Unit]
-Description=Music Dock prepare, every 5 minutes
+Description=SongDock prepare, every 5 minutes
 
 [Timer]
 OnBootSec=1min

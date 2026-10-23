@@ -1,4 +1,15 @@
-# Music Dock
+# SongDock
+
+> **Name (2026-10-23):** the project is **SongDock** (formerly "Music Dock";
+> user's choice after checking SimpleSong/SimpleSync/StrumSong - taken or
+> off-message - and avoiding Apple marks like "Tunes"/"iPod"). Only the
+> display name changed. Internal names stay as they were, on purpose:
+> `MediaDock.txt` (the opt-in: renaming it would un-opt existing iPods),
+> `MediaDock README.txt`, `MediaDock/` on Rockbox, `musicdock-*` units and
+> commands, `~/musicdock`, `/var/lib/musicdock`. Two comments in
+> `pi/install.sh` (`JOURNAL_WANT`, `WIFI_WANT`) still say "Music Dock": they
+> are compared with the files already installed, and changing them would
+> rewrite those files (and ask for a reboot) on every existing dock.
 
 > The developer's own hosts, addresses and device IDs are in
 > `CLAUDE.local.md` (git-ignored, never published).

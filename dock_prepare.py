@@ -1264,7 +1264,7 @@ def limit_malloc_arenas(n=2):
 
 def main(argv=None):
     limit_malloc_arenas()
-    p = argparse.ArgumentParser(description="Music dock prepare job")
+    p = argparse.ArgumentParser(description="SongDock prepare job")
     p.add_argument("--config", help="config.toml path (default: %s)" % dock_config.DEFAULT_PATH)
     p.add_argument("--cache-dir", help="override cache_dir from the config")
     p.add_argument("--dry-run", action="store_true", help="show the plan only")

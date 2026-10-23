@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Build the package to give to someone setting up their own dock:
-#   ./make_release.sh   ->  dist/music-dock/  and  dist/music-dock-<version>.tar.gz
+#   ./make_release.sh   ->  dist/songdock/  and  dist/songdock-<version>.tar.gz
 # The version comes from the VERSION file (e.g. 0.5.0); tag it as v<version>.
 # Contains only what runs on the Pi plus the docs; refuses to build if the
 # tests fail or anything personal (servers, hosts, IDs, emails) slipped in.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-NAME="music-dock"
+NAME="songdock"
 VERSION="$(tr -d '[:space:]' < VERSION)"
 OUT="dist/$NAME"
 TARBALL="dist/$NAME-$VERSION.tar.gz"
@@ -26,7 +26,7 @@ cp pi/install.sh pi/requirements.txt pi/99-musicdock.rules pi/90-musicdock-wifi 
 cp -R vendor "$OUT/vendor"
 find "$OUT" -name '__pycache__' -prune -exec rm -rf {} + -o -name '.DS_Store' -delete
 chmod +x "$OUT/pi/install.sh" "$OUT/pi/90-musicdock-wifi"
-printf 'Music Dock %s (%s, %s)\n' "$VERSION" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+printf 'SongDock %s (%s, %s)\n' "$VERSION" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
   "$(date +%Y-%m-%d)" \
   > "$OUT/VERSION"
 

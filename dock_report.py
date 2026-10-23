@@ -399,7 +399,7 @@ def problems(facts, now=None):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Music Dock status report (read-only)")
+    p = argparse.ArgumentParser(description="SongDock status report (read-only)")
     p.add_argument("--since", default="24 hours ago",
                    help='how far back to look in the logs (default "24 hours ago")')
     args = p.parse_args(argv)
@@ -423,7 +423,7 @@ def main(argv=None):
         with open(os.path.join(HERE, "VERSION")) as f:
             version = f.read().strip()
     except OSError:
-        version = "Music Dock"
+        version = "SongDock"
     print(f"{version} - status at {time.strftime('%a %d %b %H:%M')}")
 
     facts = {}

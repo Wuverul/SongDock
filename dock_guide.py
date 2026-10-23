@@ -53,10 +53,10 @@ counted."""
         hands_off = """Don't add music with Finder, iTunes or the Apple Music app: they replace
 the iPod's music list, and the dock loses track of everything it added.
 Don't change the hidden iPod_Control folder."""
-    return f"""MUSIC DOCK - HOW TO USE AND RECONFIGURE IT FROM THIS IPOD
+    return f"""SONGDOCK - HOW TO USE AND RECONFIGURE IT FROM THIS IPOD
 ==========================================================
 
-The Music Dock keeps this iPod in step with a Navidrome music server: when
+The SongDock keeps this iPod in step with a Navidrome music server: when
 you dock it, it sends what you played to Navidrome, copies new music onto
 the iPod, removes music you took off your lists, and charges the iPod.
 The dock rewrites this file after a sync; editing it changes nothing.

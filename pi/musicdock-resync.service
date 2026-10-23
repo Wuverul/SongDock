@@ -2,7 +2,7 @@
 # musicdock-resync.path. install.sh fills in @APP_DIR@ and @HOME@.
 
 [Unit]
-Description=Music Dock: re-plug a docked iPod for a sync
+Description=SongDock: re-plug a docked iPod for a sync
 After=musicdock-boot.service
 
 [Service]

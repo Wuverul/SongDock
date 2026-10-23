@@ -4,7 +4,7 @@
 #   sudo systemctl start musicdock-prepare    # run it now
 
 [Unit]
-Description=Music Dock prepare (download and convert tracks)
+Description=SongDock prepare (download and convert tracks)
 # Not during the boot screens, and only once the network is up.
 After=musicdock-boot.service network-online.target
 Wants=network-online.target

@@ -1,4 +1,4 @@
-# Music Dock settings. The installer copies this to
+# SongDock settings. The installer copies this to
 # ~/.config/musicdock/config.toml on the Pi (readable only by you); edit that
 # copy with:  nano ~/.config/musicdock/config.toml
 # Changes take effect at the next check (within 5 minutes) or dock.

@@ -3,7 +3,7 @@
 #   journalctl -u musicdock-boot -b     # this boot's log
 
 [Unit]
-Description=Music Dock boot screen
+Description=SongDock boot screen
 # Deliberately NOT ordered after the network: STARTING UP should appear as
 # early as possible and show Wi-Fi coming up. dock_boot.py waits for it.
 

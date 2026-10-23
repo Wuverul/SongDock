@@ -1,4 +1,4 @@
-# Setting up a Music Dock
+# Setting up a SongDock
 
 About an hour of hands-on time, plus waiting for software to install and
 music to convert. You'll type a few commands into a terminal; each step shows
@@ -21,7 +21,7 @@ exactly what to type.
 - A **Navidrome** server and an account on it, reachable from the dock's Wi-Fi
   - Use either `http://` on your local network, or `https://` with a properly
     signed certificate. A self-signed certificate will be refused.
-- The Music Dock package: `music-dock-<date>.tar.gz`
+- The SongDock package: `songdock-<version>.tar.gz`
 
 ## 1. Prepare the iPod
 
@@ -70,11 +70,11 @@ exactly what to type.
 ## 4. Copy the package to the Pi
 
 On your computer, open a terminal (Mac: Terminal; Windows: PowerShell) in the
-folder holding `music-dock-<date>.tar.gz` and run (use your username, and your
+folder holding `songdock-<version>.tar.gz` and run (use your username, and your
 hostname if you picked a different one):
 
 ```sh
-scp music-dock-*.tar.gz yourname@musicdock.local:
+scp songdock-*.tar.gz yourname@musicdock.local:
 ssh yourname@musicdock.local
 ```
 
@@ -83,8 +83,8 @@ Pi password). Everything below is typed **on the Pi**:
 
 ```sh
 mkdir -p ~/musicdock
-tar -xzf music-dock-*.tar.gz -C ~/musicdock
-cd ~/musicdock/music-dock
+tar -xzf songdock-*.tar.gz -C ~/musicdock
+cd ~/musicdock/songdock
 ```
 
 ## 5. Install
@@ -299,7 +299,7 @@ journalctl -u 'musicdock-*' --since today        # everything today
 journalctl -b -1 -e                              # the end of the previous run (before the last restart)
 journalctl -u musicdock-prepare -e               # downloads and conversions
 journalctl -u 'musicdock-sync@*' -e              # docking sessions
-~/musicdock/venv/bin/python ~/musicdock/music-dock/dock_prepare.py --show-plan
+~/musicdock/venv/bin/python ~/musicdock/songdock/dock_prepare.py --show-plan
 ```
 
 ## Updating
@@ -308,8 +308,8 @@ Copy a newer package over and run the installer again. Your settings, cache
 and the record of what's on your iPod are kept:
 
 ```sh
-tar -xzf music-dock-*.tar.gz -C ~/musicdock
-cd ~/musicdock/music-dock && sudo ./pi/install.sh
+tar -xzf songdock-*.tar.gz -C ~/musicdock
+cd ~/musicdock/songdock && sudo ./pi/install.sh
 ```
 
 ## Uninstalling

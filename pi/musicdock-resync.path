@@ -3,7 +3,7 @@
 # this starts musicdock-resync.service (root) when one appears.
 
 [Unit]
-Description=Music Dock: sync a docked iPod when new music is ready
+Description=SongDock: sync a docked iPod when new music is ready
 
 [Path]
 PathExists=/var/lib/musicdock/resync.request
