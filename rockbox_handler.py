@@ -389,7 +389,7 @@ def sync_playlists(record, guid, mount, manifest):
             with open(path, encoding="utf-8", errors="replace") as f:
                 entries = [ln for ln in f.read().splitlines()
                            if ln.strip() and not ln.startswith("#")]
-            if entries and all(ln.startswith(f"/{MUSIC_DIR}/") for ln in entries):
+            if all(ln.startswith(f"/{MUSIC_DIR}/") for ln in entries):   # or empty
                 log_info(f"Adopting playlist {name!r} (it only lists the dock's music)")
             else:
                 log_info(f"Not touching the player's own playlist {name!r}")

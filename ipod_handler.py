@@ -642,6 +642,7 @@ def sync_playlists(db, record, guid, manifest):
     by_nid = {}
     for r in record.tracks(guid):
         by_nid.setdefault(r["navidrome_id"], int(r["dbid"]))
+    known = {int(r["dbid"]) for r in record.tracks(guid)}
     tracks = {t.dbid: t for t in db.tracks}
     managed = record.managed_playlists(guid)
     existing = {p.name: p for p in db.playlists if not p.is_master}
@@ -654,11 +655,13 @@ def sync_playlists(db, record, guid, manifest):
         current = existing.get(old_name) if old_name else None
         if current is None and name in existing and name not in managed.values():
             # Made by the dock but not in its record (e.g. a new dock or a
-            # lost record: tracks are re-adopted by their Navidrome ID, so
-            # are playlists holding only such tracks). Anything else is the
-            # user's: hands off.
-            mine = existing[name].tracks
-            if mine and all(navidrome_id_from(t) for t in mine):
+            # lost record): adopt a playlist that holds only the dock's
+            # tracks - known to the record, or carrying a Navidrome ID - or
+            # nothing at all (emptied, e.g. by a mass removal; stock iPods
+            # can't make named playlists themselves). A playlist with any
+            # other track is the user's: hands off.
+            if all(t.dbid in known or navidrome_id_from(t)
+                   for t in existing[name].tracks):
                 log_info(f"Adopting playlist {name!r} (all its tracks are the dock's)")
                 current = existing[name]
             else:

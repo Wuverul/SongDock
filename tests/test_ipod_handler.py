@@ -338,14 +338,29 @@ class HandlerTests(unittest.TestCase):
                if not p.is_master}
         self.assertEqual(pls, {"Road Trip": ["One", "Two"]})
 
-    def test_players_own_playlist_never_touched(self):
+    def test_emptied_playlist_of_the_same_name_is_refilled(self):
+        # E.g. after a mass removal took every track out of it (2026-10-23).
         db = self.db()
-        db.create_playlist("Favorites")                          # user-made
+        db.create_playlist("Favorites")
         db.save()
         a = self.song("n1", "One")
         self.apply(self.manifest([a], [("starred", "Favorites", ["n1"])]))
         favs = [p for p in self.db().playlists if p.name == "Favorites"]
-        self.assertEqual([len(p.tracks) for p in favs], [0])
+        self.assertEqual([[t.title for t in p.tracks] for p in favs], [["One"]])
+
+    def test_playlist_of_tracks_the_record_knows_is_adopted(self):
+        # Adopted hand-copied tracks have no Navidrome ID in their comment,
+        # but the record knows them.
+        a, b = self.song("n1", "One"), self.song("n2", "Two")
+        self.apply(self.manifest([a], [("playlist:Mix", "Mix", ["n1"])]))
+        db = self.db()
+        for t in db.tracks:
+            t.comment = ""
+        h.checked_save(db, G)
+        self.rec.set_managed_playlists(G, {})                     # forgotten by the record
+        self.apply(self.manifest([a, b], [("playlist:Mix", "Mix", ["n1", "n2"])]))
+        mixes = [p for p in self.db().playlists if p.name == "Mix"]
+        self.assertEqual([[t.title for t in p.tracks] for p in mixes], [["One", "Two"]])
 
     def test_lost_record_readopts_the_docks_playlists(self):
         # A new dock (or a lost record) re-adopts tracks by their Navidrome

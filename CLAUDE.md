@@ -456,11 +456,18 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 - **Playlists re-adopted after a lost record (2026-10-23):** after the move
   to the Zero 2 W (fresh record), tracks were re-adopted by Navidrome ID but
   the 7 dock playlists were treated as "the player's own" and never updated
-  (111 new songs missing from them). `sync_playlists` now adopts a playlist
-  whose name matches a planned one and whose tracks *all* carry a Navidrome
-  ID (Rockbox: every line is under `/MediaDock/`); anything else stays
-  hands-off. The record copy on the player can't help here: the new dock's
-  first sync had already overwritten it.
+  (111 new songs missing from them). Worse, they were nearly *empty*: the
+  morning's mass removal (1238 tracks) had emptied them, and nothing
+  refilled them since, so the Nano had no working playlists all day.
+  `sync_playlists` now adopts a playlist whose name matches a planned one
+  and whose tracks are all the dock's - known to the record by dbid, or
+  carrying a Navidrome ID (old hand-copied adoptions have no comment) - or
+  that is empty (stock iPods can't make named playlists themselves);
+  Rockbox: every line under `/MediaDock/`, or none. A playlist with any
+  other track stays hands-off. The record copy on the player couldn't help:
+  the new dock's first sync had already overwritten it. **Verified on the
+  Nano 2026-10-23:** all 7 adopted; Favorites 701, the four Chillhop mixes
+  188/184/184/164, DnB 95, Nostalgia 79 = the plan exactly.
 - **Removals only for songs that left every target:** `targeted_ids` = ready
   tracks + manifest `skipped` (targeted but not cached right now), so a failed
   download or a full cache never removes a song from the player.

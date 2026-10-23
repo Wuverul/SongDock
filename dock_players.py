@@ -34,7 +34,10 @@ def model_name(model):
     if not model:
         return "model unknown"
     try:
-        from pygpod.device.models import get_generation_name, lookup_model
+        import warnings
+        with warnings.catch_warnings():      # pygpod warns about optional pyusb
+            warnings.simplefilter("ignore")
+            from pygpod.device.models import get_generation_name, lookup_model
         gen = lookup_model(model).generation
         if gen.name != "UNKNOWN":
             return get_generation_name(gen)
