@@ -45,7 +45,11 @@ exactly what to type.
    (https://www.raspberrypi.com/software/).
 2. Choose:
    - **Device:** your Pi (e.g. Raspberry Pi Zero 2 W)
-   - **OS:** Raspberry Pi OS (other) > **Raspberry Pi OS Lite (32-bit)**
+   - **OS:** Raspberry Pi OS (other) > **Raspberry Pi OS Lite**:
+     **32-bit** on a Pi Zero W (the only kind it can run); **64-bit** on a
+     Pi Zero 2 W (what the dock is tested with there). Pick 32-bit on a
+     Zero 2 W only if you may move the card to a Zero W later (see "Which
+     Raspberry Pi" in README.md).
    - **Storage:** your SD card
 3. When asked, **edit the settings**:
    - **Hostname:** e.g. `musicdock`

@@ -19,7 +19,12 @@ player overnight. An e-ink screen shows whether it's safe to unplug.
 ## Hardware
 
 - **Raspberry Pi Zero W (first gen):** ARMv6, single core, 512MB RAM, 2.4GHz
-  Wi-Fi only. Runs **Raspberry Pi OS Lite (32-bit)**. Claude Code can't run on
+  Wi-Fi only. Runs **Raspberry Pi OS Lite (32-bit)** (the only kind ARMv6
+  runs). **The user's Pi Zero 2 W (since 2026-10-23) runs 64-bit** (Debian 13
+  trixie, arm64; 64-bit Python and ffmpeg): its glibc per-thread malloc
+  arenas (up to 64 MB each, vs 1 MB on 32-bit) caused the OOM that
+  `limit_malloc_arenas()` fixes. A 64-bit card won't boot a Zero W; a 32-bit
+  one works in both. Claude Code can't run on
   the Pi; develop on the Mac, deploy over SSH.
 - **Display:** Waveshare 2.13" e-Paper HAT **V4** (250x122), driver
   `epd2in13_V4`. Image must be rotated **270°** (confirmed on hardware). SPI is

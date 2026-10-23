@@ -62,13 +62,13 @@ music in the background, so syncs are quick.
 ## Which Raspberry Pi
 
 Both the **Pi Zero W** (first generation) and the **Pi Zero 2 W** run the
-dock, from the same install. The dock works out how many songs to convert
-at once each time it runs, so an SD card can move from one to the other
-without reinstalling. Both have 512 MB of memory and 2.4 GHz-only Wi-Fi.
+dock. Both have 512 MB of memory and 2.4 GHz-only Wi-Fi, and the dock works
+out how many songs to convert at once each time it runs.
 
-Measured on the real hardware (FLAC music converted to MP3 V0):
+Measured on the real hardware (FLAC music converted to MP3 V0), each on the
+operating system it was tested with:
 
-| | Pi Zero W | Pi Zero 2 W |
+| | Pi Zero W - 32-bit OS | Pi Zero 2 W - 64-bit OS |
 |---|---|---|
 | Processor | 1 core | 4 cores |
 | Songs converted at once | 1 | 3 (one core is left free for syncing) |
@@ -87,6 +87,20 @@ already MP3 or AAC on the server need no conversion on either.
 On the Pi Zero 2 W, preparing a very large library (200 GB of FLAC) takes
 about a day and a half; copying that much to an iPod over USB takes longer
 (~40 hours), on either Pi.
+
+**32-bit or 64-bit Raspberry Pi OS:**
+- The **Pi Zero W can only run the 32-bit** version (its processor has no
+  64-bit mode). The Pi Zero 2 W runs either; the dock is tested on it with
+  **64-bit**.
+- A **32-bit** SD card works in both Pis, so you can move it from a Zero W
+  to a Zero 2 W later without reinstalling. A **64-bit** card only starts
+  on the Zero 2 W.
+- Part of the Zero 2 W's speed may come from the 64-bit OS (the 32-bit one
+  is built for the Zero W's older processor, even on a Zero 2 W) rather
+  than from its extra cores alone; that hasn't been measured separately.
+- On 64-bit, each conversion thread can hold far more memory by default,
+  which ran a Zero 2 W out of memory before the dock learned to limit it
+  (fixed; it now stays around 75-150 MB while converting).
 
 ## What the screen means
 
