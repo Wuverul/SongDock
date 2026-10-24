@@ -140,6 +140,12 @@ about a day and a half and copies it (about a day at ~2.2 MB/s) at the same
 time, batch by batch, so the whole fill takes about a day and a half. On a
 Zero W: about 20 days of conversion, then ~40 hours of copying.
 
+**Have a Pwnagotchi you no longer use?** It's usually the same hardware:
+a Pi Zero W or Zero 2 W with a Waveshare 2.13" e-Paper HAT. Check the
+version printed on the back of the screen: SongDock supports the **V4**.
+Many Pwnagotchi builds use a V2 or V3, which need a different display
+driver and won't work as they are.
+
 **32-bit or 64-bit Raspberry Pi OS:**
 - The **Pi Zero W can only run the 32-bit** version (its processor has no
   64-bit mode). The Pi Zero 2 W runs either; the dock is tested on it with
