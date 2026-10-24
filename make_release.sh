@@ -24,6 +24,7 @@ mkdir -p "$OUT/pi"
 cp pi/install.sh pi/requirements.txt pi/99-musicdock.rules pi/90-musicdock-wifi \
    pi/*.service pi/*.timer pi/*.path "$OUT/pi/"
 cp -R vendor "$OUT/vendor"
+mkdir -p "$OUT/docs" && cp docs/*.png "$OUT/docs/"       # the README's screen images
 find "$OUT" -name '__pycache__' -prune -exec rm -rf {} + -o -name '.DS_Store' -delete
 chmod +x "$OUT/pi/install.sh" "$OUT/pi/90-musicdock-wifi"
 printf 'SongDock %s (%s, %s)\n' "$VERSION" "$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
