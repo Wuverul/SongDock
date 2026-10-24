@@ -28,7 +28,8 @@ DEFAULTS = {
              "sync_batch_size": 25},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False, "auto_resync": True},
-    "display": {"theme": "", "invert": False},     # theme "" = follow invert (older configs)
+    "display": {"theme": "", "invert": False,      # theme "" = follow invert (older configs)
+                "model": "v4"},                    # Waveshare 2.13" HAT version: v4, v3, v2
     "genres": {"unmatched": dock_genres.DEFAULT_UNMATCHED,
                "groups": dock_genres.DEFAULT_GROUPS},
 }
@@ -111,6 +112,9 @@ def load(path=None):
         raise ConfigError(f"{path}: [display] invert must be true or false")
     if cfg["display"]["theme"] not in ("", "light", "dark"):
         raise ConfigError(f'{path}: [display] theme must be "light" or "dark"')
+    if str(cfg["display"]["model"]).lower() not in ("v4", "v3", "v2"):
+        raise ConfigError(f'{path}: [display] model must be "v4", "v3" or "v2" (the '
+                          f'version printed on the back of the screen)')
     b = cfg["sync"]["sync_batch_size"]
     if not (isinstance(b, int) and not isinstance(b, bool) and 0 <= b <= 1000):
         raise ConfigError(f"{path}: sync_batch_size must be a whole number of tracks "

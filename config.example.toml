@@ -56,6 +56,9 @@ theme = "light"                    # "light" (black on white) or "dark" (white o
                                    # without power: no extra wear. (Older configs used
                                    # invert = true for dark; that still works when no
                                    # theme is set.)
+model = "v4"                       # Waveshare 2.13" e-Paper HAT version, printed on the
+                                   # back of the screen: "v4" (tested), "v3" or "v2".
+                                   # A V2 does a full refresh (brief flash) every update.
 
 [genres]
 # The iPod's Genres menu. Navidrome gives songs several genre tags, and the

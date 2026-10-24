@@ -3,6 +3,7 @@
 Run: python3 -m unittest discover -s tests -v
 """
 
+import contextlib
 import os
 import sys
 import tempfile
@@ -218,8 +219,18 @@ class FakeEPD:
         self.log.append("sleep")
 
 
+class FakeV2EPD(FakeEPD):
+    """V2's driver: init() takes the update mode."""
+    FULL_UPDATE, PART_UPDATE = 0, 1
+
+    def init(self, update):
+        self.log.append(f"init {['full', 'partial'][update]}")
+
+
 @unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
 class PartialRefreshTests(unittest.TestCase):
+    model, fake = "v4", FakeEPD
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -228,7 +239,8 @@ class PartialRefreshTests(unittest.TestCase):
         for p in (
             mock.patch.object(dock_status, "STATE_FILE", os.path.join(tmp.name, "state.json")),
             mock.patch.object(dock_status, "open_panel",
-                              lambda: FakeEPD(self.log, self.fail)),
+                              lambda: dock_status.Panel(self.model,
+                                                        self.fake(self.log, self.fail))),
             mock.patch.object(dock_status, "read_wifi", lambda: -50),
         ):
             p.start()
@@ -241,7 +253,7 @@ class PartialRefreshTests(unittest.TestCase):
         return img
 
     def steps(self):
-        return [e for e in self.log if isinstance(e, str) and e != "init"]
+        return [e for e in self.log if isinstance(e, str) and not e.startswith("init")]
 
     def test_first_draw_is_full_then_partial_from_saved_frame(self):
         dock_status.draw_on_panel(self.frame(5), full_refresh=False)
@@ -249,7 +261,7 @@ class PartialRefreshTests(unittest.TestCase):
         self.log.clear()
         dock_status.draw_on_panel(self.frame(50), full_refresh=False)
         self.assertEqual(self.steps(), ["cmd 0x26", "partial", "sleep"])
-        old = dock_status.panel_buffer(FakeEPD([]), self.frame(5))
+        old = dock_status.panel_buffer(dock_status.Panel("v4", FakeEPD([])), self.frame(5))
         self.assertIn(("data", bytes(old)), self.log)          # 0x26 = what's shown
 
     def test_full_refresh_when_asked(self):
@@ -320,6 +332,49 @@ class PartialRefreshTests(unittest.TestCase):
         self.assertEqual(draws[1:dock_status.FULL_REFRESH_EVERY], [False] *
                          (dock_status.FULL_REFRESH_EVERY - 1))
         self.assertTrue(draws[dock_status.FULL_REFRESH_EVERY])  # anti-ghost
+
+
+class V3PanelTests(PartialRefreshTests):
+    """The V3 driver works like V4: every partial-refresh test applies."""
+    model = "v3"
+
+
+@unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+class V2PanelTests(unittest.TestCase):
+    """V2 (untested on hardware): full refreshes only, init told full mode."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.log = []
+        for p in (
+            mock.patch.object(dock_status, "STATE_FILE", os.path.join(tmp.name, "state.json")),
+            mock.patch.object(dock_status, "open_panel",
+                              lambda: dock_status.Panel("v2", FakeV2EPD(self.log))),
+        ):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_every_draw_is_a_full_refresh(self):
+        from PIL import Image
+        for _ in range(2):
+            dock_status.draw_on_panel(Image.new("1", (250, 122), 1), full_refresh=False)
+        self.assertEqual(self.log, ["init full", "full", "sleep"] * 2)
+
+    def test_boot_burst_refreshes_fully_too(self):
+        from PIL import Image
+        with mock.patch.object(dock_status, "panel_lock", contextlib.nullcontext):
+            with dock_status.PartialUpdates() as burst:
+                burst.show(Image.new("1", (250, 122), 1))
+                burst.show(Image.new("1", (250, 122), 0))
+        self.assertEqual(self.log, ["init full", "full", "full", "sleep"])
+
+    def test_model_setting(self):
+        for setting, model in (({"model": "V2"}, "v2"), ({"model": "v3"}, "v3"),
+                               ({}, "v4"), ({"model": "v9"}, "v4")):
+            with mock.patch.object(dock_status, "display_settings", return_value=setting):
+                self.assertEqual(dock_status.panel_model(), model)
+
 
 
 if __name__ == "__main__":

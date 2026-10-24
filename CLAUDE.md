@@ -38,7 +38,13 @@ player overnight. An e-ink screen shows whether it's safe to unplug.
   one works in both. Claude Code can't run on
   the Pi; develop on the Mac, deploy over SSH.
 - **Display:** Waveshare 2.13" e-Paper HAT **V4** (250x122), driver
-  `epd2in13_V4`. Image must be rotated **270°** (confirmed on hardware). SPI is
+  `epd2in13_V4`. **V3 and V2 bundled too (2026-10-24, untested on
+  hardware):** `[display] model` = v4 (default) / v3 / v2 picks the driver
+  through `dock_status.Panel`. V3 works like V4 (same partial-update scheme:
+  old-image RAM 0x26 written by us, then `displayPartial`). V2's `init()`
+  takes FULL_UPDATE/PART_UPDATE and its `displayPartial` writes 0x26 itself,
+  so V2 gets full refreshes only (`partial_ok` False) until tested on a real
+  panel. All three need only the bundled `epdconfig.py` functions. Image must be rotated **270°** (confirmed on hardware). SPI is
   enabled.
 - **Network:** the Pi has a fixed IP. It needs SSH from the development machine and a route to the Navidrome server.
 - **Player now:** iPod Nano 4th gen, **stock firmware** (Rockbox doesn't

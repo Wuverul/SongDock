@@ -141,10 +141,11 @@ time, batch by batch, so the whole fill takes about a day and a half. On a
 Zero W: about 20 days of conversion, then ~40 hours of copying.
 
 **Have a Pwnagotchi you no longer use?** It's usually the same hardware:
-a Pi Zero W or Zero 2 W with a Waveshare 2.13" e-Paper HAT. Check the
-version printed on the back of the screen: SongDock supports the **V4**.
-Many Pwnagotchi builds use a V2 or V3, which need a different display
-driver and won't work as they are.
+a Pi Zero W or Zero 2 W with a Waveshare 2.13" e-Paper HAT, so it can
+become a SongDock. Check the version printed on the back of the screen:
+**V4** is the tested one; **V3** and **V2** work too (set `[display] model`;
+untested on real screens so far), and a V2 does a full refresh - a brief
+flash - on every update.
 
 **32-bit or 64-bit Raspberry Pi OS:**
 - The **Pi Zero W can only run the 32-bit** version (its processor has no
@@ -257,7 +258,8 @@ untested on hardware or not built.
   `wifi.txt` or `DockSetup.txt` (Wi-Fi, server, what syncs). Fine at home;
   think about it before lending a dock. Opt-in iPods are the ones with
   `MediaDock.txt`.
-- **Hardware is specific:** the Waveshare 2.13" e-Paper HAT V4 screen,
+- **Hardware is specific:** the Waveshare 2.13" e-Paper HAT (V4 tested;
+  V3 and V2 supported but untested on real screens),
   2.4 GHz Wi-Fi only (both Pi Zero models), and FAT32-formatted iPods.
 - **Not built yet:** marking songs to keep from the iPod (a "keep" list),
   and a progress screen for a multi-day rebuild of a very large iPod.

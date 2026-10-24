@@ -482,10 +482,62 @@ def dark_mode():
 
 
 # --------------------------------------------------------------- display ----
+# Waveshare's 2.13" e-Paper HAT comes in versions with different controllers
+# ([display] model; the version is printed on the back of the screen). V4 is
+# the tested one. V3 works the same way as V4. V2 sets partial mode in init()
+# and handles the panel's previous-image RAM itself; untested on hardware,
+# so it gets full refreshes only (a flash per update, always correct).
+PANEL_DRIVERS = {"v4": "epd2in13_V4", "v3": "epd2in13_V3", "v2": "epd2in13_V2"}
+
+
+def panel_model():
+    model = str(display_settings().get("model", "v4")).strip().lower()
+    return model if model in PANEL_DRIVERS else "v4"
+
+
+class Panel:
+    """One interface over the V2/V3/V4 drivers (only what SongDock uses)."""
+
+    def __init__(self, model=None, epd=None):
+        self.model = model or panel_model()
+        if epd is None:                       # the real driver (tests pass a fake)
+            import importlib
+            sys.path.insert(0, EPD_LIB)
+            epd = importlib.import_module(
+                f"waveshare_epd.{PANEL_DRIVERS[self.model]}").EPD()
+        self.epd = epd
+        self.partial_ok = self.model != "v2"
+
+    def getbuffer(self, img):
+        return self.epd.getbuffer(img)
+
+    def init(self):
+        if self.model == "v2":
+            self.epd.init(self.epd.FULL_UPDATE)
+        else:
+            self.epd.init()
+
+    def display(self, buf):
+        self.epd.display(buf)
+
+    def display_base(self, buf):
+        """A full refresh that partial updates then build on."""
+        self.epd.displayPartBaseImage(buf)
+
+    def display_partial(self, buf, previous=None):
+        """Only the changed pixels. `previous`: what the panel shows now, put
+        into its old-image RAM (0x26) first when this process didn't draw it."""
+        if previous is not None:
+            self.epd.send_command(0x26)
+            self.epd.send_data2(previous)
+        self.epd.displayPartial(buf)
+
+    def sleep(self):
+        self.epd.sleep()
+
+
 def open_panel():
-    sys.path.insert(0, EPD_LIB)
-    from waveshare_epd import epd2in13_V4  # noqa: E402
-    return epd2in13_V4.EPD()
+    return Panel()
 
 
 def panel_buffer(epd, img):
@@ -526,10 +578,12 @@ class PartialUpdates:
             return
         buf = panel_buffer(self.epd, img)
         forget_frame()
-        if self.frames == 1:
-            self.epd.displayPartBaseImage(buf)
+        if not self.epd.partial_ok:
+            self.epd.display(buf)               # V2: full refresh every frame
+        elif self.frames == 1:
+            self.epd.display_base(buf)
         else:
-            self.epd.displayPartial(buf)
+            self.epd.display_partial(buf)
         save_frame(img)
 
     def __exit__(self, *exc):
@@ -588,16 +642,14 @@ def draw_on_panel(img, full_refresh):
     image (0x24); deep sleep doesn't keep a trustworthy copy across
     processes, so the saved frame is written into 0x26 first.
     """
-    previous = None if full_refresh else load_frame(img.size)
     epd = open_panel()
+    previous = None if full_refresh or not epd.partial_ok else load_frame(img.size)
     buf = panel_buffer(epd, img)
     forget_frame()                     # unknown if the draw fails midway
     try:
         epd.init()
         if previous is not None:
-            epd.send_command(0x26)
-            epd.send_data2(panel_buffer(epd, previous))
-            epd.displayPartial(buf)
+            epd.display_partial(buf, panel_buffer(epd, previous))
         else:
             epd.display(buf)
     finally:
