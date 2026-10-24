@@ -4,7 +4,10 @@ the same time (concurrent batches), for the PREPARE & SYNC screen.
 
 Two small JSON files, one per writer, so neither overwrites the other:
   prepare-progress.json   the prepare job: this run's id, tracks started /
-                          total, batches handed over, and its pid
+                          total, tracks that must reach the player (also
+                          songs reused from the cache), batches handed
+                          over, its pid, and whether it's final (conversion
+                          over, its last sync asked for)
   batch-sync.json         the sync: how many of that run's tracks have been
                           copied so far, over how many syncs
 They live in /run/musicdock (RAM: no SD card wear, gone after a reboot), or

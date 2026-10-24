@@ -8,7 +8,7 @@ and the prepare job (login user).
 Tables:
   players          one row per player, keyed by FireWire GUID (= USB serial):
                    model number (to rewrite SysInfo after a reset), its name,
-                   last sync,
+                   its kind ("stock" / "rockbox"), last sync,
                    and when it was forgotten (retired: it no longer holds
                    songs in the cache; docking it again brings it back).
   tracks           what the dock put on each player: GUID + dbid (the iPod's

@@ -2,9 +2,17 @@
 """
 dock_sync.py - sync job: runs when a player docks.
 
-Phase 2 scope: find the USB storage device, show SYNCING, mount it, list its
-contents, unmount cleanly, show SAFE. Later phases put the real work (play
-upload, keep list, track copy) between mount and unmount.
+Started by the udev rule (musicdock-sync@<device>), or by musicdock-resync
+for an iPod left docked when new music is ready. It identifies the player
+(USB serial = FireWire GUID), mounts it read-only, checks it opted in
+(MediaDock.txt), makes it writable only in write mode ([device] write =
+true), and hands it to ipod_handler (stock firmware) or rockbox_handler
+(a .rockbox folder): plays read, queued and sent to Navidrome, music added
+and removed to match the prepare job's plan, playlists rebuilt. Then it
+handles wifi.txt and DockSetup.txt, rewrites MediaDock.txt and the iPod's
+README, unmounts and ejects, and shows SAFE TO REMOVE (or FAILED). During
+concurrent batches it shows PREPARE & SYNC instead, and asks for the next
+sync itself when more music was prepared while it copied.
 
 Usage:
   sudo dock_sync.py                         # use the one USB filesystem plugged in
@@ -17,11 +25,13 @@ With --fake-device nothing is mounted, and screens are saved as numbered PNGs
 in --preview-dir (default ./previews) instead of drawn on the panel.
 
 Safety rules (from CLAUDE.md):
-  * SYNCING is drawn before mounting. If it can't be drawn, we don't mount.
+  * SYNCING (or PREPARE & SYNC) is drawn before mounting. If it can't be
+    drawn, we don't mount.
+  * Every player is mounted read-only first, and made writable only after
+    the MediaDock.txt check, in write mode.
   * Once mounted, we always try to unmount, even if a step failed.
   * SAFE and FAILED both say "safe to remove", so they're only drawn after the
     unmount is confirmed. If unmount fails, SYNCING stays up with a warning.
-  * Phase 2 mounts read-only: nothing on the player can change yet.
 """
 
 import argparse
@@ -349,7 +359,7 @@ def run_sync(device, show, work=None, total=None):
 
     work(device, step) does the player-specific part between mount and
     unmount (e.g. ipod_handler.sync_player) and returns a summary dict;
-    without it the player is just listed (the Phase 2 check).
+    without it the player is just listed (--list-only: a hardware check).
     Returns True if the player was synced and is safe to remove.
     """
     total = total or (IPOD_STEPS if work else TOTAL_STEPS)
@@ -746,7 +756,7 @@ def main(argv=None):
                         "instead of saving PNGs (on the Pi)")
     p.add_argument("--mount-point", default=MOUNT_POINT)
     p.add_argument("--list-only", action="store_true",
-                   help="just mount, list and unmount (the Phase 2 check)")
+                   help="just mount, list and unmount (checks USB, mounting and the screen)")
     p.add_argument("--write", action="store_true",
                    help="full sync even if the config says write = false "
                         "(e.g. to test against a --fake-device copy)")

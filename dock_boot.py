@@ -5,7 +5,7 @@ dock_boot.py - the screens shown while the Pi powers on.
 musicdock-boot.service runs this once per boot, as early as it can (about a
 minute after power-on on a Pi Zero; Wi-Fi often takes another 2 minutes).
 The sync service is ordered after it, so a player docked at power-on isn't
-mounted until the network is up (Phase 3's sync needs the server anyway).
+mounted until the network is up (a sync sends plays to the server).
 
 1. STARTING UP: drawn right away, then updated in place about every TICK
    seconds (partial refresh, no flash) with Wi-Fi/IP, signal strength, the
@@ -14,7 +14,7 @@ mounted until the network is up (Phase 3's sync needs the server anyway).
    battery; until it reaches a time server its clock shows roughly when it
    last shut down). Then a full refresh to the final screen:
      * normal boot: DOCK READY, "Powered on <time>"
-     * last screen was SYNCING: a sync was cut off by a power loss or reboot.
+     * last screen was SYNCING or PREPARE & SYNC: a sync was cut off by a power loss or reboot.
        After a restart nothing is mounted, and play data is only cleared once
        the server confirms it, so SYNCING is no longer true. Show FAILED
        ("Sync interrupted by restart") rather than hide what happened. If the

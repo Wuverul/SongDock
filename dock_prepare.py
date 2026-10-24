@@ -7,15 +7,19 @@ Never touches the player. Steps:
   1. Ask Navidrome for the target tracks (config `targets`): "starred"
      (starred songs plus every track of a starred album) and/or
      "playlist:<name>". A song in several targets is stored once.
-  2. Remove cached tracks that are no longer targeted.
-  3. Download each missing track, convert it if the player needs that, and
-     move it into the cache:
+  2. Retire cached tracks that are no longer targeted (kept
+     removal_grace_days in case they're re-added; retired.json).
+  3. Download each missing track, convert it if the player needs that (in
+     parallel, one worker per spare core), and move it into the cache:
        stock_ipod: MP3/AAC/ALAC kept as-is (no lossy-to-lossy re-encode);
                    FLAC and anything else -> convert_to (default MP3 V0)
        rockbox:    everything kept as-is
   4. Write manifest.json: the plan the sync job applies to the player -
      the tracks (with the targets each came from) and each playlist's
      song order, to recreate it on the player. --show-plan prints it.
+     With 2+ cores, an interim plan is handed over every sync_batch_size
+     tracks so a docked iPod syncs them while the rest convert. When the
+     cache is full, files of songs already on the player make room.
 
 Files are built in tmp/ and renamed into tracks/ only when complete, so a
 power cut never leaves a half-written track that looks ready.
@@ -24,9 +28,11 @@ Cache layout (cache_dir in config.toml):
   tracks/<id>.<ext>   ready for the player
   tmp/                partial downloads/conversions (cleared every run)
   manifest.json       the sync queue
+  retired.json        tracks kept for the grace period after leaving the targets
   .lock               one prepare run at a time
 
-Screens: PREPARING while working, then IDLE ("Next sync: N/M tracks ready").
+Screens: PREPARING while working (PREPARE & SYNC while a batch syncs), then
+IDLE ("Next sync: N/M tracks ready").
 Only drawn over IDLE/PREPARING: never over SYNCING, SAFE, FAILED, or the boot
 screens, which carry information the user still needs.
 

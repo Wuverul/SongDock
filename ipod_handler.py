@@ -1,7 +1,14 @@
 """
 ipod_handler.py - the stock-firmware iPod handler (pygpod; needs the venv).
 
-This file grows through Phase 4. So far: reading play data safely.
+One sync session (sync_player): snapshot the play data and queue it, send
+it, then - in write mode - make sure SysInfo is complete, back up the
+database, reconcile the record with the iPod, and apply the prepare job's
+plan: removals, additions in batches of 25 (the database saved after each),
+names and genres, album art, playlists. Also here: the iPod's browse-list
+order, one album-art image per album (Classic / nano 3G-4G), a memory-safe
+album-art compaction that a failed sync or crash can't leave half-done,
+and the copy of the record kept on the iPod.
 
 Play data, and why the order of operations matters:
   * The iPod logs plays in iPod_Control/iTunes/"Play Counts" (newer models:

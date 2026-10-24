@@ -1,7 +1,8 @@
 # SongDock settings. The installer copies this to
 # ~/.config/musicdock/config.toml on the Pi (readable only by you); edit that
 # copy with:  nano ~/.config/musicdock/config.toml
-# Changes take effect at the next check (within 5 minutes) or dock.
+# Changes take effect at the next check (every check_interval_minutes, 5 by
+# default) or the next dock.
 
 [server]
 url = "http://192.168.1.50:4533"   # your Navidrome address, as reachable from the dock.

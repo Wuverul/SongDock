@@ -6,7 +6,7 @@ They are sent with the Subsonic `scrobble` call (submission=true, with the
 play time), in batches. A play leaves the queue only when the server has
 confirmed it (CLAUDE.md: never clear play data until the server confirms).
 
-Called by the sync job after reading a player, and by the hourly prepare job,
+Called by the sync job after reading a player, and by every prepare check,
 so plays queued while the server was down go out as soon as it's back.
 """
 

@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 """
-dock_status.py - e-ink status screen for the music player dock.
+dock_status.py - SongDock's e-ink status screens.
 
-Target: Waveshare 2.13" e-Paper HAT V4 (250x122) on a Raspberry Pi Zero W.
+Target: Waveshare 2.13" e-Paper HAT V4 (250x122) on a Raspberry Pi Zero W or
+Zero 2 W.
 
 Usage:
   dock_status.py idle [--ready 38 --total 40] [--boot] [--detail "..."]
   dock_status.py preparing --done 12 --total 40 --detail "Converting: Artist - Song"
   dock_status.py syncing --step 3 --total 6 --detail "Copying tracks 12/40"
+  dock_status.py prepsync --done 32 --total 73 --synced 25 --to-copy 87
   dock_status.py safe --added 14 --removed 9 --plays 38
   dock_status.py failed --reason "Server unreachable"
   dock_status.py starting --uptime 75 [--clock-synced]   # boot progress
   dock_status.py offline --problem wifi --ssid "Home" --uptime 300
 
-Two jobs drive the screen:
+Who draws what:
   * prepare job (scheduled, never touches the player): idle, preparing
-  * sync job (runs when the player docks):              syncing, safe, failed
+    (and keeps prepsync's conversion count current)
+  * sync job (runs when the player docks): syncing, prepsync, safe, failed,
+    notsynced, wifi / wififail, setup / setupfail
+  * boot (dock_boot.py): starting, offline; re-sync (dock_resync.py): connecting
 
 Every screen shows Wi-Fi status (signal bars + dBm, or "No Wi-Fi") in the
 bottom-right corner; the idle screen also shows the Pi's IP address. These are
@@ -29,9 +34,9 @@ Safety rules baked in:
   * Every screen shows the time, so a stale screen can't pass as current.
   * The sync script should call `syncing` BEFORE mounting anything, so a crash
     leaves "SYNCING / do not remove" on screen (the safe failure).
-  * The prepare job can never draw over SYNCING. Only the sync job (or --force)
-    can replace that screen.
-  * Progress redraws (syncing, preparing) are rate-limited to protect the
+  * The prepare job can never draw over SYNCING or PREPARE & SYNC. Only the
+    sync job (or --force) can replace those screens.
+  * Progress redraws (syncing, preparing, prepsync) are rate-limited to protect the
     panel; changes between screens always draw immediately.
 """
 

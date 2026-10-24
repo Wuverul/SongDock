@@ -11,7 +11,9 @@ iPod comes back as a disk, udev fires as for a real plug-in, and the normal
 sync runs.
 
 It only re-plugs an iPod the dock has synced before (by FireWire GUID =
-USB serial), whose disk is ejected, while no sync is running. Whether it
+USB serial), whose disk is ejected, while no sync is running (it waits up to
+SYNC_END_WAIT for one that's finishing: a sync asks for the next one as it
+ends during concurrent batches). Whether it
 opted in (MediaDock.txt) is checked by the sync itself, as always.
 """
 
