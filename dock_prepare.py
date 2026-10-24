@@ -786,7 +786,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     them. A player bigger than the cache then fills over several syncs.
     on_batch(manifest): called each time a batch of [sync] sync_batch_size
     new tracks is handed over mid-run (only with 2+ CPU cores).
-    on_progress(started, total, batches): as each track starts.
+    on_progress(started, total, batches, to_copy): as each track starts;
+    to_copy also counts re-added songs reused from the cache.
     """
     device = cfg["device"]["type"]
     fmt = cfg["device"]["convert_to"]
@@ -866,8 +867,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         if kept.keep(name, entry) and grace:
             log.info("No longer targeted, kept %d days in case it's re-added: %s - %s",
                      grace, (entry or {}).get("artist"), (entry or {}).get("title") or name)
-    for name in wanted:
+    reused = 0             # re-added songs whose cached file is reused: no conversion,
+    for name in wanted:    # but they still have to reach the iPod (PREPARE & SYNC total)
         if kept.reuse(name):
+            reused += 1
             log.info("Re-added within the grace period, reusing: %s", label(wanted[name]))
     kept.expire(grace)
     while kept.items:
@@ -969,7 +972,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                     show("preparing", "--done", str(n), "--total", str(len(missing)),
                          "--detail", f"{'Converting' if conv else 'Downloading'}: {label(t)}")
             if on_progress:
-                on_progress(n, len(missing), handed["batches"])
+                on_progress(n, len(missing), handed["batches"], len(missing) + reused)
             src = os.path.join(tmp_dir, f"src-{name}.{(t.get('suffix') or 'bin').lower()}")
             log.info("Downloading %s (%s, %.1f MB)", label(t), t.get("suffix"),
                      int(t.get("size") or 0) / 1e6)
@@ -1072,7 +1075,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # Concurrent batches (Pi with 2+ cores): every `batch` newly prepared
     # tracks, hand the plan so far to the sync (on_batch asks for a sync of a
     # docked iPod), while the remaining conversions carry on.
-    batch = int(cfg["sync"].get("sync_batch_size", 0) or 0)     # off by default
+    batch = int(cfg["sync"].get("sync_batch_size", 25) or 0)
     if batch and (cpu_count or os.cpu_count() or 1) < 2:
         batch = 0                    # one core: a sync would only slow conversion
     handed = {"added": 0, "batches": 0}
@@ -1266,6 +1269,17 @@ def has_pending(idle_args):
     return int(a.get("--pending-add", 0)) + int(a.get("--pending-remove", 0)) > 0
 
 
+def resync_coming():
+    """True if a sync of a docked iPod has been asked for and not started
+    yet (a request waiting, or musicdock-resync re-plugging the iPod)."""
+    import dock_resync
+    if os.path.exists(dock_resync.REQUEST):
+        return True
+    r = subprocess.run(["systemctl", "is-active", "musicdock-resync.service"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() in ("active", "activating")
+
+
 def sync_running():
     """True while a sync (musicdock-sync@*) is running: the iPod comes first."""
     r = subprocess.run(["systemctl", "list-units", "--type=service", "--no-legend",
@@ -1412,16 +1426,22 @@ def main(argv=None):
                 log.info("A sync is still running: this batch goes with the next one")
                 return
             # End of the run: no later batch would ask again, so wait for the
-            # running sync, then ask if the full plan still has changes.
+            # running sync, then ask if the full plan still has changes -
+            # unless that sync already asked for the next one (its follow-up).
             wait_for_syncs()
+            if resync_coming():
+                log.info("The next sync is already on its way")
+                return True
             if not has_pending(["idle"] + pending_args(manifest)):
-                return
+                return False
         try:
             import dock_resync
             dock_resync.request()
             log.info("New changes for the iPod: a docked iPod will sync now")
+            return True
         except OSError as e:
             log.warning("Couldn't ask for a sync of a docked iPod: %s", e)
+        return False
 
     # PREPARE & SYNC: while a batch sync runs, the sync draws the combined
     # screen; this keeps its "Converting n/total" current between the
@@ -1429,10 +1449,10 @@ def main(argv=None):
     import dock_progress
     run_id = int(time.time())
 
-    def on_progress(done, total, batches):
+    def on_progress(done, total, batches, to_copy=None):
         if args.dry_run or args.preview_dir:
             return
-        dock_progress.write_prepare(run_id, done, total, batches)
+        dock_progress.write_prepare(run_id, done, total, batches, to_copy)
         try:
             import dock_status
             state = dock_status.load_state()
@@ -1447,6 +1467,27 @@ def main(argv=None):
         except Exception:
             log.exception("PREPARE & SYNC redraw failed (continuing)")
 
+    idle_now = None
+
+    def release_run_screen():
+        """The run is over without a last sync to end it: put DOCK READY over
+        a PREPARE & SYNC left on screen (never over a running sync's)."""
+        if args.dry_run or args.preview_dir or not shutil.which("systemctl"):
+            return
+        try:
+            import dock_status
+            if dock_status.load_state().get("screen") == "prepsync" and not sync_running():
+                screen.show(*(idle_now or ["idle"]), "--only-over", "prepsync", "--force")
+        except Exception:
+            log.exception("Couldn't take PREPARE & SYNC down (continuing)")
+
+    # A PREPARE & SYNC from a run that ended without its last sync (e.g. the
+    # iPod was unplugged): nothing else will end it, so this run does.
+    if not dock_progress.running_prepare():
+        dock_progress.clear_run()
+        release_run_screen()
+
+    summary = None
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run,
                           on_player=on_player, on_progress=on_progress,
@@ -1462,7 +1503,9 @@ def main(argv=None):
         log.error("Prepare failed: %s", e)
         return 1
     finally:
-        dock_progress.clear_prepare()       # conversion is over: back to SYNCING
+        if summary is None:                 # failed or stopped: no run to show
+            dock_progress.clear_run()
+            release_run_screen()
 
     idle = ["idle", "--ready", str(summary["ready"]), "--total", str(summary["total"])]
     if not args.dry_run:
@@ -1482,8 +1525,20 @@ def main(argv=None):
     log.info("Done: %d/%d ready (%d added, %d removed, %d skipped)",
              summary["ready"], summary["total"], summary["added"],
              summary["removed"], len(summary["skipped"]))
+    # A run with concurrent batches stays one job on screen until its last
+    # sync ends: mark it final before asking for that sync (the sync then
+    # shows PREPARE & SYNC and finishes with SAFE TO REMOVE). Otherwise the
+    # run ends here.
+    idle_now = idle
+    batched = bool(summary.get("batches")) and dock_progress.running_prepare() is not None
+    asked = False
     if changed and not args.dry_run and not args.preview_dir and has_pending(idle):
-        ask_for_sync(read_manifest(cache_dir))
+        if batched:
+            dock_progress.mark_final()
+        asked = ask_for_sync(read_manifest(cache_dir))
+    if not (asked and batched):
+        dock_progress.clear_run()
+        release_run_screen()
     # Exit non-zero on real errors so `systemctl --failed` shows them; running
     # out of room is a limit, not an error.
     return 1 if any(s["error"] for s in summary["skipped"]) else 0

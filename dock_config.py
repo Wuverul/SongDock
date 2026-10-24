@@ -23,9 +23,9 @@ DEFAULTS = {
              "playlist_tag": "#ipod", "workers": "auto", "removal_grace_days": 7,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
-             # Concurrent batches: off by default (2026-10-23) - a batch sync
-             # beside 3 conversions ran a 512 MB Pi out of memory mid-save.
-             "sync_batch_size": 0},
+             # Concurrent batches: on (2026-10-23) after the memory fixes -
+             # verified on a Zero 2 W; single-core Pis skip it by themselves.
+             "sync_batch_size": 25},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False, "auto_resync": True},
     "display": {"theme": "", "invert": False},     # theme "" = follow invert (older configs)
@@ -114,7 +114,7 @@ def load(path=None):
     b = cfg["sync"]["sync_batch_size"]
     if not (isinstance(b, int) and not isinstance(b, bool) and 0 <= b <= 1000):
         raise ConfigError(f"{path}: sync_batch_size must be a whole number of tracks "
-                          f"from 0 to 1000 (default 0 = only when all are prepared)")
+                          f"from 0 to 1000 (default 25; 0 = only when all are prepared)")
     m = cfg["sync"]["check_interval_minutes"]
     if not (isinstance(m, int) and not isinstance(m, bool) and 1 <= m <= 1440):
         raise ConfigError(f"{path}: check_interval_minutes must be a whole number of "

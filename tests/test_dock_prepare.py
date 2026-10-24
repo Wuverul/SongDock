@@ -870,6 +870,25 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(results[1][0], 12)
 
 
+class ResyncComingTests(unittest.TestCase):
+    """The end of a run doesn't ask for a sync that's already on its way."""
+
+    def test_request_waiting_or_resync_running(self):
+        import dock_resync
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            req = os.path.join(d, "resync.request")
+            idle = mock.Mock(stdout="inactive\n")
+            with mock.patch.object(dock_resync, "REQUEST", req), \
+                    mock.patch.object(dock_prepare.subprocess, "run", return_value=idle):
+                self.assertFalse(dock_prepare.resync_coming())
+                open(req, "w").close()
+                self.assertTrue(dock_prepare.resync_coming())          # asked, not started
+                os.remove(req)
+                idle.stdout = "activating\n"
+                self.assertTrue(dock_prepare.resync_coming())          # re-plugging now
+
+
 class SyncFirstTests(unittest.TestCase):
     def test_waits_while_a_sync_runs(self):
         states = iter([True, True, False])          # sync busy for two checks
@@ -938,7 +957,7 @@ class ConfigTests(unittest.TestCase):
                                           '[display]\ntheme = "dark"\n'))
         self.assertEqual((cfg["display"]["theme"], cfg["sync"]["check_interval_minutes"]),
                          ("dark", 15))
-        self.assertEqual(cfg["sync"]["sync_batch_size"], 0)               # off by default
+        self.assertEqual(cfg["sync"]["sync_batch_size"], 25)
         for bad, why in (('[sync]\nsync_batch_size = -1', "sync_batch_size"),
                          ('[sync]\nsync_batch_size = 2.5', "sync_batch_size"),
                          ('[display]\ntheme = "blue"', "theme"),

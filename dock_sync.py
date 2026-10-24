@@ -356,6 +356,22 @@ def run_sync(device, show, work=None, total=None):
     import dock_progress
     batch = {}     # concurrent batches: this sync's place in the prepare run
 
+    def run_screen(part_done=None):
+        """PREPARE & SYNC arguments while this sync is part of a prepare run
+        (concurrent batches: still converting, or its final sync), counting
+        every batch of the run; None for an ordinary sync."""
+        prep = dock_progress.running_prepare()
+        if not prep:
+            return None
+        if batch.get("run") != prep["run"]:
+            base, syncs = dock_progress.copied(prep["run"])
+            batch.update(run=prep["run"], base=base, synced=base, syncs=syncs + 1)
+        if part_done is not None:          # steps without a count keep the last one
+            batch["synced"] = batch["base"] + part_done
+        synced = batch["synced"]
+        dock_progress.write_copied(prep["run"], synced, batch["syncs"])
+        return dock_progress.screen_args(prep, synced, batch["syncs"])
+
     def step(n, detail, part_done=None, part_total=None):
         # Progress redraws are nice-to-have: SYNCING is already on screen,
         # so a panel hiccup here shouldn't abort the sync. part_done/total:
@@ -363,16 +379,9 @@ def run_sync(device, show, work=None, total=None):
         part = (["--part-done", str(part_done), "--part-total", str(part_total)]
                 if part_total else [])
         try:
-            prep = dock_progress.running_prepare() if part_total else None
-            if prep:
-                # Music is still converting while this batch copies: PREPARE &
-                # SYNC, counting every batch of the run so far.
-                if batch.get("run") != prep["run"]:
-                    base, syncs = dock_progress.copied(prep["run"])
-                    batch.update(run=prep["run"], base=base, syncs=syncs + 1)
-                synced = batch["base"] + (part_done or 0)
-                dock_progress.write_copied(prep["run"], synced, batch["syncs"])
-                show(*dock_progress.screen_args(prep, synced, batch["syncs"]))
+            args = run_screen(part_done)
+            if args:
+                show(*args)
             else:
                 show("syncing", "--step", str(n), "--total", str(total),
                      "--detail", detail, *part)
@@ -382,9 +391,15 @@ def run_sync(device, show, work=None, total=None):
     # 1. SYNCING goes up before anything touches the player. --force skips
     #    rate limiting, so it's guaranteed to draw. If it can't be drawn,
     #    the user could unplug mid-sync, so we stop before mounting.
+    #    Part of a run with concurrent batches: PREPARE & SYNC instead, which
+    #    says "Do not remove" just the same (and counts as SYNCING after a crash).
     try:
-        show("syncing", "--step", "1", "--total", str(total),
-             "--detail", "Mounting player", force=True)
+        args = run_screen()
+        if args:
+            show(*args, force=True)
+        else:
+            show("syncing", "--step", "1", "--total", str(total),
+                 "--detail", "Mounting player", force=True)
     except Exception:
         log.exception("Couldn't draw SYNCING; not mounting the player")
         return False
@@ -395,9 +410,8 @@ def run_sync(device, show, work=None, total=None):
         if work:
             summary = work(device, step) or {}
             if batch.get("run"):                  # the whole batch is on the player now
-                dock_progress.write_copied(batch["run"],
-                                           batch["base"] + summary.get("added", 0),
-                                           batch["syncs"])
+                batch["synced"] = batch["base"] + summary.get("added", 0)
+                dock_progress.write_copied(batch["run"], batch["synced"], batch["syncs"])
         else:
             step(2, "Reading player")
             list_contents(device.root)
@@ -443,10 +457,21 @@ def run_sync(device, show, work=None, total=None):
                  "--plays", str(summary.get("plays_sent", 0)),
                  "--queued", str(summary.get("plays_queued", 0)), force=True)
         else:
-            show("safe", "--added", str(summary.get("added", 0)),
-                 "--removed", str(summary.get("removed", 0)),
-                 "--plays", str(summary.get("plays_sent", 0)),
-                 "--queued", str(summary.get("plays_queued", 0)), force=True)
+            prep = dock_progress.running_prepare() if batch.get("run") else None
+            if prep and prep["run"] == batch["run"] and (
+                    not prep.get("final") or summary.get("followup")):
+                # More batches to come (still converting, or this sync just
+                # asked for the next one): the run's screen stays up until
+                # it's all done (user's choice: "Do not remove" throughout).
+                show(*dock_progress.screen_args(
+                    prep, dock_progress.copied(prep["run"])[0], batch["syncs"]), force=True)
+            else:
+                if batch.get("run"):
+                    dock_progress.clear_run()          # the run's last sync: done
+                show("safe", "--added", str(summary.get("added", 0)),
+                     "--removed", str(summary.get("removed", 0)),
+                     "--plays", str(summary.get("plays_sent", 0)),
+                     "--queued", str(summary.get("plays_queued", 0)), force=True)
     except Exception:
         log.exception("Couldn't draw final screen; SYNCING stays up")
         return False

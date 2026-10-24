@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -428,13 +429,62 @@ class PrepareAndSyncScreenTests(unittest.TestCase):
     def test_combined_screen_counts_every_batch_of_the_run(self):
         self.dp.write_prepare(run=111, done=32, total=167, batches=1)   # this process: alive
         first = [s for s in self.sync(added=25) if s[0] == "prepsync"]
-        self.assertEqual(first[-1][:9], ("prepsync", "--done", "32", "--total", "167",
-                                         "--synced", "24", "--batches", "1"))
+        self.assertEqual(first[-1][:11], ("prepsync", "--done", "32", "--total", "167",
+                                          "--synced", "25", "--to-copy", "167",
+                                          "--batches", "1"))      # whole batch, stays up
         self.assertEqual(self.dp.copied(111), (25, 1))                  # batch 1 done
         second = self.sync(added=2)
         self.assertIn(("prepsync", "--done", "32", "--total", "167", "--synced", "26",
-                       "--batches", "2"), second)
+                       "--to-copy", "167", "--batches", "2"), second)
         self.assertEqual(self.dp.copied(111), (27, 2))
+
+    def test_reused_songs_count_towards_synced_not_converting(self):
+        # 14 re-added songs came straight from the cache (no conversion):
+        # "Synced" counts to 73 + 14, "Converting" to 73 (seen 2026-10-23).
+        self.dp.write_prepare(run=222, done=38, total=73, batches=1, to_copy=87)
+        shown = [s for s in self.sync(added=39) if s[0] == "prepsync"]
+        self.assertEqual(shown[-1][:11], ("prepsync", "--done", "38", "--total", "73",
+                                          "--synced", "39", "--to-copy", "87",
+                                          "--batches", "1"))
+
+    def test_whole_run_shows_prepare_and_sync_until_its_last_sync(self):
+        # User's choice: one screen from the first batch to the end of the
+        # last sync, "Do not remove" throughout - no SYNCING, no SAFE between.
+        self.dp.write_prepare(run=333, done=30, total=60, batches=1)
+        first = self.sync(added=25)
+        self.assertTrue(all(s[0] == "prepsync" for s in first))        # start to end
+        self.dp.mark_final()                                            # conversion over
+        last = self.sync(added=35)
+        self.assertEqual(last[0][0], "prepsync")                        # before mounting
+        self.assertEqual(last[-1][0], "safe")                           # the run is done
+        self.assertIsNone(self.dp.running_prepare())                    # and forgotten
+        self.assertEqual(self.dp.copied(333), (0, 0))
+
+    def test_a_sync_that_asked_for_the_next_one_doesnt_end_the_run(self):
+        # Seen 2026-10-23: conversion ended (run marked final) while batch 9
+        # synced; that sync asked for a follow-up (+10) but showed SAFE.
+        self.dp.write_prepare(run=555, done=235, total=235, batches=9)
+        self.dp.mark_final()
+        shown = []
+
+        def work(device, step):
+            step(5, "Copying 1/25", part_done=0, part_total=25)
+            return {"added": 25, "followup": True}
+        run_sync(RecordingDevice(self.root, []),
+                 lambda s, *a, force=False: shown.append((s,) + a), work=work)
+        self.assertEqual(shown[-1][0], "prepsync")                      # still the run
+        self.assertIsNotNone(self.dp.running_prepare())
+        last = self.sync(added=10)                                      # the follow-up
+        self.assertEqual(last[-1][0], "safe")
+        self.assertIsNone(self.dp.running_prepare())
+
+    def test_final_mark_expires(self):
+        self.dp.write_prepare(run=444, done=60, total=60, batches=2)
+        self.dp.mark_final()
+        self.assertIsNotNone(self.dp.running_prepare())
+        with mock.patch.object(self.dp.time, "time",
+                               return_value=time.time() + self.dp.FINAL_FOR + 1):
+            self.assertIsNone(self.dp.running_prepare())               # iPod never synced
 
     def test_plain_syncing_once_conversion_is_over(self):
         self.dp.write_prepare(run=111, done=167, total=167, batches=2)

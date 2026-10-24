@@ -648,7 +648,7 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   The follow-up path wasn't needed (batch sync ended before the run).
 - **PREPARE & SYNC screen (`prepsync`, 2026-10-23, user design):** while a
   batch sync copies during a prepare run: header PREPARE & SYNC (inverted),
-  "Converting done/total", "Synced n/total (k batches)", "Do not remove ·
+  "Converting done/total", "Synced n/to-copy" (to-copy also counts songs reused from the cache; the batch count is kept but not shown, user 2026-10-23), "Do not remove ·
   time", bar = (converted + synced) / (2 x total). `dock_progress.py` keeps
   one JSON per writer in /run/musicdock (prepare: run id, started/total,
   batches, pid; sync: copied so far this run, syncs), and a run only counts
@@ -789,9 +789,15 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   sync also kept the play snapshot (a second full DB) alive all session
   and `plays_from_snapshot` loaded it a third time: now reused and `del`'d
   before the live DB opens (scratch test 139 -> 102 MB). Real sync peak
-  148 -> 96 MB. Concurrent batches stay off: 96 MB sync + ~100-150 MB
-  prepare + 3 ffmpeg on 415 MB is still tight; pause conversions during a
-  sync before re-enabling.
+  148 -> 96 MB. **Concurrent batches back on by default (sync_batch_size
+  25, 2026-10-23)** after shared album art: a 73-track run (+14 reused
+  from the grace-period cache) on the Zero 2 W did 3 batch syncs (39, 26,
+  22 tracks, 0 removed) beside 3 conversions; sync ~80-90 MB, prepare ~95
+  MB, free RAM never below ~150 MB with 270+ MB swap free; iPod complete
+  1.25 min after conversion ended. A test watchdog (stop prepare if RAM +
+  swap free < 80 MB during a sync) never fired. Not built (optional
+  hardening): pausing conversions during a sync, deferring removals to a
+  run's last sync.
 - **Shared album art (2026-10-23):** one image per album instead of per
   track on SIGNED_GENERATIONS (Classic 1-3, Nano 3G/4G): tracks with the
   same album name and source cover size share an image via mhii_link

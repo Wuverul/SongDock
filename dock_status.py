@@ -258,16 +258,16 @@ def render(screen, args):
 
     if screen == "prepsync":
         # Concurrent batches: music still converting while a batch is copied
-        # to the docked iPod. Bar: converted + copied out of twice the total.
+        # to the docked iPod. "Synced" has its own total: songs re-added from
+        # the cache need copying but no conversion. Bar: both together.
         header("PREPARE & SYNC", inverted=True)
-        batches = f"{args.batches} batch" + ("es" if (args.batches or 1) > 1 else "")
         sep = "\u00b7" if has_glyphs else "-"
+        to_copy = args.to_copy or args.total or 0
         lines([(f"Converting {args.done or 0}/{args.total or 0}", body_f),
-               (fit(f"Synced {args.synced or 0}/{args.total or 0} ({batches})", body_f),
-                body_f),
+               (f"Synced {args.synced or 0}/{to_copy}", body_f),
                (f"Do not remove {sep} {now}", small_f)])
-        if args.total:
-            progress_bar((args.done or 0) + (args.synced or 0), 2 * args.total)
+        if (args.total or 0) + to_copy:
+            progress_bar((args.done or 0) + (args.synced or 0), (args.total or 0) + to_copy)
 
     elif screen == "syncing":
         step = f"  {args.step}/{args.total}" if args.step and args.total else ""
@@ -619,7 +619,10 @@ def build_parser():
     p.add_argument("--removed", type=int, default=0)
     p.add_argument("--plays", type=int, default=0)
     p.add_argument("--synced", type=int, help="prepsync: tracks copied so far this run")
-    p.add_argument("--batches", type=int, help="prepsync: syncs so far this run")
+    p.add_argument("--batches", type=int,
+                   help="prepsync: syncs so far this run (kept in the state file, not shown)")
+    p.add_argument("--to-copy", type=int,
+                   help="prepsync: tracks that must reach the player (default --total)")
     p.add_argument("--pending-add", type=int,
                    help="idle: tracks the next sync will add to the iPod")
     p.add_argument("--pending-remove", type=int, default=0,

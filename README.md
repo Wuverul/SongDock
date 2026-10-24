@@ -119,7 +119,7 @@ operating system it was tested with:
 | Preparing a first batch of ~900 songs (~2,600 minutes of music) | about 1.5-2 days | **about 3 hours** |
 | A weekly handful of new songs (~30) | about 1.5 hours | 5-10 minutes |
 | Copying to an iPod nano 4G | ~11 s per song (~1.3-1.5 MB/s; about half of it is the Pi updating the iPod's database and album art) | **~2.8 s per song, ~2.2 MB/s** (902 songs, 5.4 GB, in 41 minutes) |
-| When copying happens | **after** all the music is converted, so it adds its own time (one core can't do both) | after conversion too, by default; copying is fast, so it adds little: 41 minutes for ~900 songs after ~3 hours of converting* |
+| When copying happens | **after** all the music is converted, so it adds its own time (one core can't do both) | **during** conversion, every 25 finished songs (`sync_batch_size`), so it isn't extra time: in a 73-song test the iPod was complete 1¼ minutes after the last song converted* |
 | Temperature while converting | no throttling seen | ~50 °C with a small heatsink, never throttled |
 
 **Which to get:** the **Pi Zero 2 W** is about 16 times faster at preparing
@@ -128,17 +128,17 @@ after changing the music format (everything is converted again). Day to
 day - a few new songs a week - a Pi Zero W keeps up fine; songs that are
 already MP3 or AAC on the server need no conversion on either.
 
-\* Copying *while* converting (`sync_batch_size`) exists but is off by
-default: on a Pi Zero 2 W it worked once, but a second test ran the Pi out
-of memory during the sync (512 MB isn't enough for a sync beside three
-conversions yet). Most of the Zero W's 11 seconds per song was the
-processor (updating the iPod's database and album art), not the USB link.
+\* Verified on a Pi Zero 2 W with an iPod nano 4G: three batch syncs ran
+alongside three conversions with memory to spare. (An earlier version ran
+the Pi out of memory, until the iPod's album art was stored once per album
+and the sync's memory use was cut.) Most of the Zero W's 11 seconds per
+song was the processor (updating the iPod's database and album art), not
+the USB link.
 
 For a very large library (200 GB of FLAC): the Pi Zero 2 W converts it in
-about a day and a half, then copies it in about a day (at ~2.2 MB/s),
-~2.5 days in all; a bigger iPod fills over several rounds anyway (see
-"Known limitations"). On a Zero W: about 20 days of conversion, then ~40
-hours of copying.
+about a day and a half and copies it (about a day at ~2.2 MB/s) at the same
+time, batch by batch, so the whole fill takes about a day and a half. On a
+Zero W: about 20 days of conversion, then ~40 hours of copying.
 
 **32-bit or 64-bit Raspberry Pi OS:**
 - The **Pi Zero W can only run the 32-bit** version (its processor has no
@@ -165,7 +165,7 @@ While new music is still converting and a docked iPod is already copying
 the first batches (Pi Zero 2 W), both show at once, with one bar for the
 whole job:
 
-![PREPARE & SYNC: converting 32/167, synced 25/167 in 1 batch](docs/screen-prepsync.png)
+![PREPARE & SYNC: converting 32/73, synced 25/87](docs/screen-prepsync.png)
 
 Every screen shows the time it was drawn, the Wi-Fi signal, and (when
 idle) the dock's IP address. With dark mode on (`[display] theme = "dark"`,

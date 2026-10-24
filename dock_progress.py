@@ -8,17 +8,20 @@ Two small JSON files, one per writer, so neither overwrites the other:
   batch-sync.json         the sync: how many of that run's tracks have been
                           copied so far, over how many syncs
 They live in /run/musicdock (RAM: no SD card wear, gone after a reboot), or
-next to the screen state file off the Pi. A run's progress only counts while
-its prepare process is alive, so a crashed run never leaves the combined
-screen behind.
+next to the screen state file off the Pi. A run's progress counts while its
+prepare process is alive, or - once conversion is over - while its final
+sync is pending (FINAL_FOR seconds at most), so a crashed or abandoned run
+never leaves the combined screen behind.
 """
 
 import json
 import os
+import time
 
 import dock_record
 
 PREPARE_FILE = "prepare-progress.json"
+FINAL_FOR = 600          # seconds a finished run waits for its last sync
 SYNC_FILE = "batch-sync.json"
 
 
@@ -59,9 +62,24 @@ def _alive(pid):
 
 
 # ------------------------------------------------------------ prepare side --
-def write_prepare(run, done, total, batches):
+def write_prepare(run, done, total, batches, to_copy=None):
+    """total: tracks this run converts or downloads; to_copy: tracks that
+    must reach the player (also re-added songs reused from the cache)."""
     _write(PREPARE_FILE, {"run": run, "done": done, "total": total,
-                          "batches": batches, "pid": os.getpid()})
+                          "to_copy": to_copy or total, "batches": batches,
+                          "pid": os.getpid(), "at": time.time()})
+
+
+def mark_final():
+    """Conversion is over and the run's last sync has been asked for: keep
+    the run (and PREPARE & SYNC) until that sync ends. Returns False if
+    there's no run to mark."""
+    p = _read(PREPARE_FILE)
+    if not p.get("total"):
+        return False
+    p.update(done=p["total"], final=True, at=time.time())
+    _write(PREPARE_FILE, p)
+    return True
 
 
 def clear_prepare():
@@ -72,9 +90,23 @@ def clear_prepare():
 
 
 def running_prepare():
-    """This run's progress while its prepare job is still going, else None."""
+    """The run in progress - its prepare job still going, or its final sync
+    pending (p["final"]) - else None."""
     p = _read(PREPARE_FILE)
-    return p if p.get("total") and _alive(p.get("pid")) else None
+    if not p.get("total"):
+        return None
+    if p.get("final"):
+        return p if time.time() - p.get("at", 0) < FINAL_FOR else None
+    return p if _alive(p.get("pid")) else None
+
+
+def clear_run():
+    """The run is complete: forget its progress."""
+    for name in (PREPARE_FILE, SYNC_FILE):
+        try:
+            os.remove(os.path.join(folder(), name))
+        except OSError:
+            pass
 
 
 # --------------------------------------------------------------- sync side --
@@ -91,5 +123,7 @@ def write_copied(run, synced, syncs):
 # ------------------------------------------------------------------ screen --
 def screen_args(prep, synced, syncs):
     """dock_status.py arguments for PREPARE & SYNC."""
+    to_copy = max(prep.get("to_copy") or prep["total"], prep["total"])
     return ["prepsync", "--done", str(prep["done"]), "--total", str(prep["total"]),
-            "--synced", str(min(synced, prep["total"])), "--batches", str(max(syncs, 1))]
+            "--synced", str(min(synced, to_copy)), "--to-copy", str(to_copy),
+            "--batches", str(max(syncs, 1))]
