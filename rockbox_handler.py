@@ -3,6 +3,15 @@ rockbox_handler.py - sync a player running Rockbox (detected by its .rockbox
 folder), alongside ipod_handler for stock iPods. Same staged plan, same
 cache (MP3 V0 etc.), same record.
 
+The same session serves generic music-folder players (kind="generic": any
+opted-in USB drive that's neither an iPod nor Rockbox, e.g. a SnowSky Echo
+Mini or a cheap MP3 player): the same MediaDock/ folder and cover.jpg, but
+no plays (they keep no play log: "No play count - unsupported" on screen)
+and no playlist files (many can't read them: songs from tagged playlists
+are simply in the library). Cheap players often report the same USB serial
+on every unit, so a generic player is known by an ID the dock writes onto
+it (PLAYER_ID) instead.
+
 On the player:
   MediaDock/<album artist>/<album>/<NN title>.<ext>
                       the dock's music, and only the dock's: nothing outside
@@ -44,6 +53,30 @@ AUDIO = {".mp3", ".m4a", ".mp4", ".aac", ".flac", ".ogg", ".oga", ".opus"}
 FREE_SPACE_MARGIN = 200 * 1024 * 1024
 SAME_LENGTH = 3                          # seconds: a logged play matches a track this close
 RECORD_COPY = os.path.join(".musicdock", "dock.db")
+PLAYER_ID = os.path.join(MUSIC_DIR, ".musicdock", "player-id")
+
+
+def player_id(mount, create=False):
+    """A generic player's ID, from the file the dock wrote on it (made on the
+    first write sync when `create`). None if it has none yet."""
+    path = os.path.join(mount, PLAYER_ID)
+    try:
+        with open(path) as f:
+            value = f.read().strip().upper()
+        if re.fullmatch(r"[0-9A-Z]{8,32}", value):
+            return value
+    except OSError:
+        pass
+    if not create:
+        return None
+    import secrets
+    value = "SD" + secrets.token_hex(7).upper()        # 16 characters, like a GUID
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(value + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+    return value
 
 
 def is_rockbox(root):
@@ -283,7 +316,7 @@ def reconcile(record, guid, mount):
 
 
 # ================================================================== apply ====
-def apply_plan(record, guid, mount, manifest, cache_dir, progress=None):
+def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlists=True):
     """Make MediaDock/ and the dock's playlists match the staged plan:
     removals (only songs that left every target), re-tags for changed names
     or genres, then additions, each recorded once its file is complete."""
@@ -364,7 +397,7 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None):
         except Exception:
             log.exception("Couldn't make cover.jpg for %s (continuing)", rel)
 
-    playlists_changed = sync_playlists(record, guid, mount, manifest)
+    playlists_changed = sync_playlists(record, guid, mount, manifest) if playlists else 0
     return {"added": added, "removed": removed, "replaced": len(changed),
             "renamed": renamed, "art_added": covers, "not_added_full": not_added,
             "playlists_changed": playlists_changed}
@@ -447,18 +480,24 @@ def player_name(mount):
 
 
 def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root=None,
-                write=False, client=None, step=None, progress=None, **_ignored):
-    """One dock session for a Rockbox player (the sync job's steps 2-5), with
-    the same summary keys as ipod_handler.sync_player."""
+                write=False, client=None, step=None, progress=None, kind="rockbox",
+                **_ignored):
+    """One dock session for a Rockbox player, or with kind="generic" a plain
+    music-folder player (no plays, no playlists) - the sync job's steps 2-5,
+    with the same summary keys as ipod_handler.sync_player."""
     import dock_plays
+    generic = kind == "generic"
     step = step or (lambda n, detail: None)
     summary = {"plays_new": 0, "plays_sent": 0, "plays_queued": 0,
                "added": 0, "removed": 0, "wrote": False}
-
-    step(2, "Reading plays")
-    shutil.rmtree(work_dir, ignore_errors=True)
-    summary["plays_new"], log_path = read_plays(mount, work_dir, record, guid)
-    record.rematch_plays(guid)
+    if generic:
+        summary["plays_supported"] = False           # no play log to read
+        log_path = None
+    else:
+        step(2, "Reading plays")
+        shutil.rmtree(work_dir, ignore_errors=True)
+        summary["plays_new"], log_path = read_plays(mount, work_dir, record, guid)
+        record.rematch_plays(guid)
     if summary["plays_new"]:
         log_info(f"Queued {summary['plays_new']} new play(s)")
     if write and log_path:
@@ -486,7 +525,8 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root=
         if report["reset"]:
             log_info("Player appears to have been reset: rebuilding it")
         step(5, "Copying tracks")
-        result = apply_plan(record, guid, mount, manifest, cache_dir, progress=progress)
+        result = apply_plan(record, guid, mount, manifest, cache_dir, progress=progress,
+                            playlists=not generic)
         summary.update(result, reconcile=report, wrote=True)
         try:
             dest = os.path.join(mount, MUSIC_DIR, RECORD_COPY)
@@ -500,7 +540,8 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root=
         if player.get("forgotten_at"):
             log_info("This player was forgotten (musicdock-players forget); "
                      "docking it brings it back")
-        record.set_player_name(guid, player_name(mount))
-        record.set_player_kind(guid, "rockbox")
+        record.set_player_name(guid, player_name(mount) or (
+            None if player.get("name") else "Music player"))
+        record.set_player_kind(guid, kind)
         record.mark_synced(guid)
     return summary

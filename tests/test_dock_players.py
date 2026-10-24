@@ -331,6 +331,25 @@ class SettingsTests(PlayersBase):
         self.assertEqual(self.apply("StockCompatible=yes\n", this=NANO)["done"],
                          ["Already compatible with stock iPods"])
 
+    def test_flac_switch(self):
+        with open(self.config, "a") as f:
+            f.write('\n[device]\ntype = "rockbox"\n')
+        result = self.apply("FLAC=no\n")
+        self.assertEqual(result["done"], ["FLAC converted to MP3"])
+        self.assertIs(self.settings()["device"]["flac"], False)
+        self.assertEqual(self.apply("FLAC=no\n")["done"], ["FLAC already converted"])
+        self.assertEqual(self.apply("FLAC=yes\n")["done"], ["FLAC copied as-is"])
+        self.assertIs(self.settings()["device"]["flac"], True)
+        result = self.apply("FLAC=maybe\n")
+        self.assertFalse(result["ok"])
+        self.assertIn("FLAC must be yes or no", result["reason"])
+
+    def test_flac_switch_on_a_stock_compatible_dock_says_when_it_applies(self):
+        result = self.apply("FLAC=no\n")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["done"],
+                         ["FLAC converted to MP3 (used once the dock is Rockbox-only)"])
+
     def test_settings_and_players_together(self):
         result = self.apply("Forget=Sam's iPod\nPlaylistTag=#car\n")
         self.assertEqual(dock_setup.summary_line(result), "2 changes made")

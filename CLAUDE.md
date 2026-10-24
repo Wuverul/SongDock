@@ -541,6 +541,22 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   on the panel 2026-10-18 (no flash between progress updates).
 - Panel access is serialized by `dock_status.panel_lock()` (flock next to the
   state file); the screen-state check and draw happen under it.
+- **Generic music-folder players (2026-10-24, user: "super basic for
+  cheap generic MP3 players"):** a drive with `MediaDock.txt` but neither
+  `iPod_Control` nor `.rockbox`. `rockbox_handler` with `kind="generic"`:
+  same `MediaDock/` files, `apply_plan(playlists=False)` (tagged playlists'
+  songs still copied), no plays (`summary["plays_supported"] = False` ->
+  SAFE shows "No play count - unsupported", `--no-plays`). Identified by
+  `MediaDock/.musicdock/player-id` (`SD` + 14 hex), created only in write
+  mode, since cheap players share USB serials; a read-only dock skips them.
+  Untested on hardware.
+- **`[device] flac` (2026-10-24, user request):** default true; only used
+  with `type = "rockbox"`. false = `dock_prepare.format_mode` returns
+  `rockbox_no_flac`: FLAC -> `convert_to`, everything else (Ogg/Opus/MP3)
+  as-is. Changing it renames cache files (`f.flac` <-> `f.mp3`), so the
+  existing old-format handling swaps them. `DockSetup.txt` `FLAC=yes|no`
+  (accepted on a stock-compatible dock too, noted "used once the dock is
+  Rockbox-only").
 - `tests/`: `python3 -m unittest discover -s tests -v`.
 
 ## Development workflow

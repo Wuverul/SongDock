@@ -16,7 +16,8 @@ GUIDE_FILE = dock_setup.GUIDE_FILE
 
 
 def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
-               setup=dock_setup.SETUP_FILE, rockbox=False):
+               setup=dock_setup.SETUP_FILE, rockbox=False, kind=None):
+    kind = kind or ("rockbox" if rockbox else "stock")
     sync = cfg.get("sync", {})
     tag = sync.get("playlist_tag", "")
     favorites = sync.get("favorites_playlist", "")
@@ -40,7 +41,17 @@ def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
   {tag} takes the playlist off the iPod at the next sync.
 """ if tag else "")
 
-    if rockbox:
+    if kind == "generic":
+        hands_off = """This is a simple music player that plays from folders. The dock's music
+goes in the MediaDock folder (one folder per artist and album, with
+cover.jpg). Music you put anywhere else is left alone; don't add or change
+files inside MediaDock. This player keeps no play history the dock can
+read, so plays aren't sent to Navidrome ("No play count - unsupported" on
+the dock's screen), and no playlists are made: songs from your tagged
+playlists are simply part of the music library. To get new music, unplug
+the player and plug it back in (only iPods are synced again by themselves
+while docked)."""
+    elif kind == "rockbox":
         hands_off = """This player runs Rockbox. The dock's music goes in the MediaDock folder
 (one folder per artist and album, with cover.jpg), its playlists in the
 Playlists folder. Music you put anywhere else is left alone; don't add or
@@ -136,6 +147,10 @@ Music format (stock iPods and Rockbox players):
                          Works from a stock iPod docked while the dock is
                          Rockbox-only: the dock reads its plays, switches
                          back, and fills it once the music is converted.
+  FLAC=no                on a Rockbox-only dock, still convert FLAC (to
+                         the same format as for stock iPods), for players
+                         that can't play it; other formats stay as they
+                         are. FLAC=yes copies it as-is again (the default)
   Either way, the dock's copy of the music is redone in the new format and
   songs already on players are swapped at the next syncs.
 
@@ -208,11 +223,11 @@ network. They can't be changed from the iPod.
 """
 
 
-def write_guide(root, cfg, rockbox=False):
+def write_guide(root, cfg, rockbox=False, kind=None):
     """Write the guide to the player's top folder if its text changed.
     Returns True if it was (re)written."""
     path = os.path.join(root, GUIDE_FILE)
-    text = guide_text(cfg, rockbox=rockbox)
+    text = guide_text(cfg, rockbox=rockbox, kind=kind)
     try:
         with open(path, encoding="utf-8") as f:
             if f.read() == text:

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Other music players:** any USB player with a `MediaDock.txt` in its top
+  folder gets music copied into a `MediaDock` folder, tagged playlists'
+  songs included (no playlists on the player). No plays are read; SAFE TO
+  REMOVE says "No play count - unsupported". Untested on real hardware.
+- **`flac = false`** (`[device]`, or `FLAC=no` in `DockSetup.txt`): with
+  stock-iPod compatibility off, FLAC is still converted (to `convert_to`)
+  for players that can't play it; other formats are copied as they are.
+
 ## 0.5.0 - first release
 
 The first packaged version of SongDock. Used daily with an iPod nano 4th

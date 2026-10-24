@@ -134,6 +134,11 @@ class RestScreenTests(WifiRefreshTests):
         record = waited.append if waited is not None else (lambda s: None)
         dock_status.rest_main(["--mode", mode], sleep=record)
 
+    def test_no_play_counts_carry_into_the_summary(self):
+        dock_status.main(["safe", "--added", "4", "--removed", "0", "--no-plays"])
+        self.rest("timer")
+        self.assertIn("no play counts", self.rendered[-1].detail)
+
     def test_timer_turns_safe_into_ready_with_summary(self):
         dock_status.main(["safe", "--added", "79", "--removed", "0", "--plays", "5"])
         self.rest("timer")

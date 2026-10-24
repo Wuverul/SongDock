@@ -302,6 +302,8 @@ def render(screen, args):
         plays = f"{args.plays} plays sent"
         if args.queued:
             plays += f", {args.queued} queued"          # server was unreachable
+        if args.no_plays:
+            plays = "No play count - unsupported"     # a player that logs none
         lines([(f"+{args.added}  {minus}{args.removed} tracks", body_f),
                (fit(plays, body_f), body_f),
                (f"Synced {now}", body_f)])
@@ -675,6 +677,8 @@ def build_parser():
     p.add_argument("--added", type=int, default=0)
     p.add_argument("--removed", type=int, default=0)
     p.add_argument("--plays", type=int, default=0)
+    p.add_argument("--no-plays", action="store_true",
+                   help="safe: the player keeps no play counts (generic players)")
     p.add_argument("--synced", type=int, help="prepsync: tracks copied so far this run")
     p.add_argument("--batches", type=int,
                    help="prepsync: syncs so far this run (kept in the state file, not shown)")
@@ -847,8 +851,9 @@ def rest_main(argv=None, sleep=time.sleep):
     prev = build_parser().parse_args(state.get("argv") or [screen])
     when = datetime.fromtimestamp(drawn_at).strftime("%-I:%M %p")
     if screen in ("safe", "wifi", "wififail", "setup", "setupfail"):
+        plays = "no play counts" if prev.no_plays else f"{prev.plays} plays"
         detail = (f"Last synced {when}\n"
-                  f"+{prev.added}  \u2212{prev.removed} tracks \u00b7 {prev.plays} plays")
+                  f"+{prev.added}  \u2212{prev.removed} tracks \u00b7 {plays}")
     else:
         detail = f"Last sync failed {when}"
     main(["idle", "--detail", detail, "--only-over", allowed])

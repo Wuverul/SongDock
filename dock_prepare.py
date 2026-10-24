@@ -13,7 +13,8 @@ Never touches the player. Steps:
      parallel, one worker per spare core), and move it into the cache:
        stock_ipod: MP3/AAC/ALAC kept as-is (no lossy-to-lossy re-encode);
                    FLAC and anything else -> convert_to (default MP3 V0)
-       rockbox:    everything kept as-is
+       rockbox:    everything kept as-is; with flac = false, FLAC ->
+                   convert_to (for players that can't play it)
   4. Write manifest.json: the plan the sync job applies to the player -
      the tracks (with the targets each came from) and each playlist's
      song order, to recreate it on the player. --show-plan prints it.
@@ -392,10 +393,23 @@ def plan_genres(client, cfg, songs, previous, album_info=None):
     return genres, album_types
 
 
+def format_mode(device):
+    """How the cache holds music, from config [device]: "stock_ipod",
+    "rockbox" (as on the server) or "rockbox_no_flac" (FLAC converted,
+    everything else as-is). `flac` only matters on a Rockbox-only dock:
+    stock compatibility converts FLAC anyway."""
+    if device["type"] == "rockbox" and not device.get("flac", True):
+        return "rockbox_no_flac"
+    return device["type"]
+
+
 def needs_conversion(suffix, device_type):
+    suffix = (suffix or "").lower()
     if device_type == "rockbox":
         return False
-    return (suffix or "").lower() not in NATIVE_FORMATS["stock_ipod"]
+    if device_type == "rockbox_no_flac":
+        return suffix == "flac"
+    return suffix not in NATIVE_FORMATS["stock_ipod"]
 
 
 def output_name(track, device_type, target="mp3"):
@@ -795,7 +809,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     on_progress(started, total, batches, to_copy): as each track starts;
     to_copy also counts re-added songs reused from the cache.
     """
-    device = cfg["device"]["type"]
+    device = format_mode(cfg["device"])
     fmt = cfg["device"]["convert_to"]
     current = encoding(cfg["device"])
     options = audio_options(cfg["device"])

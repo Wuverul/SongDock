@@ -27,7 +27,8 @@ DEFAULTS = {
              # verified on a Zero 2 W; single-core Pis skip it by themselves.
              "sync_batch_size": 25},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
-               "aac_bitrate": "256k", "write": False, "auto_resync": True},
+               "aac_bitrate": "256k", "write": False, "auto_resync": True,
+               "flac": True},                  # Rockbox-only dock: FLAC as-is (false = convert)
     "display": {"theme": "", "invert": False,      # theme "" = follow invert (older configs)
                 "model": "v4"},                    # Waveshare 2.13" HAT version: v4, v3, v2
     "genres": {"unmatched": dock_genres.DEFAULT_UNMATCHED,
@@ -125,6 +126,8 @@ def load(path=None):
                           f"minutes from 1 to 1440 (default 5)")
     if not isinstance(cfg["device"]["write"], bool):
         raise ConfigError(f"{path}: [device] write must be true or false")
+    if not isinstance(cfg["device"]["flac"], bool):
+        raise ConfigError(f"{path}: [device] flac must be true or false")
     if not isinstance(cfg["device"]["auto_resync"], bool):
         raise ConfigError(f"{path}: [device] auto_resync must be true or false")
     if cfg["device"]["convert_to"] not in ("mp3", "alac", "aac"):

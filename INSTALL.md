@@ -266,7 +266,16 @@ type = "rockbox"     # copy music as it is on the server (FLAC included)
 The cache is then re-filled in the new format at the next check, and songs
 already on the player are swapped for their FLAC versions at the next syncs.
 A dock set this way doesn't sync music to stock iPods (they can't play
-FLAC); set it back to `"stock_ipod"` to serve them again.
+FLAC); set it back to `"stock_ipod"` to serve them again. If a player can't
+play FLAC (many cheap MP3 players can't), keep the conversion for FLAC only:
+
+```toml
+[device]
+type = "rockbox"
+flac = false         # FLAC converted to convert_to; other formats as they are
+```
+
+`FLAC=no` / `FLAC=yes` in a `DockSetup.txt` does the same from a player.
 
 The same switch works without SSH, from a `DockSetup.txt` on a docked
 player: `StockCompatible=no` (refused while any stock iPod still syncs,
@@ -275,6 +284,25 @@ the same file) or `StockCompatible=yes`. A stock iPod docked on a
 Rockbox-only dock still has its plays read, and a `DockSetup.txt` with
 `StockCompatible=yes` on it switches the dock back; its music follows once
 it has been converted.
+
+**Other music players** (cheap MP3 players, SnowSky-style players: anything
+that plays a folder of music, without Rockbox; untested on real hardware so
+far): put an empty `MediaDock.txt` in the player's top folder (on the drive
+you want synced, if it shows up as two) and dock it. The dock needs
+`write = true` for these, since it has nothing to read from them. It then:
+
+- copies music into a **`MediaDock`** folder, as for Rockbox, including the
+  songs of tagged playlists. There are no playlists on the player;
+- removes songs that left your lists;
+- reads **no plays**: these players keep no history the dock can read, so
+  SAFE TO REMOVE says "No play count - unsupported";
+- writes a small ID file in `MediaDock/.musicdock/` so it can tell your
+  players apart (cheap ones often share one USB serial number). Deleting it
+  makes the dock treat the player as a new one.
+
+`wifi.txt` and `DockSetup.txt` work on these players too. Unplug and replug
+to sync new music. On a dock with stock-iPod compatibility off, set
+`flac = false` (above) if the player can't play FLAC.
 
 ## Troubleshooting
 

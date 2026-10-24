@@ -223,8 +223,40 @@ class OptInTests(unittest.TestCase):
 
     def test_not_an_ipod(self):
         summary, sp, _ = self.run_work(known=False)
-        self.assertEqual(summary, {"not_synced": "Not an iPod"})
+        self.assertEqual(summary, {"not_synced": "No MediaDock.txt on this player"})
         sp.assert_not_called()
+
+    def test_generic_player_gets_files_only_under_its_own_id(self):
+        # A plain music-folder player (no iPod_Control, no .rockbox) that opted in.
+        open(os.path.join(self.root, "MediaDock.txt"), "w").close()
+        with mock.patch("rockbox_handler.sync_player",
+                        return_value={"added": 3, "plays_supported": False}) as rb:
+            summary, sp, dev = self.run_work(known=False)
+        sp.assert_not_called()
+        dev.make_writable.assert_called_once()
+        self.assertEqual(rb.call_args.kwargs["kind"], "generic")
+        guid = rb.call_args.args[1]
+        self.assertTrue(guid.startswith("SD") and len(guid) == 16)
+        self.assertNotEqual(guid, "G")                          # not the USB serial
+        with open(os.path.join(self.root, "MediaDock", ".musicdock", "player-id")) as f:
+            self.assertEqual(f.read().strip(), guid)            # the same ID next time
+        with open(os.path.join(self.root, "MediaDock README.txt")) as f:
+            self.assertIn("No play count - unsupported", f.read())
+
+    def test_generic_player_on_a_read_only_dock(self):
+        open(os.path.join(self.root, "MediaDock.txt"), "w").close()
+        with mock.patch("rockbox_handler.sync_player") as rb:
+            summary, _, dev = self.run_work(known=False, write=False)
+        rb.assert_not_called()
+        self.assertEqual(summary, {"not_synced": "Dock is read-only (write = false)"})
+        self.assertFalse(os.path.exists(os.path.join(self.root, "MediaDock")))
+
+    def test_safe_screen_says_play_counts_are_unsupported(self):
+        shown = []
+        run_sync(RecordingDevice(self.root, []), lambda s, *a, force=False: shown.append((s,) + a),
+                 work=lambda d, step: {"added": 2, "plays_supported": False})
+        self.assertEqual(shown[-1][0], "safe")
+        self.assertIn("--no-plays", shown[-1])
 
     def test_marked_ipod_is_made_writable_and_synced(self):
         self.ipod(marker="MediaDock.txt")

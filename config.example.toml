@@ -40,6 +40,9 @@ type = "stock_ipod"                # stock_ipod: music converted for stock iPods
                                    # Rockbox players get the same files. "rockbox": copy
                                    # music as-is, FLAC included, for a Rockbox-only dock
                                    # (stock iPods are then refused).
+flac = true                        # only with type = "rockbox": false converts FLAC to
+                                   # convert_to too, for players that can't play FLAC
+                                   # (cheap MP3 players); other formats stay as they are.
 convert_to = "mp3"                 # stock iPod can't play FLAC. mp3 = LAME V0 (recommended);
                                    # alac = lossless, ~3x larger; aac = ffmpeg's encoder (artifacts)
 mp3_quality = "v0"                 # v0 = variable, best (~260k avg); or constant "320k", "256k".

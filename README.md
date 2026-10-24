@@ -1,7 +1,7 @@
 # SongDock
 
-A Raspberry Pi dock that keeps a stock-firmware iPod or a Rockbox player in
-sync with a [Navidrome](https://www.navidrome.org/) music server. Plug the iPod in, and
+A Raspberry Pi dock that keeps a stock-firmware iPod, a Rockbox player or a
+simple music-folder player in sync with a [Navidrome](https://www.navidrome.org/) music server. Plug the iPod in, and
 the dock:
 
 1. **Logs what you played** on the iPod to your Navidrome account (play counts
@@ -51,6 +51,17 @@ music in the background, so syncs are quick.
   it. Leaving one docked won't make it sync again by itself when new music
   arrives (that only works for iPods); unplug and replug it.
 
+  **Other music players** (neither an iPod nor Rockbox: cheap MP3 players,
+  and players like the SnowSky that just play a folder of music) get the
+  basics: a `MediaDock.txt` in the player's top folder opts it in, and the
+  dock copies music into a `MediaDock` folder and removes songs that left
+  your lists. Songs from tagged playlists are copied too, but into the
+  music library only: there are no playlists on the player. These players
+  don't keep a play history the dock can read, so **no plays reach
+  Navidrome**; SAFE TO REMOVE says "No play count - unsupported". Like
+  Rockbox players, they need an unplug and replug to sync new music, and
+  none has been tried on real hardware yet.
+
   On stock firmware, an unsupported iPod gets **SYNC FAILED** with its
   model name, before anything on it is changed. Rockbox support in the
   dock is built and tested in software but not yet on a real player (see
@@ -58,15 +69,15 @@ music in the background, so syncs are quick.
 
   **How the two differ in the dock:**
 
-  | | Stock firmware | Rockbox |
-  |---|---|---|
-  | How the dock spots it | Apple's firmware folders | its `.rockbox` folder |
-  | Where music goes | the iPod's own music database | files in a `MediaDock` folder (artist/album), with `cover.jpg` art; your other files are left alone |
-  | Playlists | in the iPod's database | `.m3u8` files in `Playlists` |
-  | Plays sent to Navidrome | a play count and the last play's time (earlier plays get estimated times) | every play with its exact time; skips don't count (turn on Rockbox's Last.fm log) |
-  | Music formats | MP3 (default), ALAC or AAC | the same by default; FLAC, Ogg and Opus as-is on a Rockbox-only dock (below) |
-  | Browsing by artist/album | built in | turn on Rockbox's database auto-update |
-  | Formatting | FAT32 ("Windows format") | FAT32 as well |
+  | | Stock firmware | Rockbox | Other music players |
+  |---|---|---|---|
+  | How the dock spots it | Apple's firmware folders | its `.rockbox` folder | neither, but a `MediaDock.txt` |
+  | Where music goes | the iPod's own music database | files in a `MediaDock` folder (artist/album), with `cover.jpg` art; your other files are left alone | the same as Rockbox |
+  | Playlists | in the iPod's database | `.m3u8` files in `Playlists` | none (their songs go in the library) |
+  | Plays sent to Navidrome | a play count and the last play's time (earlier plays get estimated times) | every play with its exact time; skips don't count (turn on Rockbox's Last.fm log) | none |
+  | Music formats | MP3 (default), ALAC or AAC | the same by default; FLAC, Ogg and Opus as-is on a Rockbox-only dock (below) | the same as Rockbox; `flac = false` if the player can't play FLAC |
+  | Browsing by artist/album | built in | turn on Rockbox's database auto-update | up to the player (most read the tags) |
+  | Formatting | FAT32 ("Windows format") | FAT32 as well | FAT32 or exFAT, as the player came |
 
   See "Rockbox players" in INSTALL.md for setting one up.
 
@@ -81,6 +92,11 @@ music in the background, so syncs are quick.
   still read). This can also be switched from a `DockSetup.txt` on a docked
   player (`StockCompatible=no` / `yes`); switching it off is refused while
   any stock iPod still syncs, and a stock iPod can always switch it back on.
+
+  Some players can't play FLAC (many cheap MP3 players). With stock
+  compatibility off, `flac = false` in the settings (or `FLAC=no` in a
+  `DockSetup.txt`) still converts FLAC, to the same format as for stock
+  iPods, while other formats are copied as they are.
 
 - **The iPod must be formatted FAT32 ("Windows format").** An iPod restored
   with Finder/iTunes on a **Mac** is usually formatted for Mac (HFS+), which the
@@ -237,6 +253,10 @@ untested on hardware or not built.
   in software. The main unknown is how a Rockbox player identifies itself
   over USB: if the dock can't identify it, the sync stops with "Can't
   identify the player" before changing anything.
+- **Other music players are untested on real hardware**, and the dock
+  can't read their plays at all. A player that shows up as two drives
+  (built-in memory and a memory card) syncs only the drive with
+  `MediaDock.txt` on it.
 - **iPods bigger than the dock's storage** fill over several syncs. This is
   built and tested in software, but hasn't run on a real iPod bigger than
   the SD card.

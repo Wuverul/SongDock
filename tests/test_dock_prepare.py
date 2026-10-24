@@ -89,10 +89,10 @@ def fake_convert(src, dst, options, duration=None):
 
 
 def config(device="stock_ipod", max_gb=20, convert_to="mp3", mp3_quality="v0",
-           targets=("starred",)):
+           targets=("starred",), flac=True):
     return {"sync": {"targets": list(targets), "max_cache_gb": max_gb},
             "device": {"type": device, "convert_to": convert_to,
-                       "mp3_quality": mp3_quality, "aac_bitrate": "256k"},
+                       "mp3_quality": mp3_quality, "aac_bitrate": "256k", "flac": flac},
             # No "release:" groups, so album lookups stay what each test expects.
             "genres": {"unmatched": "Other",
                        "groups": [{"name": "Electronic", "match": ["electronic", "dance"]},
@@ -385,6 +385,19 @@ class PrepareTests(unittest.TestCase):
         self.assertFalse(needs_conversion("flac", "rockbox"))
         self.run_prepare(FakeServer(songs=[song("f", "flac")]), config("rockbox"))
         self.assertEqual(self.files(), ["f.flac"])
+
+    def test_rockbox_without_flac_converts_only_flac(self):
+        songs = [song("f", "flac"), song("o", "opus"), song("m", "mp3")]
+        self.run_prepare(FakeServer(songs=songs), config("rockbox", flac=False))
+        self.assertEqual(self.files(), ["f.mp3", "m.mp3", "o.opus"])
+        # Turning FLAC back on swaps the conversion for the original.
+        summary = self.run_prepare(FakeServer(songs=songs), config("rockbox"))
+        self.assertEqual(self.files(), ["f.flac", "m.mp3", "o.opus"])
+        self.assertEqual((summary["added"], summary["removed"]), (1, 1))
+
+    def test_flac_setting_only_matters_on_a_rockbox_only_dock(self):
+        self.run_prepare(FakeServer(songs=[song("f", "flac")]), config(flac=True))
+        self.assertEqual(self.files(), ["f.mp3"])
 
     def test_second_run_downloads_nothing_new(self):
         server = FakeServer(songs=[song("a"), song("b")])
@@ -1003,6 +1016,12 @@ class ConfigTests(unittest.TestCase):
         self.assertIs(dock_config.load(self.write(base))["device"]["auto_resync"], True)
         with self.assertRaisesRegex(dock_config.ConfigError, "auto_resync"):
             dock_config.load(self.write(base + '[device]\nauto_resync="no"\n'))
+
+    def test_flac_defaults_on_and_must_be_boolean(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n'
+        self.assertIs(dock_config.load(self.write(base))["device"]["flac"], True)
+        with self.assertRaisesRegex(dock_config.ConfigError, "flac"):
+            dock_config.load(self.write(base + '[device]\nflac="no"\n'))
 
     def test_mp3_quality_validated(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[device]\n'

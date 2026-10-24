@@ -173,6 +173,26 @@ class RockboxTests(unittest.TestCase):
         with open(os.path.join(self.mount, "Playlists", "Mix.m3u8")) as f:
             self.assertEqual(len(f.read().splitlines()), 3)          # header + 2 songs
 
+    def test_generic_player_gets_music_but_no_plays_or_playlists(self):
+        a = self.song("n1", "One")
+        self.write_log([("Artist", "Album", "One", 1, 2, "L", 1792100000, "")])
+        summary = rb.sync_player(self.mount, "SDABCDEF01234567", self.rec,
+                                 self.manifest([a], [("playlist:Mix", "Mix", ["n1"])]),
+                                 self.cache, work_dir=os.path.join(self.tmp, "work"),
+                                 write=True, kind="generic")
+        self.assertEqual((summary["added"], summary["plays_new"]), (1, 0))
+        self.assertIs(summary["plays_supported"], False)
+        self.assertFalse(os.path.exists(os.path.join(self.mount, "Playlists")))   # none made
+        self.assertTrue(os.path.exists(os.path.join(self.mount, rb.SCROBBLER_LOG)))  # untouched
+        player = self.rec.player("SDABCDEF01234567")
+        self.assertEqual((player["kind"], player["name"]), ("generic", "Music player"))
+
+    def test_player_id_is_made_once_and_kept(self):
+        self.assertIsNone(rb.player_id(self.mount))                       # read-only: none
+        made = rb.player_id(self.mount, create=True)
+        self.assertEqual(rb.player_id(self.mount, create=True), made)
+        self.assertRegex(made, r"^SD[0-9A-F]{14}$")
+
     def test_names_and_genre_follow_the_plan_without_recopying(self):
         a = self.song("n1", "One", album="Inertia")
         self.sync(self.manifest([a]))

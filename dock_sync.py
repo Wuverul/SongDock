@@ -211,16 +211,18 @@ class BlockDevice:
 
 def opt_in_status(root, known):
     """"not_ipod", "marked" (has MediaDock.txt), "known" (no marker, but the
-    dock already syncs this player), or "unmarked". A player is an iPod (its
-    iPod_Control folder) or runs Rockbox (its .rockbox folder)."""
-    if not any(os.path.isdir(os.path.join(root, d)) for d in ("iPod_Control", ".rockbox")):
-        return "not_ipod"
+    dock already syncs this player), or "unmarked". Any drive with
+    MediaDock.txt is synced: an iPod (iPod_Control), a Rockbox player
+    (.rockbox), or a generic music-folder player (neither). Only iPods and
+    Rockbox players get a marker created for them ("known")."""
     try:
         names = {n.lower() for n in os.listdir(root)}
     except OSError:
         names = set()
     if MARKER.lower() in names:
         return "marked"
+    if not any(os.path.isdir(os.path.join(root, d)) for d in ("iPod_Control", ".rockbox")):
+        return "not_ipod"
     return "known" if known else "unmarked"
 
 
@@ -481,7 +483,9 @@ def run_sync(device, show, work=None, total=None):
                 show("safe", "--added", str(summary.get("added", 0)),
                      "--removed", str(summary.get("removed", 0)),
                      "--plays", str(summary.get("plays_sent", 0)),
-                     "--queued", str(summary.get("plays_queued", 0)), force=True)
+                     "--queued", str(summary.get("plays_queued", 0)),
+                     *(["--no-plays"] if summary.get("plays_supported") is False else []),
+                     force=True)
     except Exception:
         log.exception("Couldn't draw final screen; SYNCING stays up")
         return False
@@ -517,7 +521,7 @@ def make_ipod_work(cfg, guid, product, write):
         status = opt_in_status(device.root, record.player(guid) is not None)
         if status in ("not_ipod", "unmarked"):
             record.close()
-            reason = ("Not an iPod" if status == "not_ipod"
+            reason = (f"No {MARKER} on this player" if status == "not_ipod"
                       else f"No {MARKER} on this iPod")
             log.info("Not syncing: %s (nothing read or written)", reason)
             return {"not_synced": reason}
@@ -537,14 +541,31 @@ def make_ipod_work(cfg, guid, product, write):
                     os.fsync(f.fileno())
                 log.info("Created %s on this already-synced iPod", MARKER)
         rockbox = rockbox_handler.is_rockbox(device.root)
+        generic = not rockbox and not os.path.isdir(os.path.join(device.root, "iPod_Control"))
+        kind = "rockbox" if rockbox else "generic" if generic else "stock"
+        player_guid = guid
+        if generic:
+            # A plain music-folder player: known by the ID the dock writes on
+            # it (cheap players often share one USB serial). No plays to read,
+            # so without write mode there's nothing to do.
+            player_guid = rockbox_handler.player_id(device.root, create=writing)
+            if not player_guid:
+                record.close()
+                log.info("Generic music player, dock read-only: nothing read or written")
+                return {"not_synced": "Dock is read-only (write = false)"}
+            log.info("Generic music player %s: syncing files (no plays, no playlists)",
+                     player_guid)
+        elif not player_guid:
+            record.close()
+            raise SyncError("Can't identify the player")
         # type = "rockbox" keeps FLAC in the cache, which a stock iPod can't
         # play: its plays are still read, and DockSetup.txt / wifi.txt still
         # handled (so StockCompatible=yes can switch the dock back from this
         # very iPod), but its music isn't touched.
-        refused = not rockbox and cfg.get("device", {}).get("type") == "rockbox"
+        refused = kind == "stock" and cfg.get("device", {}).get("type") == "rockbox"
         if refused:
             log.warning("Stock iPod on a Rockbox-only dock: reading plays only")
-        handler = rockbox_handler if rockbox else ipod_handler
+        handler = ipod_handler if kind == "stock" else rockbox_handler
         if rockbox:
             log.info("Rockbox player: syncing files and playlists")
         client = Client(cfg["server"]["url"], cfg["server"]["username"],
@@ -555,11 +576,12 @@ def make_ipod_work(cfg, guid, product, write):
                  part_done=n, part_total=total)
         try:
             summary = handler.sync_player(
-                device.root, guid, record, manifest, cache_dir,
-                work_dir=os.path.join(base, "work", guid),
-                backup_root=os.path.join(base, "backups", guid),
+                device.root, player_guid, record, manifest, cache_dir,
+                work_dir=os.path.join(base, "work", player_guid),
+                backup_root=os.path.join(base, "backups", player_guid),
                 write=writing and not refused, client=client, usb_product=product, step=step,
-                progress=progress, block_device=whole_disk(getattr(device, "path", "")))
+                progress=progress, block_device=whole_disk(getattr(device, "path", "")),
+                **({} if kind == "stock" else {"kind": kind}))
         finally:
             record.close()
         if mac_formatted:
@@ -567,7 +589,7 @@ def make_ipod_work(cfg, guid, product, write):
         # Wi-Fi first: a new server in DockSetup.txt is tried on the network
         # the dock ends up on.
         summary["wifi"] = handle_wifi_file(device, write, client)
-        summary["setup"] = handle_setup_file(device, writing, guid, cfg)
+        summary["setup"] = handle_setup_file(device, writing, player_guid, cfg)
         if refused:
             setup = summary["setup"] or {}
             if setup.get("stock_compatible"):
@@ -577,10 +599,10 @@ def make_ipod_work(cfg, guid, product, write):
                 raise SyncError("Stock iPod: dock is set up for Rockbox")
             # else: SETUP NOT USED shows why the DockSetup.txt failed
         elif writing:
-            summary["followup"] = ask_for_followup(cfg, manifest, guid)
+            summary["followup"] = ask_for_followup(cfg, manifest, player_guid)
             try:
                 import dock_guide
-                if dock_guide.write_guide(device.root, cfg, rockbox=rockbox):
+                if dock_guide.write_guide(device.root, cfg, kind=kind):
                     log.info("Updated %s on the iPod", dock_guide.GUIDE_FILE)
             except Exception:
                 log.exception("Couldn't write the guide (continuing)")
@@ -726,8 +748,9 @@ def build_work(args, device):
     else:
         guid, product = player_identity(device.path)
     if not guid:
-        log.error("Can't identify the player (no USB serial / FirewireGuid)")
-        return False
+        # Fine for a generic music player (the dock writes an ID on it); an
+        # iPod or Rockbox player without one is refused once mounted.
+        log.info("No USB serial / FirewireGuid for this player")
     write = cfg["device"]["write"] or args.write
     log.info("Player %s (USB product %s): %s", guid,
              f"0x{product:04x}" if product else "?",
