@@ -44,13 +44,21 @@ def check_interval(config_path):
     return DEFAULT
 
 
+BOOT_DELAY = "1min"          # the unit's OnBootSec
+
+
 def dropin_text(minutes):
     # The empty assignment clears the unit's own 5min before setting ours
-    # (timer settings add up otherwise).
+    # (timer settings add up otherwise) - but it clears *every* trigger of
+    # the timer, OnBootSec too, so that one is set again. Without it, after
+    # a reboot nothing ever starts the first run, and OnUnitInactiveSec
+    # (counted from the previous run's end) never fires: the dock stopped
+    # checking for new music after a reboot (2026-10-25).
     return ("# Written by dock_timer.py from config.toml ([sync] check_interval_minutes).\n"
             "# Edit config.toml, not this file.\n"
             "[Timer]\n"
             "OnUnitInactiveSec=\n"
+            f"OnBootSec={BOOT_DELAY}\n"
             f"OnUnitInactiveSec={minutes}min\n")
 
 

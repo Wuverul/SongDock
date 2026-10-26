@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1
+
+- **Fix: the dock stopped checking for new music after a restart.** The
+  check-interval setting's timer override also removed the "1 minute
+  after boot" check, so after a reboot the first check never ran and
+  nothing started the next ones. Running the installer again (as when
+  updating) repairs an existing dock.
+
 ## 0.5.0 - first release
 
 The first packaged version of SongDock. Used daily with an iPod nano 4th
