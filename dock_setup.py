@@ -190,12 +190,17 @@ def plan_settings(settings, cfg):
             window = dock_safehours.parse(settings["SafeHours"])
         except dock_safehours.SafeHoursError:
             raise SetupFileError("SafeHours must look like 07:00-10:00 (or off)")
-        value = dock_safehours.text(window)
-        if value != cfg["sync"].get("safe_hours", ""):
+        value = dock_safehours.text(window) or "off"
+        try:
+            current = dock_safehours.text(dock_safehours.parse(
+                cfg["sync"].get("safe_hours", dock_safehours.DEFAULT))) or "off"
+        except dock_safehours.SafeHoursError:
+            current = None
+        if value != current:
             changes[("sync", "safe_hours")] = value
-            done.append(f"Safe hours {value}" if value else "Safe hours off")
+            done.append(f"Safe hours {value}" if window else "Safe hours off")
         else:
-            done.append(f"Safe hours already {value or 'off'}")
+            done.append(f"Safe hours already {value}")
     return changes, done, login, new_library
 
 

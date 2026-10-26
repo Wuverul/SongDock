@@ -332,13 +332,14 @@ class SettingsTests(PlayersBase):
                          ["Already compatible with stock iPods"])
 
     def test_safe_hours(self):
-        result = self.apply("SafeHours=7-10\n")
-        self.assertEqual(result["done"], ["Safe hours 07:00-10:00"])
-        self.assertEqual(self.settings()["sync"]["safe_hours"], "07:00-10:00")
-        self.assertEqual(self.apply("SafeHours=07:00-10:00\n")["done"],
+        self.assertEqual(self.apply("SafeHours=7-10\n")["done"],          # the default
                          ["Safe hours already 07:00-10:00"])
+        result = self.apply("SafeHours=6:30-8\n")
+        self.assertEqual(result["done"], ["Safe hours 06:30-08:00"])
+        self.assertEqual(self.settings()["sync"]["safe_hours"], "06:30-08:00")
         self.assertEqual(self.apply("SafeHours=off\n")["done"], ["Safe hours off"])
-        self.assertEqual(self.settings()["sync"]["safe_hours"], "")
+        self.assertEqual(self.settings()["sync"]["safe_hours"], "off")
+        self.assertEqual(self.apply("SafeHours=none\n")["done"], ["Safe hours already off"])
         result = self.apply("SafeHours=morning\n")
         self.assertFalse(result["ok"])
         self.assertIn("07:00-10:00", result["reason"])

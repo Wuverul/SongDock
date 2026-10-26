@@ -27,8 +27,9 @@ DEFAULTS = {
              # verified on a Zero 2 W; single-core Pis skip it by themselves.
              # "auto": sized per run (dock_prepare.batch_size).
              "sync_batch_size": "auto",
-             # e.g. "07:00-10:00": no syncs then (dock_safehours.py); "" = off
-             "safe_hours": ""},
+             # No syncs in this daily window (dock_safehours.py); "off" = none.
+             # On by default (user's choice, 2026-10-26): a morning commute.
+             "safe_hours": "07:00-10:00"},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False, "auto_resync": True,
                "flac": True},                  # Rockbox-only dock: FLAC as-is (false = convert)

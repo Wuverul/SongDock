@@ -155,7 +155,7 @@ Music format (stock iPods and Rockbox players):
   songs already on players are swapped at the next syncs.
 
 A daily window with no syncs, e.g. to grab the iPod for a morning commute:
-  SafeHours=07:00-10:00  (local time; SafeHours=off to turn it off)
+  SafeHours=07:00-10:00  (local time; the default; SafeHours=off for none)
   An iPod docked then just charges; a sync running when the window opens
   finishes early. Either way it syncs afterwards if it's still docked.
 

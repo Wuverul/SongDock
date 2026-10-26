@@ -1,9 +1,10 @@
 """
 dock_safehours.py - "Safe Hours": a daily window with no syncs.
 
-[sync] safe_hours = "07:00-10:00" (local time; "" = off; may wrap past
-midnight, e.g. "22:00-06:00"). User request, 2026-10-26: grab the iPod
-before a morning commute without a sync holding it on the dock.
+[sync] safe_hours = "07:00-10:00" (local time; the default; "off" = none;
+may wrap past midnight, e.g. "22:00-06:00"). User request, 2026-10-26:
+grab the iPod before a morning commute without a sync holding it on the
+dock.
 
 During the window no sync starts: an iPod docked then isn't mounted (so it
 stays usable while it charges), and the auto re-sync waits. A sync that is
@@ -22,6 +23,7 @@ import subprocess
 from datetime import datetime, timedelta
 
 AFTER_UNIT = "musicdock-after-safe-hours"
+DEFAULT = "07:00-10:00"     # as dock_config's default
 _TIME = r"(\d{1,2})(?::(\d{2}))?"
 
 
@@ -89,7 +91,7 @@ def next_start(window, now=None):
 def from_config(cfg):
     """The window set in a loaded config (dock_config validated it)."""
     try:
-        return parse(cfg.get("sync", {}).get("safe_hours", ""))
+        return parse(cfg.get("sync", {}).get("safe_hours", DEFAULT))
     except SafeHoursError:
         return None
 

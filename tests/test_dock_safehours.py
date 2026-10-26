@@ -78,7 +78,8 @@ class SafeHoursTests(unittest.TestCase):
             dock_config.load(f.name)
         with open(f.name, "w") as g:
             g.write(base)
-        self.assertEqual(dock_config.load(f.name)["sync"]["safe_hours"], "")
+        self.assertEqual(dock_config.load(f.name)["sync"]["safe_hours"], "07:00-10:00")
+        self.assertEqual(sh.from_config(dock_config.load(f.name)), MORNING)   # on by default
 
 
 if __name__ == "__main__":

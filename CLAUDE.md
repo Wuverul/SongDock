@@ -674,8 +674,10 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   iPod" section in MediaDock.txt (`marker_text(notes=)`), and
   musicdock-status Problems.
 - `dock_safehours.py` (2026-10-26, user request: "grab your iPod before a
-  morning commute"): `[sync] safe_hours = "07:00-10:00"` ("" = off; may
-  wrap midnight; DockSetup.txt `SafeHours=`). In the window: dock_sync's
+  morning commute"): `[sync] safe_hours`, **default "07:00-10:00"** (user's
+  choice; existing configs without the key get it too), "off" (or "") =
+  none; may wrap midnight; DockSetup.txt `SafeHours=` (writes "off" when
+  turned off, so the file says so). In the window: dock_sync's
   `safe_hours_now` runs before mounting - shows SAFE HOURS, doesn't mount
   (iPod charges, stays usable), schedules `dock_resync.py
   --after-safe-hours` with a transient systemd timer at the window's end
