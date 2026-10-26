@@ -194,7 +194,7 @@ def pending_line(args, has_glyphs=True):
 def syncing_progress(args):
     """(done, total) for the SYNCING bar: progress within the current stage
     when it has its own count (e.g. tracks copied, --part-done/--part-total),
-    else which stage of how many. The header always shows the stage."""
+    else which stage of how many."""
     if args.part_total:
         return args.part_done or 0, args.part_total
     if args.step and args.total:
@@ -307,8 +307,9 @@ def render(screen, args):
                 progress_bar((args.done or 0) + (args.synced or 0), (args.total or 0) + to_copy)
 
     elif screen == "syncing":
-        step = f"  {args.step}/{args.total}" if args.step and args.total else ""
-        header(f"SYNCING{step}", inverted=True, room=title_room(args.device))
+        # No "5/6" stage count: stages skip numbers between redraws, and the
+        # detail line already says what's happening (user, 2026-10-26).
+        header("SYNCING", inverted=True, room=title_room(args.device))
         device_icon(args.device)
         rows = [("Do not remove player", body_f)]
         if args.detail:

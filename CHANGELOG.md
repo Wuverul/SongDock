@@ -35,6 +35,9 @@ Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs).
   (stock iPod), music notes (Rockbox) or a USB plug (other players) in the
   top bar's corner shows which kind of player is syncing (from the second
   screen on, once the player is mounted).
+- **SYNCING no longer shows a stage number** ("5/6"): stages went past
+  between redraws, so the numbers skipped. The line below says what it's
+  doing, and the bar still shows progress (e.g. songs copied).
 - **Size notes** in `musicdock-status`, the sync log and the iPod's
   `MediaDock.txt`: a large library from 20,000 songs (syncs may be slower)
   and 30,000 (slowdowns or crashes may occur); close to the limit from

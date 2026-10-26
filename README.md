@@ -185,7 +185,7 @@ flash - on every update.
 | | |
 |---|---|
 | ![DOCK READY: next sync +12 -3 tracks](docs/screen-ready.png) | ![PREPARING 37/120: converting a song](docs/screen-preparing.png) |
-| ![SYNCING 5/6: copying 12 of 72, do not remove](docs/screen-syncing.png) | ![SAFE TO REMOVE: +12 -3 tracks, 5 plays sent](docs/screen-safe.png) |
+| ![SYNCING: copying 12 of 72, do not remove](docs/screen-syncing.png) | ![SAFE TO REMOVE: +12 -3 tracks, 5 plays sent](docs/screen-safe.png) |
 
 While new music is still converting and a docked iPod is already copying
 the first batches (Pi Zero 2 W), both show at once, with one bar for the
@@ -204,7 +204,7 @@ for a dark case):
 | **STARTING UP...** | The dock is booting: waiting for Wi-Fi and the clock |
 | **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date") |
 | **PREPARING 3/12** | Downloading and converting new music. The iPod is safe to unplug |
-| **SYNCING 5/6** | **Don't unplug.** Reading plays, copying music. The bar shows progress within the current step |
+| **SYNCING** | **Don't unplug.** Says what it's doing (reading plays, copying music); the bar shows progress, e.g. songs copied |
 | **PREPARE & SYNC** | **Don't unplug.** New music is still converting while the first batches copy to the iPod (Pi Zero 2 W). Shows both counts; the bar covers both |
 | **SAFE TO REMOVE** | Done: tracks added/removed and plays sent. Unplug whenever you like |
 | **SYNC FAILED** | Something went wrong; the iPod was put back the way it was. Safe to unplug. See the log |
