@@ -26,6 +26,24 @@ player overnight. An e-ink screen shows whether it's safe to unplug.
   playlists, reports plays, and marks keepers through the Subsonic API.
 - Discovery tracks are held on the server for 1–2 months, so the dock has time
   to report plays before anything is purged.
+- **Later (user, 2026-10-26; not now - the dock comes first):** a **desktop
+  app for macOS and Windows**, standalone, doing what the dock does with a
+  GUI: review the changes before syncing, choose to sync, and show status
+  during and after. Same engine where possible (handlers, ipod_db, plan,
+  record), so a player can move between the two.
+- **Requirement for that: the record lives on the player's root.** The
+  dock's SQLite record (or the part of it about that player) is stored in
+  the top folder of the iPod/player, so a player synced by the desktop app
+  and then docked (or the other way round) is understood by the other side
+  and carries on from there. Today the dock only writes a *backup copy*
+  there (`iPod_Control/musicdock/dock.db`, Rockbox/generic
+  `MediaDock/.musicdock/dock.db`) and never reads it. Design points when
+  this is built: which copy wins when both changed (the player's copy
+  should be the per-player source of truth; the dock's record keeps its
+  cross-player data, e.g. `songs_on_every_player`); plays queued but not
+  yet sent by one side must not be sent twice or dropped by the other;
+  the copy log (`copied`) and managed playlists travel with the player;
+  write it atomically (temp + rename), as the iTunesDB.
 
 ## Hardware
 
@@ -340,6 +358,12 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   database:** saved unchanged = all 1454 mhits and every list identical;
   the whole file differs only in the signature and the master's entry
   position numbers (renumbered 0..n-1 like libgpod; pygpod left gaps).
+  **On the real Nano, 2026-10-26** (deployed as e495200): a 77-song test
+  playlist arrived in 3 batch syncs (+30, +25, +22; ~80 s each, one save
+  each, peak 52 MB vs ~96-103 MB with pygpod), then deleting it removed
+  all 77 + the playlist in 39 s (peak 45 MB). After each: signature
+  valid, saved DB and record held the same tracks (1455 at the end, as
+  before the test), copy log empty, no errors.
   `tests/test_ipod_db.py` makes the same changes through pygpod and
   StreamDatabase and compares what pygpod reads back. The handler opens it
   with `open_database(mount, work_dir, snapshot)` (from the session's
