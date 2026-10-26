@@ -293,6 +293,9 @@ untested on hardware or not built.
   then asks for a restore to Windows format (FAT32), which erases the iPod.
 - **Don't mix the dock with Finder, iTunes or Apple Music** on the same
   iPod: they replace its whole music database, including the dock's songs.
+  An iPod that iTunes filled with more than 3,000 songs can't be taken over
+  by the dock (it would have to load that database whole once); restore it
+  first, or remove the music with iTunes.
 - **Anyone who can dock an opted-in iPod can reconfigure the dock** with
   `wifi.txt` or `DockSetup.txt` (Wi-Fi, server, what syncs). Fine at home;
   think about it before lending a dock. Opt-in iPods are the ones with
