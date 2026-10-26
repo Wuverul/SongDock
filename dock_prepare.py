@@ -426,6 +426,21 @@ def label(track):
 # ----------------------------------------------------------------- files ----
 COVER_MAX = 600            # px. The Nano's largest thumbnail is 240px; keep margin
 COVER_MAX_BYTES = 300_000  # for other players (e.g. Rockbox's cover.jpg).
+# Decoding a cover takes ~10 bytes per pixel (a 4000x4000 cover peaked at
+# 153 MB on a Pi Zero, 2026-10-16). One too big to decode safely - a huge
+# PNG; JPEGs are decoded at reduced scale - is removed instead, and the
+# file gets Navidrome's 600 px cover, which looks the same on the iPod. A
+# quarter of the RAM: up to three conversions may decode covers at once.
+COVER_DECODE_SHARE = 0.25
+COVER_BYTES_PER_PIXEL = 10
+
+
+def max_cover_pixels():
+    try:
+        ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        ram = 512e6
+    return int(ram * COVER_DECODE_SHARE / COVER_BYTES_PER_PIXEL)
 _warned_no_cover_tools = False
 
 
@@ -438,8 +453,10 @@ def shrink_cover(path, cache=None):
     megabytes per track. `cache` maps a cover's hash to its replacement, so
     an album's shared cover is decoded once.
 
-    Returns "none" (no cover), "kept" (already small), "shrunk", or
-    "unchecked" (mutagen/Pillow not available - run under the venv).
+    Returns "none" (no cover, or one too big to decode safely, now
+    removed: the caller then adds Navidrome's), "kept" (already small),
+    "shrunk", or "unchecked" (mutagen/Pillow not available - run under the
+    venv).
     """
     global _warned_no_cover_tools
     try:
@@ -456,16 +473,25 @@ def shrink_cover(path, cache=None):
         return "unchecked"
 
     def smaller(data):
-        """Replacement JPEG bytes, or None if the cover is already fine."""
+        """Replacement JPEG bytes, None if the cover is already fine, or
+        False if it's too big to decode here (remove it)."""
         key = hashlib.sha1(data).hexdigest()
         if cache is not None and key in cache:
             return cache[key]
-        im = Image.open(io.BytesIO(data))
+        im = Image.open(io.BytesIO(data))          # reads the header only
         if (max(im.size) <= COVER_MAX and len(data) <= COVER_MAX_BYTES
                 and im.format == "JPEG"):
             new = None
         else:
             im.draft("RGB", (COVER_MAX, COVER_MAX))   # JPEG: decode at reduced scale
+            width, height = im.size
+            if width * height > max_cover_pixels():
+                log.info("Cover too big to decode here (%dx%d): using Navidrome's instead",
+                         width, height)
+                new = False
+                if cache is not None:
+                    cache[key] = new
+                return new
             im = im.convert("RGB")
             im.thumbnail((COVER_MAX, COVER_MAX), Image.LANCZOS)
             buf = io.BytesIO()
@@ -486,6 +512,10 @@ def shrink_cover(path, cache=None):
             return "none"
         front = next((p for p in pics if p.type == 3), pics[0])
         new = smaller(front.data)
+        if new is False:
+            tags.delall("APIC")
+            tags.save(path, v2_version=3)
+            return "none"
         if new is None and len(pics) == 1:
             return "kept"
         tags.delall("APIC")                         # keep one cover, not several
@@ -499,6 +529,10 @@ def shrink_cover(path, cache=None):
         if not covers:
             return "none"
         new = smaller(bytes(covers[0]))
+        if new is False:
+            del f.tags["covr"]
+            f.save()
+            return "none"
         if new is None and len(covers) == 1:
             return "kept"
         f.tags["covr"] = [MP4Cover(new, imageformat=MP4Cover.FORMAT_JPEG)] if new else covers[:1]
@@ -510,6 +544,10 @@ def shrink_cover(path, cache=None):
             return "none"
         front = next((p for p in f.pictures if p.type == 3), f.pictures[0])
         new = smaller(front.data)
+        if new is False:
+            f.clear_pictures()
+            f.save()
+            return "none"
         if new is None and len(f.pictures) == 1:
             return "kept"
         pic = Picture()

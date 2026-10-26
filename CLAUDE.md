@@ -768,6 +768,14 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   ("too big for this dock's cache", error False: they stay on players)
   and the run carries on. Logged at info (it repeats every run). Docs: 8
   GB card works (~3 GB of cache), 4 GB doesn't (system ~3 GB).
+  **Memory isn't a song-size problem:** downloads stream in 64 KB chunks,
+  ffmpeg streams, copies stream, mutagen touches tags only. The memory
+  risk is decoding a huge embedded cover (~10 bytes/pixel; JPEGs use
+  `draft`, other formats decode in full). `shrink_cover` removes a cover
+  over `max_cover_pixels()` (a quarter of RAM / 10 B: ~10 MP on a Zero;
+  three conversions may decode at once) and returns "none", so the caller
+  embeds Navidrome's 600 px cover. Residual: mutagen still reads a huge
+  cover's bytes (not its pixels) into memory.
 - **Rolling batches for big jobs (built 2026-10-23):** missing songs are
   fetched in priority order (songs the player lacks first; among them
   playlist songs before starred-only ones; held songs last, while room

@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from collections import namedtuple
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -769,6 +770,32 @@ class ShrinkCoverTests(unittest.TestCase):
         path = self.make_mp3(500, fmt="PNG")
         self.assertEqual(dock_prepare.shrink_cover(path), "shrunk")
         self.assertEqual(self.cover(path)[0].format, "JPEG")
+
+    # A cover too big to decode in the Pi's memory is removed, not decoded:
+    # the file then gets Navidrome's 600 px cover instead.
+    def test_cover_too_big_to_decode_is_removed(self):
+        path = self.make_mp3(2000, fmt="PNG")                   # 4 MP, limit 1 MP
+        before = self.audio_bytes(path)
+        with mock.patch.object(dock_prepare, "max_cover_pixels", return_value=1_000_000), \
+                mock.patch("PIL.Image.Image.convert", side_effect=AssertionError("decoded")):
+            self.assertEqual(dock_prepare.shrink_cover(path), "none")
+        self.assertEqual(ID3(path).getall("APIC"), [])
+        self.assertEqual(self.audio_bytes(path), before)
+        server = self.CoverServer(self.png(1000))
+        t = {"id": "s1", "albumId": "alb"}
+        self.assertEqual(dock_prepare.add_server_cover(path, t, server, {}), "navidrome")
+        self.assertEqual(self.cover(path)[0].size, (600, 600))
+
+    def test_big_jpeg_is_decoded_at_reduced_scale_not_removed(self):
+        path = self.make_mp3(2000)                              # JPEG: draft -> 1000 px
+        with mock.patch.object(dock_prepare, "max_cover_pixels", return_value=1_100_000):
+            self.assertEqual(dock_prepare.shrink_cover(path), "shrunk")
+        self.assertEqual(self.cover(path)[0].size, (600, 600))
+
+    def test_cover_limit_follows_the_memory(self):
+        with mock.patch.object(dock_prepare.os, "sysconf",
+                               side_effect=lambda k: 4096 if k == "SC_PAGE_SIZE" else 101_376):
+            self.assertEqual(dock_prepare.max_cover_pixels(), int(415_236_096 * 0.25 / 10))
 
     def test_album_cover_decoded_once(self):
         a, b = self.make_mp3(2000), self.make_mp3(2000)

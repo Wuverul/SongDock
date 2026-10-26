@@ -22,6 +22,10 @@ Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs).
   it can ever have: `max_cache_gb`, or what keeping the SD card under 80%
   full leaves). Before, such a song - on a very small SD card, or a long mix
   in FLAC - stopped every run, so nothing after it ever arrived.
+- **An album cover too big to decode in the Pi's memory** (e.g. a huge PNG)
+  is removed from the song instead, and Navidrome's 600 px cover is used.
+  Songs themselves are streamed through the dock, so their size never
+  matters for memory.
 
 ## 0.6.0
 
