@@ -22,7 +22,9 @@ exactly what to type.
   update) instead of updating in place.
   - *Have a spare Pwnagotchi?* It's usually this hardware - a Pi Zero W or
     Zero 2 W with one of these screens - so it can become a SongDock.
-- **microSD card**, 32 GB or larger (64 GB recommended: the dock caches your music)
+- **microSD card**, 32 GB or larger (64 GB recommended: the dock caches your music).
+  8 GB works but leaves only about 3 GB for music, so a big library takes many
+  rounds; 4 GB is too small (the system alone needs about 3 GB)
 - **micro-USB OTG adapter** + an iPod **USB-to-30-pin cable** (the iPod plugs
   into the Pi's "USB" port, not the "PWR" one)
 - A good **5 V power supply, 2.5 A**, for the Pi's "PWR" port. The Pi also

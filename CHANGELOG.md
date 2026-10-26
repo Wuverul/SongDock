@@ -18,6 +18,10 @@ Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs).
   reconnected and synced again for every 25 songs.
 - **`sync_batch_size = "auto"`** (new default): a twentieth of the run per
   hand-over, 25 to 500 songs. A number still sets it; 0 still turns it off.
+- **A song too big for the dock's cache is skipped** (more than half the room
+  it can ever have: `max_cache_gb`, or what keeping the SD card under 80%
+  full leaves). Before, such a song - on a very small SD card, or a long mix
+  in FLAC - stopped every run, so nothing after it ever arrived.
 
 ## 0.6.0
 

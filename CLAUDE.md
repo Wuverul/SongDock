@@ -759,6 +759,15 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   A player still in use that is *full* (e.g. a 16 GB Nano next to a big
   Classic) never gets the rest, so it blocks eviction too; forget it with
   `DockSetup.txt` or `musicdock-players forget` (not automatic yet).
+- **Songs too big for the cache (2026-10-26, user: "people do some crazy
+  things"):** a run stops at the first song that doesn't fit, so one that
+  can't fit even in an emptied cache would block everything after it
+  forever (tiny SD card, long FLAC mix; a conversion reserves 2x the
+  size). `cache_room` = min(max_cache_gb, 80% of the card - everything
+  else on it); songs over `MAX_FILE_SHARE` (half) of it are skipped
+  ("too big for this dock's cache", error False: they stay on players)
+  and the run carries on. Logged at info (it repeats every run). Docs: 8
+  GB card works (~3 GB of cache), 4 GB doesn't (system ~3 GB).
 - **Rolling batches for big jobs (built 2026-10-23):** missing songs are
   fetched in priority order (songs the player lacks first; among them
   playlist songs before starred-only ones; held songs last, while room

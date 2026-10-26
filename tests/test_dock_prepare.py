@@ -659,10 +659,38 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(self.batch_run(batch=0, cores=4)[1], [])
 
     def test_stops_at_cache_limit(self):
-        server = FakeServer(songs=[song("a", size=600_000_000)])
-        summary = self.run_prepare(server, cfg=config(max_gb=1))
-        self.assertEqual(summary["ready"], 0)
+        self.cached("a.mp3", 9000)                    # already cached, not on a player
+        server = FakeServer(songs=[song("a"), song("b", size=2000)])
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL))
+        self.assertEqual(summary["ready"], 1)
         self.assertIn("max_cache_gb", summary["skipped"][0]["reason"])
+
+    # A song bigger than half the room the cache can ever have would stop
+    # every run at it (a tiny SD card, a long mix as FLAC): skipped instead.
+    def test_a_song_too_big_for_the_cache_is_skipped_and_the_rest_still_come(self):
+        server = FakeServer(songs=[song("big", size=7000), song("c", size=1000)])
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL))   # 12 KB of room
+        self.assertEqual(self.files(), ["c.mp3"])
+        self.assertEqual([s["id"] for s in summary["skipped"]], ["big"])
+        self.assertIn("too big", summary["skipped"][0]["reason"])
+        self.assertFalse(summary["skipped"][0]["error"])
+        self.assertEqual([s["id"] for s in self.manifest()["skipped"]], ["big"])  # kept on players
+
+    def test_room_counts_what_else_is_on_the_sd_card(self):
+        # 80% of a 100 KB card, 70 KB of it taken by other things: 10 KB of room.
+        card = lambda path: Usage(100_000, 70_000, 30_000)   # noqa: E731
+        server = FakeServer(songs=[song("big", size=6000), song("c", size=1000)])
+        summary = self.run_prepare(server, disk_usage=card)
+        self.assertEqual([s["id"] for s in summary["skipped"]], ["big"])
+        self.assertEqual(self.files(), ["c.mp3"])
+
+    def test_cache_room_is_the_smaller_limit(self):
+        os.makedirs(os.path.join(self.cache, "tracks"))
+        self.cached("x.mp3", 5000)
+        card = lambda path: Usage(100_000, 25_000, 75_000)   # noqa: E731
+        # the card leaves 80,000 - (25,000 - 5,000 cached) = 60,000
+        self.assertEqual(dock_prepare.cache_room(self.cache, 1e9, card), 60_000)
+        self.assertEqual(dock_prepare.cache_room(self.cache, 40_000, card), 40_000)
 
     def test_queued_tracks_dont_count_against_the_cache_limit(self):
         # Each FLAC reserves 2x 300 KB while it's being prepared. Ten of them

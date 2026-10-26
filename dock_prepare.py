@@ -710,6 +710,19 @@ def dir_bytes(path):
     return total
 
 
+MAX_FILE_SHARE = 0.5         # a song may use at most half the room the cache can have
+
+
+def cache_room(cache_dir, max_bytes, disk_usage=shutil.disk_usage):
+    """The most the cache can ever hold: max_cache_gb, or what keeping the
+    SD card under 80% full leaves once everything else on it is counted,
+    whichever is less. A song being converted reserves twice its size, so
+    one of up to half this always fits in an emptied cache."""
+    usage = disk_usage(cache_dir)
+    others = usage.used - dir_bytes(cache_dir)
+    return max(0, min(max_bytes, MAX_DISK_FRACTION * usage.total - others))
+
+
 def no_room(cache_dir, need, max_bytes, disk_usage=shutil.disk_usage):
     """Return why `need` more bytes won't fit, or None if they will."""
     if dir_bytes(cache_dir) + need > max_bytes:
@@ -988,6 +1001,20 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     lock, show_lock = threading.Lock(), threading.Lock()
     progress = {"added": 0, "started": 0, "reserved": 0, "offline": False}
     skipped = []
+    # A song too big for this cache even when it's empty (a tiny SD card, a
+    # long DJ mix as FLAC) would stop every run at it - "no room" ends the
+    # run - and nothing after it would ever arrive. Skip such songs instead.
+    room = cache_room(cache_dir, max_bytes, disk_usage)
+    too_big = [(n, t) for n, t in missing if int(t.get("size") or 0) > room * MAX_FILE_SHARE]
+    if too_big:
+        names = {n for n, _ in too_big}
+        missing = [(n, t) for n, t in missing if n not in names]
+        for _, t in too_big:                  # every run, so not a warning
+            log.info("Skipping %s: %.0f MB is too big for this dock's cache (%.0f MB "
+                     "of room; a song may use half)", label(t),
+                     int(t.get("size") or 0) / 1e6, room / 1e6)
+            skipped.append({"id": t["id"], "title": label(t), "error": False,
+                            "reason": "too big for this dock's cache (more than half of it)"})
     if missing:
         log.info("Getting %d tracks with %d conversion worker(s)", len(missing), workers)
 

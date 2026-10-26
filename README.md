@@ -117,7 +117,9 @@ music in the background, so syncs are quick.
   music); a 64 GB card holds roughly 35-40 GB. A bigger iPod fills over
   several syncs: once the card is full, the dock drops its copies of songs
   already on the iPod to make room for the rest. (Built and tested in
-  software; not yet tried with a real iPod bigger than the card.)
+  software; not yet tried with a real iPod bigger than the card.) A single
+  song bigger than half the room the dock has for music (on a very small
+  card, or a long mix in FLAC) is skipped rather than holding up the rest.
 
 ## Which Raspberry Pi
 
