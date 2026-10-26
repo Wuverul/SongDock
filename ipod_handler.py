@@ -927,8 +927,15 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     if art_added:
         log_info(f"Added album art to {art_added} track(s) already on the player")
         session["dirty"] = True
-    added, skipped_full = 0, 0
+    import dock_limits
+    added, skipped_full, over_limit = 0, 0, 0
     for n, t in enumerate(additions):
+        if len(db.tracks) >= dock_limits.STOCK_LIMIT:
+            # Stock iPods are reported to fail at about 50,000 songs.
+            over_limit = len(additions) - n
+            log_info(f"{dock_limits.STOCK_LIMIT:,} songs on the iPod: the most the dock "
+                     f"adds to a stock iPod; {over_limit} track(s) not added")
+            break
         if deadline and wall() >= deadline:
             session["paused"] = True
             log_info(f"Safe hours: stopping with {len(additions) - n} track(s) still to "
@@ -968,7 +975,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
             commit()
     return {"added": added, "removed": removed, "replaced": len(changed), "renamed": renamed,
             "art_added": art_added, "not_added_full": skipped_full,
-            "playlists_changed": playlists_changed}
+            "not_added_limit": over_limit, "playlists_changed": playlists_changed}
 
 
 def follow_plans(db, record, guid, mount, manifest, cache_dir, next_plan, session,

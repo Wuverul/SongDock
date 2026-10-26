@@ -430,6 +430,14 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(self.rec.copied(G), [])
         self.assertEqual(self.apply(self.manifest(songs, favs))["added"], 2)   # after
 
+    def test_no_more_than_the_stock_limit_is_added(self):
+        import dock_limits
+        songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
+        with mock.patch.object(dock_limits, "STOCK_LIMIT", 3):
+            summary = self.apply(self.manifest(songs))
+        self.assertEqual((summary["added"], summary["not_added_limit"]), (3, 2))
+        self.assertEqual(len(self.db().tracks), 3)
+
     def test_unsaved_tracks_are_capped(self):
         songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
         with mock.patch.object(h, "SAVE_AFTER", 2):

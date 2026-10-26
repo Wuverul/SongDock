@@ -455,7 +455,7 @@ def main(argv=None):
         pl = facts["player"]
         facts["size_notes"] = dock_limits.player_notes(
             pl["on_player"], len(dock_restore.targets(manifest)), pl["capacity"], cfg,
-            pl["kind"])
+            pl["kind"], dock_limits.plan_bytes(manifest))
     print("\nProblems")
     for line in problems(facts) or ["none"]:
         print(f"  {line}")

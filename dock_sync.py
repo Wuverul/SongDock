@@ -517,7 +517,8 @@ def size_notes(record, guid, root, manifest, cfg, kind):
         record.set_player_capacity(guid, capacity)
         on_player = len({r["navidrome_id"] for r in record.tracks(guid)})
         planned = len(dock_restore.targets(manifest or {}))
-        notes = dock_limits.player_notes(on_player, planned, capacity, cfg, kind)
+        notes = dock_limits.player_notes(on_player, planned, capacity, cfg, kind,
+                                         dock_limits.plan_bytes(manifest or {}))
         for note in notes:
             log.warning("%s", note)
         return notes

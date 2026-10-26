@@ -33,9 +33,14 @@ Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs).
   round counting on its own. Not yet tried on a real new iPod.
 - **Size notes** in `musicdock-status`, the sync log and the iPod's
   `MediaDock.txt`: a large library from 20,000 songs (syncs may be slower)
-  and 30,000 (slowdowns or crashes may occur), and past 45,000 the most the
-  dock supports on a stock iPod. A stock iPod with more than 250 GB that
-  still gets MP3 is told about lossless ALAC. Warnings only.
+  and 30,000 (slowdowns or crashes may occur); close to the limit from
+  45,000.
+- **At most 47,000 songs on a stock iPod.** They're reported to fail at
+  about 50,000, so the dock stops adding songs at 47,000 (removals and
+  plays carry on as usual).
+- **ALAC suggestion** for a stock iPod with more than 250 GB that still gets
+  MP3, when the music would still fit as ALAC (lossless, about 3x the size;
+  it converts much faster but takes about 3x as long to copy).
 - **A song too big for the dock's cache is skipped** (more than half the room
   it can ever have: `max_cache_gb`, or what keeping the SD card under 80%
   full leaves). Before, such a song - on a very small SD card, or a long mix

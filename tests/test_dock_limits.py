@@ -20,8 +20,9 @@ class LimitTests(unittest.TestCase):
         self.assertIsNone(lim.library_note(19_999))
         self.assertIn("syncs may be slower", lim.library_note(20_000))
         self.assertIn("slowdowns or crashes", lim.library_note(30_000))
-        self.assertIn("past the 45,000", lim.library_note(45_000))
-        self.assertIn("slowdowns or crashes", lim.library_note(45_000, stock=False))
+        self.assertIn("close to the limit", lim.library_note(45_000))
+        self.assertIn("limit reached", lim.library_note(47_000))
+        self.assertIn("slowdowns or crashes", lim.library_note(47_000, stock=False))
 
     def test_the_larger_of_on_the_player_and_planned_counts(self):
         self.assertEqual(lim.player_notes(1_455, 21_000, None, MP3),
@@ -29,14 +30,24 @@ class LimitTests(unittest.TestCase):
         self.assertEqual(lim.player_notes(21_000, 900, None, MP3),
                          ["Large library (21,000 songs): syncs may be slower"])
 
-    def test_alac_suggested_only_for_big_stock_ipods_on_mp3(self):
-        big, small = 512e9, 16e9
-        self.assertIn("ALAC", lim.player_notes(1_455, 1_455, big, MP3)[0])
-        self.assertEqual(lim.player_notes(1_455, 1_455, small, MP3), [])
+    def test_alac_suggested_only_for_big_stock_ipods_on_mp3_when_it_fits(self):
+        big, small, music = 512e9, 16e9, 12e9            # 12 GB of MP3 -> ~40 GB of ALAC
+        notes = lambda *a, **kw: lim.player_notes(1_455, 1_455, *a, **kw)   # noqa: E731
+        self.assertIn("ALAC", notes(big, MP3, music_bytes=music)[0])
+        self.assertEqual(notes(small, MP3, music_bytes=music), [])
         alac = {"device": {"type": "stock_ipod", "convert_to": "alac"}}
-        self.assertEqual(lim.player_notes(1_455, 1_455, big, alac), [])
-        self.assertEqual(lim.player_notes(1_455, 1_455, big, MP3, kind="rockbox"), [])
-        self.assertEqual(lim.player_notes(1_455, 1_455, None, MP3), [])     # not known yet
+        self.assertEqual(notes(big, alac, music_bytes=music), [])
+        self.assertEqual(notes(big, MP3, kind="rockbox", music_bytes=music), [])
+        self.assertEqual(notes(None, MP3, music_bytes=music), [])          # not known yet
+        self.assertEqual(notes(big, MP3), [])                               # size unknown
+        # 300 GB of MP3 would be ~1 TB of ALAC: no suggestion.
+        self.assertEqual(notes(big, MP3, music_bytes=300e9), [])
+
+    def test_plan_size_counts_uncached_songs_at_the_average(self):
+        plan = {"tracks": [{"id": "a", "size": 8e6}, {"id": "b", "size": 12e6}],
+                "on_player": [{"id": "c"}], "skipped": [{"id": "d"}]}
+        self.assertEqual(lim.plan_bytes(plan), 40e6)
+        self.assertIsNone(lim.plan_bytes({"tracks": []}))
 
     def test_written_into_mediadock_txt(self):
         import dock_setup
@@ -60,7 +71,8 @@ class LimitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rec = Record(os.path.join(tmp, "dock.db"))
             rec.upsert_player("G1")
-            manifest = {"tracks": [{"id": f"s{i}"} for i in range(20_500)]}
+            # 20,500 songs, 41 GB as MP3: ~135 GB as ALAC, fits 512 GB.
+            manifest = {"tracks": [{"id": f"s{i}", "size": 2_000_000} for i in range(20_500)]}
             usage = mock.Mock(total=int(512e9))
             with mock.patch("dock_sync.shutil.disk_usage", return_value=usage), \
                     self.assertLogs("dock_sync", "WARNING") as logs:
