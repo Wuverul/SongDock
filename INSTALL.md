@@ -243,6 +243,10 @@ UNCHANGED** means it went back to its old network and left the file there,
 with the reason on screen. Add `Hidden=yes` for a hidden network; leave out
 the password for an open one.
 
+The old network stays saved as a fallback. If the new one drops out for a
+moment, the dock may join the fallback; it checks every 5 minutes and goes
+back to the network you gave it in `wifi.txt` once that's in range again.
+
 **Rockbox players** (tried with a flash drive standing in for one, not yet a real player): opt in the same way,
 with `MediaDock.txt` in the player's top folder. The dock recognizes Rockbox
 by its `.rockbox` folder and then:
@@ -384,7 +388,8 @@ cd ~/musicdock/songdock && sudo ./pi/install.sh
 
 ```sh
 sudo systemctl disable --now musicdock-prepare.timer musicdock-boot.service \
-        musicdock-resync.path musicdock-settings.path musicdock-usbport.timer
+        musicdock-resync.path musicdock-settings.path musicdock-usbport.timer \
+        musicdock-wifiprefer.timer
 sudo rm -rf /etc/systemd/system/musicdock-*
 sudo rm /etc/udev/rules.d/99-musicdock.rules \
         /etc/systemd/journald.conf.d/50-musicdock-persistent.conf \

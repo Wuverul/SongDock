@@ -1,0 +1,13 @@
+# Checks every 5 minutes whether a preferred Wi-Fi network (higher priority
+# than the current one, e.g. one set with wifi.txt) is back in range.
+#   systemctl list-timers musicdock-wifiprefer
+
+[Unit]
+Description=SongDock: watch for the preferred Wi-Fi network
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,17 @@
+# Go back to the preferred Wi-Fi network once it's in range again (see
+# dock_wifiprefer.py): NetworkManager never leaves a working fallback by
+# itself. Root, because only root may switch networks. Started every 5
+# minutes by musicdock-wifiprefer.timer. install.sh fills in @APP_DIR@.
+
+[Unit]
+Description=SongDock: return to the preferred Wi-Fi network
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/lib/musicdock
+ExecStart=/usr/bin/python3 @APP_DIR@/dock_wifiprefer.py
+Environment=PYTHONUNBUFFERED=1
+# Every 5 minutes: keep systemd's "Starting/Finished" lines out of the
+# journal; only a switch (logged as a warning) shows.
+LogLevelMax=warning

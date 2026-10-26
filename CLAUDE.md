@@ -646,6 +646,19 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (USB `error -71`) made the kernel disable the port
   (`usb1-port1/disable` = 1); nothing was detected until a reboot. Fixed
   by `dock_usbport.py` (below).
+- `dock_wifiprefer.py` (2026-10-26, user request, after the dock sat on
+  the far fallback network for ~14 h at 0.15 MB/s): NetworkManager joins
+  the best saved network but never leaves a working one. Root timer
+  `musicdock-wifiprefer.timer` (OnBootSec 10 min, every 5 min,
+  `LogLevelMax=warning`): if a saved, autoconnecting profile with a higher
+  `autoconnect-priority` than the active one is visible at signal >= 40
+  (`--rescan auto`), `nmcli connection up` it; never during a sync; on
+  failure rejoin the previous one and skip that profile for 30 min
+  (/run/musicdock/wifiprefer.json). Leaves an unknown active profile or no
+  connection to NetworkManager. Parses `nmcli -t` with escaped colons
+  (`split_terse`). System python3, stdlib + dock_wifi. Dry run on the Pi
+  2026-10-26: on the preferred network picks nothing; from the fallback
+  it'd pick the preferred one.
 - `dock_usbport.py` (2026-10-25, user request): `musicdock-usbport.timer`
   (root, every 30 s, `AccuracySec=5s`; `LogLevelMax=warning` keeps
   systemd's start/finish lines out of the journal) reads new kernel
