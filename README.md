@@ -204,7 +204,7 @@ for a dark case):
 | **STARTING UP...** | The dock is booting: waiting for Wi-Fi and the clock |
 | **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date") |
 | **PREPARING 3/12** | Downloading and converting new music. The iPod is safe to unplug |
-| **SYNCING** | **Don't unplug.** Says what it's doing (reading plays, copying music); the bar shows progress, e.g. songs copied |
+| **SYNCING** | **Don't unplug.** Says what it's doing (reading plays, copying music); the bar shows progress, e.g. songs copied. The icon in the corner shows the kind of player (below) |
 | **PREPARE & SYNC** | **Don't unplug.** New music is still converting while the first batches copy to the iPod (Pi Zero 2 W). Shows both counts; the bar covers both |
 | **SAFE TO REMOVE** | Done: tracks added/removed and plays sent. Unplug whenever you like |
 | **SYNC FAILED** | Something went wrong; the iPod was put back the way it was. Safe to unplug. See the log |
@@ -215,6 +215,11 @@ for a dark case):
 | **USB NOT WORKING** | A plug-in failed (e.g. a loose connector) and the dock's USB port stopped responding. Unplug the dock's power briefly to restart it; until then, players aren't noticed |
 | **RESTORING** | Filling a new or wiped iPod, which takes several syncs: songs on the iPod so far out of all of them, and the time left. Safe to unplug between syncs (not yet tried on a real new iPod) |
 | **SAFE HOURS** | Inside the `safe_hours` window: no syncs. Shows when syncing resumes; safe to unplug |
+
+The icon in the corner of SYNCING and PREPARE & SYNC shows what kind of player
+is syncing: a stock iPod, a Rockbox player, or another music player.
+
+![Player icons: iPod, Rockbox, other player](docs/player-icons.png)
 
 After a sync, the screen goes back to DOCK READY when you unplug the iPod, or
 after 10 minutes.
