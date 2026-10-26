@@ -646,6 +646,15 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (USB `error -71`) made the kernel disable the port
   (`usb1-port1/disable` = 1); nothing was detected until a reboot. Fixed
   by `dock_usbport.py` (below).
+- `dock_limits.py` (2026-10-26, user's thresholds): notes, not limits -
+  20k songs "Large library: syncs may be slower", 30k "slowdowns or
+  crashes may occur", 45k (stock) "past the 45,000 the dock supports";
+  songs = max(on the player, planned for it). A stock iPod over 250 GB
+  (`players.capacity`, recorded each write sync by `dock_sync.size_notes`
+  from the mount's size) still on MP3 gets an ALAC suggestion. Shown as
+  warnings in the sync log, an "About this iPod" section in MediaDock.txt
+  (`marker_text(notes=)`), and musicdock-status Problems. 45k isn't a known
+  firmware limit; enforcing it (stop adding) wasn't asked for.
 - `dock_safehours.py` (2026-10-26, user request: "grab your iPod before a
   morning commute"): `[sync] safe_hours = "07:00-10:00"` ("" = off; may
   wrap midnight; DockSetup.txt `SafeHours=`). In the window: dock_sync's

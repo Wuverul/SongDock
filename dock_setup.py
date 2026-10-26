@@ -342,10 +342,11 @@ def summary_line(result):
 LAST_RESULT = "Last DockSetup.txt"
 
 
-def marker_text(players, this_guid, intro, result=None, previous=""):
+def marker_text(players, this_guid, intro, result=None, previous="", notes=None):
     """MediaDock.txt: the opt-in note, the iPods the dock knows, and how to
     use DockSetup.txt. `result`: this sync's DockSetup.txt outcome; without
-    one, the last outcome is carried over from `previous` (the old text)."""
+    one, the last outcome is carried over from `previous` (the old text).
+    `notes`: dock_limits' notes about this player's size."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = [intro.rstrip("\n"), "", f"iPods this dock syncs (as of {now}):"]
     for p in players:
@@ -357,6 +358,8 @@ def marker_text(players, this_guid, intro, result=None, previous=""):
         else:
             lines.append(f"      {p['present']} tracks, last synced "
                          f"{dock_players.when(p['last_sync'])}")
+    if notes:
+        lines += ["", "About this iPod:"] + [f"  * {n}" for n in notes]
     lines += [
         "",
         "Replaced an iPod? Retire the old one with a DockSetup.txt, e.g.",
@@ -375,7 +378,7 @@ def marker_text(players, this_guid, intro, result=None, previous=""):
     return "\n".join(lines) + "\n"
 
 
-def write_marker(root, marker, players, this_guid, intro, result=None):
+def write_marker(root, marker, players, this_guid, intro, result=None, notes=None):
     """Rewrite MediaDock.txt (keeping its existing spelling) with the list."""
     path = find_file(root, marker) or os.path.join(root, marker)
     try:
@@ -383,7 +386,7 @@ def write_marker(root, marker, players, this_guid, intro, result=None):
             previous = f.read()
     except OSError:
         previous = ""
-    text = marker_text(players, this_guid, intro, result, previous)
+    text = marker_text(players, this_guid, intro, result, previous, notes)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
         f.flush()

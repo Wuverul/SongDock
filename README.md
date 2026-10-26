@@ -269,6 +269,11 @@ untested on hardware or not built.
 - **iPods bigger than the dock's storage** fill over several syncs. This is
   built and tested in software, but hasn't run on a real iPod bigger than
   the SD card.
+- **Very large libraries:** the dock is built for up to about 45,000 songs on
+  a stock iPod, and `musicdock-status` (and `MediaDock.txt` on the iPod) warn
+  from 20,000. The iPod's database was measured fine at 40,000 songs on a
+  Pi Zero 2 W; album art and the music preparation haven't been measured at
+  that size yet.
 - **Navidrome only, one library per dock.** Other Subsonic-compatible
   servers may work but aren't tested. Several addresses for the same server
   (e.g. at home and away) are fine; combining several servers' libraries

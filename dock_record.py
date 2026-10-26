@@ -45,7 +45,8 @@ CREATE TABLE IF NOT EXISTS players (
     last_sync   INTEGER,
     forgotten_at INTEGER,         -- set by `musicdock-players forget` / DockSetup.txt
     name        TEXT,             -- the name given to the iPod (its master playlist)
-    kind        TEXT              -- "stock" or "rockbox" (set each sync; NULL = not seen yet)
+    kind        TEXT,             -- "stock" or "rockbox" (set each sync; NULL = not seen yet)
+    capacity    INTEGER           -- bytes of storage on the player (set each sync)
 );
 CREATE TABLE IF NOT EXISTS tracks (
     guid          TEXT NOT NULL,
@@ -126,6 +127,7 @@ class Record:
         self._add_column("players", "name TEXT")                 # added 2026-10-23
         self._add_column("tracks", "genre TEXT")                 # Rockbox re-tags (2026-10-23)
         self._add_column("players", "kind TEXT")                 # stock / rockbox (2026-10-23)
+        self._add_column("players", "capacity INTEGER")          # dock_limits (2026-10-26)
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
             # login user) so the prepare job can write it too.
@@ -187,6 +189,11 @@ class Record:
         """"stock" or "rockbox": which handler synced it (see active_stock_players)."""
         with self.db:
             self.db.execute("UPDATE players SET kind = ? WHERE guid = ?", (kind, guid))
+
+    def set_player_capacity(self, guid, capacity):
+        """Bytes of storage on the player (dock_limits' ALAC suggestion)."""
+        with self.db:
+            self.db.execute("UPDATE players SET capacity = ? WHERE guid = ?", (capacity, guid))
 
     def active_stock_players(self):
         """Players that aren't forgotten and may run Apple's firmware: kind

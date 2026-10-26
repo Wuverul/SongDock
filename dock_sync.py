@@ -507,6 +507,25 @@ def run_sync(device, show, work=None, total=None):
     return error is None
 
 
+def size_notes(record, guid, root, manifest, cfg, kind):
+    """Record the player's capacity and log dock_limits' notes about its
+    size (also written into MediaDock.txt). Returns the notes."""
+    try:
+        import dock_limits
+        import dock_restore
+        capacity = shutil.disk_usage(root).total
+        record.set_player_capacity(guid, capacity)
+        on_player = len({r["navidrome_id"] for r in record.tracks(guid)})
+        planned = len(dock_restore.targets(manifest or {}))
+        notes = dock_limits.player_notes(on_player, planned, capacity, cfg, kind)
+        for note in notes:
+            log.warning("%s", note)
+        return notes
+    except Exception:
+        log.exception("Couldn't check the player's size (continuing)")
+        return []
+
+
 def dock_config_or_empty():
     try:
         import dock_config
@@ -649,6 +668,9 @@ def make_ipod_work(cfg, guid, product, write):
                 progress=progress, block_device=whole_disk(getattr(device, "path", "")),
                 **({"next_plan": lambda plan: next_plan(cache_dir, plan, deadline=deadline),
                     "deadline": deadline} if kind == "stock" else {"kind": kind}))
+            if writing:
+                summary["notes"] = size_notes(record, player_guid, device.root, manifest,
+                                              cfg, kind)
         finally:
             record.close()
         if mac_formatted:
@@ -656,7 +678,8 @@ def make_ipod_work(cfg, guid, product, write):
         # Wi-Fi first: a new server in DockSetup.txt is tried on the network
         # the dock ends up on.
         summary["wifi"] = handle_wifi_file(device, write, client)
-        summary["setup"] = handle_setup_file(device, writing, player_guid, cfg)
+        summary["setup"] = handle_setup_file(device, writing, player_guid, cfg,
+                                             summary.get("notes"))
         if refused:
             setup = summary["setup"] or {}
             if setup.get("stock_compatible"):
@@ -748,7 +771,7 @@ def ask_for_followup(cfg, applied, guid):
     return True
 
 
-def handle_setup_file(device, write, guid, cfg=None):
+def handle_setup_file(device, write, guid, cfg=None, notes=None):
     """DockSetup.txt on an opted-in player (forget/keep other iPods, change
     settings in config.toml; write mode only, since success deletes it -
     and any password in it), then MediaDock.txt rewritten with
@@ -770,7 +793,7 @@ def handle_setup_file(device, write, guid, cfg=None):
             if found:
                 result = dock_setup.apply_setup_file(device.root, record, guid, cfg)
             dock_setup.write_marker(device.root, MARKER, record.players(), guid,
-                                    MARKER_TEXT, result)
+                                    MARKER_TEXT, result, notes)
         finally:
             record.close()
     except Exception as e:

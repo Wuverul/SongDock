@@ -282,7 +282,12 @@ def ipod_section(record_path, manifest, now=None):
     if unmatched:
         plays += f", {unmatched} unmatched (songs the dock didn't add)"
     lines.append(plays)
-    return lines, {"plays_waiting": waiting or 0, "oldest_waiting": oldest}
+    keys = p.keys()
+    player = {"on_player": len(set(present)),
+              "capacity": p["capacity"] if "capacity" in keys else None,
+              "kind": p["kind"] if "kind" in keys else None}
+    return lines, {"plays_waiting": waiting or 0, "oldest_waiting": oldest,
+                   "player": player}
 
 
 def music_section(manifest, cfg, cache_dir):
@@ -389,6 +394,7 @@ def problems(facts, now=None):
             now - facts["oldest_waiting"] > 86400:
         out.append(f"{facts['plays_waiting']} plays waiting over a day "
                    f"(is the server reachable?)")
+    out += facts.get("size_notes", [])
     for s in facts.get("failed_syncs", []):
         out.append(f"Sync failed {when(s['started'])} (see journalctl -u 'musicdock-sync@*')")
     errors = facts.get("errors", [])
@@ -443,6 +449,13 @@ def main(argv=None):
             print(f"\n{title}")
         for line in lines:
             print(f"  {line}")
+    if facts.get("player"):
+        import dock_limits
+        import dock_restore
+        pl = facts["player"]
+        facts["size_notes"] = dock_limits.player_notes(
+            pl["on_player"], len(dock_restore.targets(manifest)), pl["capacity"], cfg,
+            pl["kind"])
     print("\nProblems")
     for line in problems(facts) or ["none"]:
         print(f"  {line}")
