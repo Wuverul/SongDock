@@ -493,6 +493,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   `/etc/systemd/system/musicdock-prepare.timer.d/50-check-interval.conf`
   (empty `OnUnitInactiveSec=` first, or the values add up), daemon-reload,
   restart the timer - only when the value changed. install.sh runs it once.
+  **Bug (found 2026-10-25):** an empty `OnUnitInactiveSec=` clears *every*
+  trigger of the timer, OnBootSec too; after the next reboot no first run
+  happened, so OnUnitInactiveSec (counted from a run's end) never fired and
+  the dock stopped checking for ~2 days (`TimersMonotonic` showed only
+  OnUnitInactiveUSec, timer "elapsed", NEXT "-"). The drop-in now sets
+  `OnBootSec=1min` again; the text changed, so it's rewritten on the next
+  run. Without sudo, a no-op config save (`: >> config.toml`) triggers
+  musicdock-settings.path, which applies it.
   PathChanged firing on DockSetup.txt's atomic replace (rename) is
   unverified on hardware.
 - **Removal grace period:** `[sync] removal_grace_days` (0-30, default 7). A

@@ -36,11 +36,20 @@ class TimerTests(unittest.TestCase):
 
     def test_writes_the_interval_and_restarts_the_timer_once(self):
         self.assertEqual(self.apply("[sync]\ncheck_interval_minutes = 15\n"), (15, True))
-        self.assertIn("OnUnitInactiveSec=\nOnUnitInactiveSec=15min\n", self.dropin())
+        # The empty line clears every trigger, so the after-boot one comes back.
+        self.assertIn("OnUnitInactiveSec=\nOnBootSec=1min\nOnUnitInactiveSec=15min\n",
+                      self.dropin())
         self.assertEqual(self.commands, [["systemctl", "daemon-reload"],
                                          ["systemctl", "restart", "musicdock-prepare.timer"]])
         self.assertEqual(self.apply(), (15, False))                # unchanged: no reload
         self.assertEqual(len(self.commands), 2)
+
+    def test_an_older_dropin_without_the_boot_trigger_is_replaced(self):
+        os.makedirs(self.dropins)
+        with open(os.path.join(self.dropins, dock_timer.DROPIN), "w") as f:
+            f.write("[Timer]\nOnUnitInactiveSec=\nOnUnitInactiveSec=5min\n")
+        self.assertEqual(self.apply(), (5, True))
+        self.assertIn("OnBootSec=1min", self.dropin())
 
     def test_missing_or_bad_values_mean_five_minutes(self):
         self.assertEqual(self.apply()[0], 5)                       # no config file at all

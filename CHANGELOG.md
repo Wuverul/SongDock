@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Fix: the dock stopped checking for new music after a restart.** The
+  check-interval setting's timer override also removed the "1 minute
+  after boot" check, so after a reboot the first check never ran and
+  nothing started the next ones. Running the installer again (as when
+  updating) repairs an existing dock.
 - **Other music players:** any USB player with a `MediaDock.txt` in its top
   folder gets music copied into a `MediaDock` folder, tagged playlists'
   songs included (no playlists on the player). No plays are read; SAFE TO
