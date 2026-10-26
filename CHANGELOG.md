@@ -1,8 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
-Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs).
+Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs), plus
+safe hours and a few new screens.
+
+**If you're updating** (INSTALL.md, "Updating"): run the installer again; it
+adds the Wi-Fi check. Safe hours are on from 7 to 10 AM unless you set
+`safe_hours` (e.g. `"off"`). A config from 0.6.0 says `sync_batch_size = 25`;
+change it to `"auto"` for the new batch sizes. Not yet tried on hardware:
+plays read through the new database code, safe hours on a real dock, the
+RESTORING screen (needs a new or wiped iPod) and an actual Wi-Fi switch-back.
 
 - **The iPod's database is no longer loaded whole.** The dock keeps an index
   of it and saves by streaming the old file into a new one, so memory stays
