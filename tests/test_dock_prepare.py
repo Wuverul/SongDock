@@ -644,6 +644,14 @@ class PrepareTests(unittest.TestCase):
                          (everyone, []))
         self.assertNotIn("interim", final)
 
+    def test_auto_batches_are_a_twentieth_of_the_run_within_25_to_500(self):
+        size = dock_prepare.batch_size
+        self.assertEqual([size("auto", n, 4) for n in (0, 10, 81, 500, 1000, 1001, 10000, 40000)],
+                         [25, 25, 25, 25, 50, 51, 500, 500])
+        self.assertEqual(size(40, 1000, 4), 40)              # a number is used as is
+        self.assertEqual(size(0, 1000, 4), 0)                # off
+        self.assertEqual(size("auto", 1000, 1), 0)           # one core: never
+
     def test_no_batches_on_one_core_or_when_off(self):
         self.assertEqual(self.batch_run(batch=1, cores=1)[1], [])
         self.tmp.cleanup()
@@ -972,9 +980,12 @@ class ConfigTests(unittest.TestCase):
                                           '[display]\ntheme = "dark"\n'))
         self.assertEqual((cfg["display"]["theme"], cfg["sync"]["check_interval_minutes"]),
                          ("dark", 15))
-        self.assertEqual(cfg["sync"]["sync_batch_size"], 25)
+        self.assertEqual(cfg["sync"]["sync_batch_size"], "auto")
+        cfg = dock_config.load(self.write(base + '[sync]\nsync_batch_size = 40\n'))
+        self.assertEqual(cfg["sync"]["sync_batch_size"], 40)
         for bad, why in (('[sync]\nsync_batch_size = -1', "sync_batch_size"),
                          ('[sync]\nsync_batch_size = 2.5', "sync_batch_size"),
+                         ('[sync]\nsync_batch_size = "big"', "sync_batch_size"),
                          ('[display]\ntheme = "blue"', "theme"),
                          ('[sync]\ncheck_interval_minutes = 0', "check_interval"),
                          ('[sync]\ncheck_interval_minutes = 2000', "check_interval"),

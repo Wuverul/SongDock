@@ -381,7 +381,11 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   last plan). It never waits for the prepare process to exit: the end of
   a run waits for a running sync (deadlock otherwise) - the final plan on
   disk is the signal. Mid-run batches that find this sync running skip
-  their resync request, as before. Replaces ~1,600 per-batch sessions
+  their resync request, as before. **Batch size (2026-10-26, user's
+  rule):** `sync_batch_size = "auto"` (default) = songs to prepare this
+  run / 20, kept to 25-500 (`dock_prepare.batch_size`); a number forces
+  it, 0 = off. Verified the same day with 10: one sync 12:14-12:51
+  followed 8 plans, +120, one save, peak 44 MB. Replaces ~1,600 per-batch sessions
   (~1.5 min each at 40k) per 40k-track run. **Not yet built:** a session
   spanning several prepare runs (the next run still waits for the sync
   to end, so a cache-limited 400 GB sync is ~one session per run),

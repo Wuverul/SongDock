@@ -214,14 +214,15 @@ check_interval_minutes = 15
 It takes effect a few seconds after you save the file (no restart needed).
 
 **Copying while converting** (Pi Zero 2 W and other multi-core Pis): during
-a big batch of new music, every 25 finished songs are handed to a docked
-iPod, which syncs them while the rest convert; the screen shows **PREPARE &
-SYNC** until it's all done. Change the batch size, or set 0 to copy only
-once everything is converted:
+a big batch of new music, finished songs are handed to a docked iPod in
+batches, which it copies while the rest convert - one sync for the whole run;
+the screen shows **PREPARE & SYNC** until it's all done. By default a batch
+is a twentieth of the run (25 to 500 songs). Set a fixed number, or 0 to
+copy only once everything is converted:
 
 ```toml
 [sync]
-sync_batch_size = 25
+sync_batch_size = "auto"
 ```
 Checking more often means new music reaches a docked iPod sooner; each check
 that finds nothing new takes a few seconds and changes nothing.

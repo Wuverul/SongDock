@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs).
+
+- **The iPod's database is no longer loaded whole.** The dock keeps an index
+  of it and saves by streaming the old file into a new one, so memory stays
+  low however many songs the iPod has (40,000 songs: under 120 MB, where
+  the old way needed about 1.3 GB). Saves go to a temporary file on the
+  iPod and are then swapped in, so a cut-off save can't leave a broken
+  database.
+- **One save per sync** (or one an hour during a long one), instead of one
+  every 25 songs. Songs copied before a crash or power cut are picked up by
+  the next sync instead of being copied again.
+- **One sync per batch of new music.** While new music converts, the docked
+  iPod stays connected and takes each part as it's ready, instead of being
+  reconnected and synced again for every 25 songs.
+- **`sync_batch_size = "auto"`** (new default): a twentieth of the run per
+  hand-over, 25 to 500 songs. A number still sets it; 0 still turns it off.
+
 ## 0.6.0
 
 More kinds of players, and a dock that tells you when its USB port has

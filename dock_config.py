@@ -25,7 +25,8 @@ DEFAULTS = {
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
              # verified on a Zero 2 W; single-core Pis skip it by themselves.
-             "sync_batch_size": 25},
+             # "auto": sized per run (dock_prepare.batch_size).
+             "sync_batch_size": "auto"},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False, "auto_resync": True,
                "flac": True},                  # Rockbox-only dock: FLAC as-is (false = convert)
@@ -117,9 +118,9 @@ def load(path=None):
         raise ConfigError(f'{path}: [display] model must be "v4", "v3" or "v2" (the '
                           f'version printed on the back of the screen)')
     b = cfg["sync"]["sync_batch_size"]
-    if not (isinstance(b, int) and not isinstance(b, bool) and 0 <= b <= 1000):
-        raise ConfigError(f"{path}: sync_batch_size must be a whole number of tracks "
-                          f"from 0 to 1000 (default 25; 0 = only when all are prepared)")
+    if b != "auto" and not (isinstance(b, int) and not isinstance(b, bool) and 0 <= b <= 1000):
+        raise ConfigError(f'{path}: sync_batch_size must be "auto" or a whole number of '
+                          f'tracks from 0 to 1000 (0 = only when all are prepared)')
     m = cfg["sync"]["check_interval_minutes"]
     if not (isinstance(m, int) and not isinstance(m, bool) and 1 <= m <= 1440):
         raise ConfigError(f"{path}: check_interval_minutes must be a whole number of "

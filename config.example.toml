@@ -30,10 +30,11 @@ check_interval_minutes = 5         # how often the dock checks Navidrome for new
                                    # and sends waiting plays (1-1440). A docked iPod syncs
                                    # right after a check finds something. Takes effect by
                                    # itself within a few seconds of saving this file.
-sync_batch_size = 25               # while converting, sync a docked iPod in batches of this
-                                   # many new tracks as the rest still convert (Pi with 2+
-                                   # cores, e.g. Zero 2 W; a Zero W converts first anyway).
-                                   # 0 = sync only once everything is converted.
+sync_batch_size = "auto"           # while converting, hand new tracks to a docked iPod in
+                                   # batches as the rest still convert (Pi with 2+ cores,
+                                   # e.g. Zero 2 W; a Zero W converts first anyway). "auto":
+                                   # 1/20 of the run, 25 to 500 tracks each. A number = that
+                                   # many; 0 = sync only once everything is converted.
 
 [device]
 type = "stock_ipod"                # stock_ipod: music converted for stock iPods (MP3/ALAC);

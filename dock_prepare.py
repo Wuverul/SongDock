@@ -793,6 +793,24 @@ class KeptTracks:
             self.dirty = False
 
 
+# sync_batch_size = "auto": about BATCH_GROUPS hand-overs per run, each at
+# least BATCH_MIN and at most BATCH_MAX tracks (user's rule, 2026-10-26).
+# Every hand-over rewrites the whole plan (~21 MB at 40,000 tracks) and the
+# sync re-reads it: a few hundred per run at most. Smaller batches start
+# copying sooner and leave less to copy once conversion ends.
+BATCH_GROUPS, BATCH_MIN, BATCH_MAX = 20, 25, 500
+
+
+def batch_size(setting, count, cores):
+    """Tracks per hand-over for a run preparing `count` tracks (0 = none:
+    one core, where a sync would only slow conversion, or turned off)."""
+    if cores < 2:
+        return 0
+    if setting == "auto":
+        return min(BATCH_MAX, max(BATCH_MIN, -(-count // BATCH_GROUPS)))
+    return int(setting or 0)
+
+
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
             on_player=None, on_batch=None, cpu_count=None, on_progress=None):
@@ -1097,9 +1115,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # Concurrent batches (Pi with 2+ cores): every `batch` newly prepared
     # tracks, hand the plan so far to the sync (on_batch asks for a sync of a
     # docked iPod), while the remaining conversions carry on.
-    batch = int(cfg["sync"].get("sync_batch_size", 25) or 0)
-    if batch and (cpu_count or os.cpu_count() or 1) < 2:
-        batch = 0                    # one core: a sync would only slow conversion
+    batch = batch_size(cfg["sync"].get("sync_batch_size", "auto"), len(missing),
+                       cpu_count or os.cpu_count() or 1)
+    if batch and len(missing) > batch:
+        log.info("Handing new music to a docked iPod every %d tracks", batch)
     handed = {"added": 0, "batches": 0}
 
     def hand_over():

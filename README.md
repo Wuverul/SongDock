@@ -136,7 +136,7 @@ operating system it was tested with:
 | Preparing a first batch of ~900 songs (~2,600 minutes of music) | about 1.5-2 days | **about 3 hours** |
 | A weekly handful of new songs (~30) | about 1.5 hours | 5-10 minutes |
 | Copying to an iPod nano 4G | ~11 s per song (~1.3-1.5 MB/s; about half of it is the Pi updating the iPod's database and album art) | **~2.8 s per song, ~2.2 MB/s** (902 songs, 5.4 GB, in 41 minutes) |
-| When copying happens | **after** all the music is converted, so it adds its own time (one core can't do both) | **during** conversion, every 25 finished songs (`sync_batch_size`), so it isn't extra time: in a 73-song test the iPod was complete 1¼ minutes after the last song converted* |
+| When copying happens | **after** all the music is converted, so it adds its own time (one core can't do both) | **during** conversion, in batches of finished songs (`sync_batch_size`, 25-500 a batch), so it isn't extra time: in a 73-song test the iPod was complete 1¼ minutes after the last song converted* |
 | Temperature while converting | no throttling seen | ~50 °C with a small heatsink, never throttled |
 
 **Which to get:** the **Pi Zero 2 W** is about 16 times faster at preparing
