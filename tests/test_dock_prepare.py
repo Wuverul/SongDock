@@ -637,10 +637,12 @@ class PrepareTests(unittest.TestCase):
             self.assertFalse(ready & waiting)
             self.assertTrue(all(s["reason"] == "waiting to be prepared" and not s["error"]
                                 for s in m["skipped"]))
+            self.assertTrue(m["interim"])                     # a sync stays on for more
         self.assertLess(len(handed[0]["tracks"]), 4)
         final = self.manifest()                               # the real plan replaces it
         self.assertEqual(({t["id"] for t in final["tracks"]}, final["skipped"]),
                          (everyone, []))
+        self.assertNotIn("interim", final)
 
     def test_no_batches_on_one_core_or_when_off(self):
         self.assertEqual(self.batch_run(batch=1, cores=1)[1], [])

@@ -450,6 +450,9 @@ class StreamDatabase:
             filepath, self._mountpoint, self._device.music_dirs if self._device else 50,
             prefix=cfg.filename_prefix, rand_len=cfg.filename_rand_len,
             charset=cfg.filename_charset, rng=self._rng)
+        dest = os.path.join(self._mountpoint, ipod_path.lstrip(":").replace(":", os.sep))
+        _fsync_file(dest)          # on the player for sure before it's logged as copied
+        _fsync_dir(os.path.dirname(dest))
         return self._add(filepath, ipod_path, kwargs)
 
     def add_existing(self, ipod_path, **kwargs):
@@ -656,6 +659,7 @@ class StreamDatabase:
             dst.flush()
             os.fsync(dst.fileno())
         os.replace(tmp, dest)
+        _fsync_dir(os.path.dirname(dest))          # the rename itself
         base = os.path.join(self._work_dir, "iTunesDB.current")
         os.replace(out, base)
         self._source = base
@@ -812,6 +816,30 @@ class StreamDatabase:
         for pos, t in enumerate(final):
             out.write(_mhip(t.track_id, pos))
         _finish_playlist(out, start, len(mhods) + len(sort_mhods), len(final))
+
+
+# ================================================================== files ====
+def _fsync_file(path):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_dir(path):
+    """Make a folder's entries (a new file, a rename) durable. Not every
+    system can fsync a folder (macOS, some file systems): best effort."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 # ============================================================ record bytes ====

@@ -788,32 +788,47 @@ def fill_missing_names(track, t):
 
 
 SAVE_EVERY = 60 * 60       # seconds of copying between database saves
+SAVE_AFTER = 2000          # ... or unsaved tracks (each held in memory until then)
+
+
+def new_session(pending=(), clock=time.monotonic):
+    """State shared by the apply_plan calls of one sync: tracks copied
+    but not yet saved, when the database was last saved, and how many
+    tracks were copied so far (for progress)."""
+    return {"pending": list(pending), "last_save": clock(), "dirty": False, "copied": 0}
 
 
 def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                save=checked_save, dirty=False, pending=(), save_every=None,
-               clock=time.monotonic):
+               clock=time.monotonic, session=None, final=True):
     """Make the player match the staged plan (prepare job's manifest).
 
     Order: remove tracks that left every target (with their files), add
     missing ones, and rebuild the dock's playlists. The database is saved
-    once at the end, or after `save_every` seconds of copying (a save
-    rewrites the whole database: ~1 min at 40,000 tracks). Each copied file
-    goes into the copy log first, so a crash between saves loses nothing:
-    the next sync adds those files back (reconcile) and carries on. Tracks
-    are recorded as present only once a saved database has them.
+    once at the end, or after `save_every` seconds of copying or SAVE_AFTER
+    unsaved tracks (a save rewrites the whole database: ~1 min at 40,000
+    tracks). Each copied file goes into the copy log first, so a crash
+    between saves loses nothing: the next sync adds those files back
+    (reconcile) and carries on. Tracks are recorded as present only once a
+    saved database has them.
     `dirty`: the DB was changed before this call (e.g. reconcile adopted
     tracks) and must be saved even if the plan changes nothing.
     `pending`: (track, plan entry) already in the DB but not yet recorded
     (reconcile's report["pending"]).
+    A sync that follows a prepare run applies each plan it hands over with
+    one `session` (new_session) and final=False - copying only, saving on
+    the clock - and the last with final=True (playlists, closing save).
     Returns a summary dict.
     """
     if "tracks" not in manifest:
         raise ValueError("No staged plan: refusing to apply it (it would remove every track)")
     wanted = {t["id"]: t for t in manifest["tracks"]}
     save_every = SAVE_EVERY if save_every is None else save_every
+    if session is None:
+        session = new_session(pending, clock)
+    session["dirty"] = session["dirty"] or dirty
     saved = False
-    pending = list(pending)
+    pending = session["pending"]
     on_player = {t.dbid: t for t in db.tracks}
     present = {}
     for r in record.tracks(guid):
@@ -829,6 +844,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         nonlocal saved
         save(db, guid)                              # DB first ...
         saved = True
+        session["last_save"] = clock()
+        session["dirty"] = False
         with record.transaction():                  # ... then the record
             for track, t in pending:
                 record.add_track(guid, track.dbid, ipod_path=track.ipod_path,
@@ -864,7 +881,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         regenred += "genre" in fields
     if regenred:
         log_info(f"Genre updated on {regenred} track(s) (the [genres] list)")
-    dirty = dirty or bool(renamed)
+    session["dirty"] = session["dirty"] or bool(renamed)
     additions = [t for nid, t in wanted.items() if nid not in present or nid in changed]
 
     # Remove from the DB, save, and only then delete the files: if the save
@@ -906,9 +923,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
             art_added += 1
     if art_added:
         log_info(f"Added album art to {art_added} track(s) already on the player")
-        dirty = True
+        session["dirty"] = True
     added, skipped_full = 0, 0
-    last_save = clock()
     for n, t in enumerate(additions):
         path = os.path.join(cache_dir, t["file"])
         if not os.path.exists(path):
@@ -920,7 +936,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
             log_info(f"Player is full: {skipped_full} track(s) not added")
             break
         if progress:
-            progress(added, len(additions), t)
+            progress(session["copied"] + added, session["copied"] + len(additions), t)
         # Navidrome's album name, not the file's tag: they can differ
         # (e.g. "Inertia (deluxe digital)" vs "Inertia"), and the player
         # should match what the user sees in Navidrome.
@@ -931,17 +947,58 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         record.log_copied(guid, track.ipod_path, t["id"], t)
         pending.append((track, t))
         added += 1
-        if clock() - last_save >= save_every:
-            log_info(f"Saving the player's database ({added} of {len(additions)} copied)")
+        if clock() - session["last_save"] >= save_every or len(pending) >= SAVE_AFTER:
+            log_info(f"Saving the player's database ({len(pending)} track(s) since the "
+                     "last save)")
             commit()
-            last_save = clock()
+    session["copied"] += added
 
-    playlists_changed = sync_playlists(db, record, guid, manifest, pending)
-    if pending or playlists_changed or (dirty and not saved):
-        commit()
+    playlists_changed = 0
+    if final:
+        playlists_changed = sync_playlists(db, record, guid, manifest, pending)
+        if pending or playlists_changed or session["dirty"]:
+            commit()
     return {"added": added, "removed": removed, "replaced": len(changed), "renamed": renamed,
             "art_added": art_added, "not_added_full": skipped_full,
             "playlists_changed": playlists_changed}
+
+
+def follow_plans(db, record, guid, mount, manifest, cache_dir, next_plan, session,
+                 dirty=False, **kw):
+    """Apply `manifest`, and while it's an interim plan (a prepare run is
+    still converting: concurrent batches), keep the player mounted and
+    apply each plan the run hands over as it comes - copying only, saving
+    on the clock - instead of a new sync per batch (at 40,000 tracks each
+    sync re-reads, opens and saves the whole database). next_plan(plan)
+    returns the next plan, or None once there's none to wait for. The last
+    plan gets the full treatment: removals, playlists, the closing save.
+    Returns the summed summary."""
+    total = {}
+
+    def add(result):
+        for k, v in result.items():
+            total[k] = total.get(k, 0) + v
+
+    plan, waves = manifest, 1
+    while True:
+        follow = next_plan is not None and plan.get("interim")
+        add(apply_plan(db, record, guid, mount, plan, cache_dir, session=session,
+                       dirty=dirty, final=not follow, **kw))
+        dirty = False
+        if not follow:
+            break
+        nxt = next_plan(plan)
+        if nxt is None:               # the run went away: finish with what we have
+            add(apply_plan(db, record, guid, mount, plan, cache_dir, session=session, **kw))
+            break
+        plan, waves = nxt, waves + 1
+        log_info(f"Next part of the prepare run's plan ({len(plan.get('tracks', []))} "
+                 f"tracks ready): copying it in this same sync")
+    if waves > 1:
+        log_info(f"Followed the prepare run through {waves} plans in one sync")
+    total["plans"] = waves
+    total["applied"] = plan.get("generated")
+    return total
 
 
 def sync_playlists(db, record, guid, manifest, pending=()):
@@ -1026,7 +1083,7 @@ def open_database(mount, work_dir, snapshot=None):
 
 def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
                 write=False, client=None, usb_product=None, step=None, progress=None,
-                block_device=None):
+                block_device=None, next_plan=None):
     """One dock session for a stock iPod (the sync job's steps 2-5).
 
     2. Snapshot the play data and DB, map plays to songs (reconciling the
@@ -1101,9 +1158,10 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             def save(db, guid):
                 checked_save(db, guid)
                 refresh_backup(mount, backup, db)
-            result = apply_plan(db, record, guid, mount, manifest, cache_dir, progress=progress,
-                                save=save, pending=report["pending"],
-                                dirty=report["dirty"] or resort or reshare or bool(entries))
+            result = follow_plans(
+                db, record, guid, mount, manifest, cache_dir, next_plan, progress=progress,
+                save=save, session=new_session(report["pending"]),
+                dirty=report["dirty"] or resort or reshare or bool(entries))
             if resort:
                 mark_sort_order(mount)
             if reshare:

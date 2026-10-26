@@ -1069,7 +1069,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     def build_manifest(waiting=False):
         """The plan from what's cached now. waiting=True (a batch handed over
         mid-run): songs not prepared yet are listed as skipped ("waiting to
-        be prepared"), so the sync keeps them on the player."""
+        be prepared"), so the sync keeps them on the player, and the plan is
+        marked "interim": a sync holding it stays on to take the next one."""
         ready, uncached = [], []
         for name, t in wanted.items():
             path = os.path.join(tracks_dir, name)
@@ -1090,6 +1091,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "tracks": ready, "on_player": uncached, "playlists": playlists,
             "skipped": not_ready, "kept_after_removal": len(kept.items),
             **({"album_types": album_types} if album_types else {}),
+            **({"interim": True} if waiting else {}),
         }
 
     # Concurrent batches (Pi with 2+ cores): every `batch` newly prepared

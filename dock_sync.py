@@ -582,7 +582,8 @@ def make_ipod_work(cfg, guid, product, write):
                 backup_root=os.path.join(base, "backups", player_guid),
                 write=writing and not refused, client=client, usb_product=product, step=step,
                 progress=progress, block_device=whole_disk(getattr(device, "path", "")),
-                **({} if kind == "stock" else {"kind": kind}))
+                **({"next_plan": lambda plan: next_plan(cache_dir, plan)} if kind == "stock"
+                   else {"kind": kind}))
         finally:
             record.close()
         if mac_formatted:
@@ -600,7 +601,8 @@ def make_ipod_work(cfg, guid, product, write):
                 raise SyncError("Stock iPod: dock is set up for Rockbox")
             # else: SETUP NOT USED shows why the DockSetup.txt failed
         elif writing:
-            summary["followup"] = ask_for_followup(cfg, manifest, player_guid)
+            applied = {"generated": summary.get("applied", manifest.get("generated"))}
+            summary["followup"] = ask_for_followup(cfg, applied, player_guid)
             try:
                 import dock_guide
                 if dock_guide.write_guide(device.root, cfg, kind=kind):
@@ -610,6 +612,31 @@ def make_ipod_work(cfg, guid, product, write):
         log.info("Session summary: %s", summary)
         return summary
     return work
+
+
+FOLLOW_POLL = 30          # seconds between looks for the prepare run's next plan
+
+
+def next_plan(cache_dir, applied, poll=FOLLOW_POLL, sleep=time.sleep, running=None):
+    """For a sync following a prepare run (ipod_handler.follow_plans): wait
+    for the plan after `applied` and return it, or None once no prepare
+    run is left to hand one over (it ended or crashed without a newer
+    plan). Never waits for the prepare job to exit: the end of a run waits
+    for a running sync, so the final plan on disk is the signal."""
+    import dock_progress
+    running = running or dock_progress.running_prepare
+    path = os.path.join(cache_dir, "manifest.json")
+    while True:
+        try:
+            with open(path) as f:
+                newest = json.load(f)
+        except (OSError, ValueError):
+            newest = None
+        if newest and "tracks" in newest and newest.get("generated") != applied.get("generated"):
+            return newest
+        if running() is None:
+            return None
+        sleep(poll)
 
 
 def ask_for_followup(cfg, applied, guid):

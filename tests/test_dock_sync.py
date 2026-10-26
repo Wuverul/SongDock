@@ -698,5 +698,41 @@ class StatusGuardTests(unittest.TestCase):
         self.assertEqual(len(self.drawn), 3)
 
 
+class NextPlanTests(unittest.TestCase):
+    """A sync following a prepare run waits for its next plan."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cache = tmp.name
+        self.write({"tracks": [], "generated": "1", "interim": True})
+
+    def write(self, plan):
+        with open(os.path.join(self.cache, "manifest.json"), "w") as f:
+            json.dump(plan, f)
+
+    def test_returns_the_next_plan_once_it_is_written(self):
+        naps = []
+
+        def sleep(_):
+            naps.append(1)
+            if len(naps) == 3:
+                self.write({"tracks": [{"id": "a"}], "generated": "2"})
+        plan = dock_sync.next_plan(self.cache, {"generated": "1"}, sleep=sleep,
+                                   running=lambda: {"run": 1})
+        self.assertEqual(plan["generated"], "2")
+        self.assertEqual(len(naps), 3)
+
+    def test_none_once_the_run_is_gone(self):
+        self.assertIsNone(dock_sync.next_plan(self.cache, {"generated": "1"},
+                                              sleep=lambda _: self.fail("waited"),
+                                              running=lambda: None))
+
+    def test_a_newer_plan_wins_even_after_the_run_ended(self):
+        self.write({"tracks": [], "generated": "9"})
+        plan = dock_sync.next_plan(self.cache, {"generated": "1"}, running=lambda: None)
+        self.assertEqual(plan["generated"], "9")
+
+
 if __name__ == "__main__":
     unittest.main()

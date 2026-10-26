@@ -367,12 +367,28 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   `tests/test_ipod_db.py` makes the same changes through pygpod and
   StreamDatabase and compares what pygpod reads back. The handler opens it
   with `open_database(mount, work_dir, snapshot)` (from the session's
-  snapshot: no second USB read). Saves: hourly or at the end, with a
-  copy log (see "Resumable long syncs"). **Not yet built (next):** one
-  sync session spanning a prepare run's waves (each per-batch session at
-  40k costs ~1.5 min of re-plug/open/save; 1,600 of them ~40 h), and the
-  `Restoring n / N` screen. Also: backup_player still re-reads iTunes/
-  over USB at the start of each session.
+  snapshot: no second USB read). Saves: hourly, after `SAVE_AFTER` (2000)
+  unsaved tracks (each holds ~30 KB until saved), or at the end, with a
+  copy log (see "Resumable long syncs"). Copied files and the folder
+  after the DB rename are fsynced (`_fsync_file`/`_fsync_dir`).
+  **One sync follows a whole prepare run (2026-10-26):** plans handed
+  over mid-run carry `"interim": true`; `ipod_handler.follow_plans`
+  applies each with one session (`new_session`) and `final=False`
+  (copy only, save on the clock), then the final plan with removals,
+  playlists and the closing save. `dock_sync.next_plan` polls
+  manifest.json every 30 s for a newer `generated` and returns None once
+  `dock_progress.running_prepare()` is gone (crashed run: finish with the
+  last plan). It never waits for the prepare process to exit: the end of
+  a run waits for a running sync (deadlock otherwise) - the final plan on
+  disk is the signal. Mid-run batches that find this sync running skip
+  their resync request, as before. Replaces ~1,600 per-batch sessions
+  (~1.5 min each at 40k) per 40k-track run. **Not yet built:** a session
+  spanning several prepare runs (the next run still waits for the sync
+  to end, so a cache-limited 400 GB sync is ~one session per run),
+  `TimeoutStartSec=24h` on musicdock-sync@ (sessions over a day need
+  `infinity`, an install change), counting copy-logged songs as held for
+  cache eviction, fsck of a dirty FAT on mount, the `Restoring n / N`
+  screen. backup_player still re-reads iTunes/ over USB at the start.
 - `rockbox_handler.py`: **Rockbox players** (2026-10-23; built against fake
   players; **first hardware run 2026-10-25** with a USB flash drive +
   empty `.rockbox`: 1454 tracks in 34.5 min, 101 cover.jpg, 7 playlists,

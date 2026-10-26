@@ -359,6 +359,63 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(len(self.db().tracks), 2)
         self.assertEqual(self.rec.copied(G), [])
 
+    def follow(self, plans, first, save=None, **kw):
+        """One sync following a prepare run that hands over `plans` after
+        `first` (interim ones marked so); returns (summary, saves)."""
+        saves, queue = [], list(plans)
+
+        def counting_save(db, guid):
+            saves.append(len(db.tracks))
+            (save or h.checked_save)(db, guid)
+
+        def next_plan(plan):
+            return queue.pop(0) if queue else None
+        db = self.db()
+        report = h.reconcile(db, self.rec, G, self.mount, manifest=first)
+        summary = h.follow_plans(db, self.rec, G, self.mount, first, self.cache, next_plan,
+                                 session=h.new_session(report["pending"]), save=counting_save,
+                                 **kw)
+        return summary, saves
+
+    def interim(self, ready, waiting, playlists=()):
+        plan = self.manifest(ready, playlists)
+        plan["skipped"] = [{"id": t["id"], "reason": "waiting to be prepared", "error": False}
+                           for t in waiting]
+        plan["interim"] = True
+        return plan
+
+    def test_one_sync_follows_a_prepare_run_and_saves_once(self):
+        songs = [self.song(f"n{i}", f"Song {i}") for i in range(4)]
+        favs = [("starred", "Favorites", [s["id"] for s in songs])]
+        first = self.interim(songs[:1], songs[1:])
+        plans = [self.interim(songs[:3], songs[3:]),
+                 self.manifest(songs, favs)]                    # the run's final plan
+        summary, saves = self.follow(plans, first)
+        self.assertEqual(saves, [4])                            # one save, at the end
+        self.assertEqual((summary["added"], summary["plans"]), (4, 3))
+        self.assertEqual(sorted(t.title for t in self.db().tracks),
+                         [f"Song {i}" for i in range(4)])
+        pls = {p.name: [t.title for t in p.tracks] for p in self.db().playlists
+               if not p.is_master}
+        self.assertEqual(pls, {"Favorites": [f"Song {i}" for i in range(4)]})
+        self.assertEqual(len(self.rec.tracks(G)), 4)
+        self.assertEqual(self.rec.copied(G), [])
+
+    def test_a_run_that_goes_away_still_ends_with_a_save(self):
+        songs = [self.song(f"n{i}", f"Song {i}") for i in range(3)]
+        self.apply(self.manifest(songs[2:]))                    # already on the player
+        first = self.interim(songs[:2], songs[2:])
+        summary, saves = self.follow([], first)                 # no plan ever follows
+        self.assertEqual(saves, [3])
+        self.assertEqual((summary["added"], summary["removed"]), (2, 0))  # waiting kept
+        self.assertEqual(len(self.rec.tracks(G)), 3)
+
+    def test_unsaved_tracks_are_capped(self):
+        songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
+        with mock.patch.object(h, "SAVE_AFTER", 2):
+            _, saves = self.follow([], self.manifest(songs))
+        self.assertEqual(saves, [2, 4, 5])
+
     def test_database_saved_once_unless_an_hour_passes(self):
         songs = [self.song(f"n{i}", f"Song {i}") for i in range(7)]
         saves, now = [], [0]
