@@ -1,0 +1,15 @@
+# Checks every 30 seconds whether a failed plug-in left the USB port dead
+# (no event is sent for that). A check reads the kernel messages since the
+# last one and logs nothing unless the port is dead.
+#   systemctl list-timers musicdock-usbport
+
+[Unit]
+Description=SongDock: watch for a dead USB port
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

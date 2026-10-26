@@ -21,6 +21,8 @@ Who draws what:
   * sync job (runs when the player docks): syncing, prepsync, safe, failed,
     notsynced, wifi / wififail, setup / setupfail
   * boot (dock_boot.py): starting, offline; re-sync (dock_resync.py): connecting
+  * USB watch (dock_usbport.py): usbstuck - a failed plug-in left the USB
+    port dead; only a restart brings it back
 
 Every screen shows Wi-Fi status (signal bars + dBm, or "No Wi-Fi") in the
 bottom-right corner; the idle screen also shows the Pi's IP address. These are
@@ -79,7 +81,7 @@ PREPARE_SCREENS = {"idle", "preparing"}       # drawn by the prepare job
 # Resting screens --refresh may redraw when Wi-Fi connects or drops. Active
 # screens (syncing, preparing, boot) redraw often enough on their own.
 REFRESHABLE = {"idle", "safe", "failed", "notsynced", "wifi", "wififail", "setup",
-               "setupfail"}
+               "setupfail", "usbstuck"}
 # Options that control drawing rather than what's drawn; not saved for --refresh.
 CONTROL_OPTIONS = {"--force": 0, "--only-over": 1, "--preview": 1, "--at": 1,
                    "--wifi": 1, "--ip": 1}
@@ -356,6 +358,15 @@ def render(screen, args):
             rows.append(("Add MediaDock.txt to sync it", small_f))
         rows.append((f"Checked {now}", small_f))
         lines(rows)
+
+    elif screen == "usbstuck":
+        # A device failed to connect and the USB port stopped responding:
+        # nothing plugged in is noticed until the Pi restarts (dock_usbport.py).
+        header(f"{warn}USB NOT WORKING", inverted=True)
+        lines([("Restart the dock:", body_f),
+               ("unplug its power briefly", small_f),
+               ("Players aren't noticed until then", small_f),
+               (f"Seen {now}", small_f)])
 
     elif screen == "failed":
         header(f"{warn}SYNC FAILED", inverted=True)
@@ -665,7 +676,7 @@ def build_parser():
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
                                       "failed", "starting", "offline", "notsynced", "wifi", "wififail",
                                       "setup", "setupfail", "prepsync",
-                                      "connecting"])
+                                      "connecting", "usbstuck"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
                    help="syncing: items done within this step (fills the bar)")

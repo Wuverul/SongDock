@@ -150,6 +150,25 @@ class RestScreenTests(WifiRefreshTests):
         self.assertIn("5 plays", second)
         self.assertEqual(dock_status.load_state()["screen"], "idle")
 
+    def test_usb_not_responding_stays_until_a_restart(self):
+        import dock_usbport
+        dock_status.main(["idle"])
+        dock_status.main(["usbstuck", "--only-over", dock_usbport.SHOW_OVER])
+        self.assertEqual(dock_status.load_state()["screen"], "usbstuck")
+        self.draws.clear()
+        self.rest("timer")
+        self.rest("unplug")
+        dock_status.main(["idle", "--only-over", "none,idle,preparing"])   # prepare job
+        self.assertEqual(self.draws, [])
+        self.assertEqual(dock_status.load_state()["screen"], "usbstuck")
+
+    def test_usb_not_responding_never_covers_a_sync(self):
+        import dock_usbport
+        dock_status.main(["syncing", "--step", "5", "--total", "6"])
+        self.draws.clear()
+        dock_status.main(["usbstuck", "--only-over", dock_usbport.SHOW_OVER])
+        self.assertEqual(self.draws, [])
+
     def test_timer_leaves_failed_up(self):
         dock_status.main(["failed", "--reason", "Player is full"])
         self.draws.clear()

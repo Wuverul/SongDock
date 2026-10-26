@@ -11,6 +11,12 @@
   drive with a `.rockbox` folder: 1,454 songs, covers and 7 playlists, all
   correct. Reading plays from a real Rockbox player is still untested.
 - Messages say "player" rather than "iPod" for Rockbox and other players.
+- **USB NOT WORKING screen.** When a device failed to connect (e.g. a
+  loose plug), the dock's USB port could stay dead - nothing plugged in
+  afterwards was noticed until a restart - while the screen still said
+  DOCK READY. The dock now spots this in the kernel log and asks for a
+  restart. It doesn't try to revive the port itself: resetting the USB
+  controller crashed the Pi's kernel when tried.
 - **`flac = false`** (`[device]`, or `FLAC=no` in `DockSetup.txt`): with
   stock-iPod compatibility off, FLAC is still converted (to `convert_to`)
   for players that can't play it; other formats are copied as they are.

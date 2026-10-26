@@ -1,0 +1,18 @@
+# Show USB NOT WORKING when a failed plug-in left the USB port dead:
+# reads new kernel messages (see dock_usbport.py); never touches the USB
+# controller. Started every 30 s by musicdock-usbport.timer. install.sh
+# fills in @APP_DIR@ and @HOME@.
+
+[Unit]
+Description=SongDock: notice a USB port left dead by a failed plug-in
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/lib/musicdock
+ExecStart=/usr/bin/python3 @APP_DIR@/dock_usbport.py
+Environment=PYTHONUNBUFFERED=1
+Environment=EPD_LIB=@APP_DIR@/vendor
+Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
+# Runs twice a minute: keep systemd's "Starting/Finished" lines out of the
+# journal; only a dead port (a warning) is logged.
+LogLevelMax=warning

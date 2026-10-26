@@ -565,7 +565,23 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   no playlists. Test players were then deleted from the record (backup
   `dock.db.before-test-players-*`). **Hardware gotcha:** a bad plug-in
   (USB `error -71`) made the kernel disable the port
-  (`usb1-port1/disable` = 1); nothing was detected until a reboot.
+  (`usb1-port1/disable` = 1); nothing was detected until a reboot. Fixed
+  by `dock_usbport.py` (below).
+- `dock_usbport.py` (2026-10-25, user request): `musicdock-usbport.timer`
+  (root, every 30 s, `AccuracySec=5s`; `LogLevelMax=warning` keeps
+  systemd's start/finish lines out of the journal) reads new kernel
+  messages (`journalctl -k`, cursor in `/run/musicdock/usbport.json`).
+  After "usbN-portM: attempt power cycle" / "unable to enumerate USB
+  device" with no "New USB device found" / "USB disconnect" for 60 s, and
+  no sync running, it shows `usbstuck` (USB NOT WORKING, "Restart the
+  dock"; only over resting screens, once per failure; boot's --force
+  replaces it). **Detection only, by user decision ("I don't want to risk
+  crashes"):** unbinding + rebinding dwc_otg to revive the port **crashed
+  the kernel** (NULL pointer dereference in dwc_otg_driver_remove, 6.18,
+  Zero 2 W; USB gone until a power cycle). Never reset the controller.
+  Also: the port's sysfs `disable` reads 1 whenever nothing is plugged in
+  on dwc_otg (0 once a device is configured), so it can't show a dead
+  port. System python3, stdlib only.
 - **`[device] flac` (2026-10-24, user request):** default true; only used
   with `type = "rockbox"`. false = `dock_prepare.format_mode` returns
   `rockbox_no_flac`: FLAC -> `convert_to`, everything else (Ogg/Opus/MP3)

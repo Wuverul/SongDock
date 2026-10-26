@@ -210,6 +210,7 @@ for a dark case):
 | **WI-FI CHANGED / UNCHANGED** | Result of a `wifi.txt` on the iPod (see INSTALL.md) |
 | **DOCK UPDATED / SETUP NOT USED** | Result of a `DockSetup.txt` on the iPod (see `MediaDock README.txt` on the iPod) |
 | **NO WI-FI / CLOCK NOT SET** | The dock can't reach the network after starting up |
+| **USB NOT WORKING** | A plug-in failed (e.g. a loose connector) and the dock's USB port stopped responding. Unplug the dock's power briefly to restart it; until then, players aren't noticed |
 
 After a sync, the screen goes back to DOCK READY when you unplug the iPod, or
 after 10 minutes.

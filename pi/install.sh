@@ -166,7 +166,8 @@ else
               musicdock-prepare.service musicdock-prepare.timer \
               musicdock-wifi-refresh.service musicdock-rest@.service \
               musicdock-resync.service musicdock-resync.path \
-              musicdock-settings.service musicdock-settings.path; do
+              musicdock-settings.service musicdock-settings.path \
+              musicdock-usbport.service musicdock-usbport.timer; do
     sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@HOME@|$USER_HOME|g" \
         -e "s|@USER@|$LOGIN_USER|g" \
       "$APP_DIR/pi/$unit" > "/etc/systemd/system/$unit"
@@ -195,6 +196,8 @@ EOF
   systemctl enable --now musicdock-prepare.timer
   systemctl enable --now musicdock-resync.path
   systemctl enable --now musicdock-settings.path
+  # A USB port left dead by a failed plug-in shows USB NOT WORKING.
+  systemctl enable --now musicdock-usbport.timer
   # The check interval from config.toml (later changes apply by themselves).
   systemctl start musicdock-settings.service || true
   udevadm control --reload

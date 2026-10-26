@@ -211,6 +211,8 @@ WHAT THE SCREEN MEANS
   DOCK READY         Idle. Shows what the next sync will add and remove.
   WI-FI CHANGED / WI-FI UNCHANGED, DOCK UPDATED / SETUP NOT USED
                      Results of {wifi} and {setup} (see above).
+  USB NOT WORKING    A plug-in failed and the dock stopped noticing
+                     players. Unplug the dock's power briefly to restart it.
 Plays are never lost: if Navidrome can't be reached, the dock keeps them
 and sends them later.
 
