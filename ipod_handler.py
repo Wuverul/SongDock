@@ -4,26 +4,33 @@ ipod_handler.py - the stock-firmware iPod handler (pygpod; needs the venv).
 One sync session (sync_player): snapshot the play data and queue it, send
 it, then - in write mode - make sure SysInfo is complete, back up the
 database, reconcile the record with the iPod, and apply the prepare job's
-plan: removals, additions in batches of 25 (the database saved after each),
-names and genres, album art, playlists. Also here: the iPod's browse-list
-order, one album-art image per album (Classic / nano 3G-4G), a memory-safe
-album-art compaction that a failed sync or crash can't leave half-done,
-and the copy of the record kept on the iPod.
+plan: removals, additions (each file logged in the record as it's copied;
+the database saved at the end or once an hour), names and genres, album
+art, playlists. Also here: one album-art image per
+album (Classic / nano 3G-4G), a memory-safe album-art compaction that a
+failed sync or crash can't leave half-done, and the copy of the record
+kept on the iPod.
+
+The database is read and written by ipod_db.StreamDatabase, which keeps
+an index rather than the whole database in memory (pygpod needed ~35 KB
+per track, too much for a big iPod on a Pi); pygpod still builds new
+tracks, reads the play files and keeps the album art.
 
 Play data, and why the order of operations matters:
   * The iPod logs plays in iPod_Control/iTunes/"Play Counts" (newer models:
     iTunesStats or PlayCounts.plist): one entry per track *by position* in
     iTunesDB, with a count since the last DB write and the last play time.
-  * pygpod deletes those files whenever it opens the iPod folder, and after
-    any DB change the positions no longer match. So: snapshot Play Counts and
-    iTunesDB, map positions to tracks from the *snapshot* (Database.from_file
-    only reads), queue the plays in the record, and only then let pygpod open
-    the live database. (CLAUDE.md safety rules.)
+  * After any DB change the positions no longer match. So: snapshot Play
+    Counts and iTunesDB, map positions to tracks from the *snapshot*, queue
+    the plays in the record, and only then change the live database; the
+    play files are deleted only once a save has merged their counts into
+    it. (CLAUDE.md safety rules.)
 """
 
 import gc
 import os
 import shutil
+import time
 import warnings
 from datetime import datetime, timedelta
 
@@ -89,12 +96,12 @@ def plays_from_snapshot(workdir, record, guid, now=None, tracks=None):
     estimated by stepping back one track length each (approx=True). Tracks the dock didn't add
     get navidrome_id None and keep artist/title for later matching.
     """
-    import pygpod
+    import ipod_db
     entries = read_play_entries(workdir)
     if not entries:
         return []
     if tracks is None:        # the snapshot's tracks, if the caller has them loaded
-        tracks = pygpod.Database.from_file(os.path.join(workdir, "iTunesDB")).tracks
+        tracks = ipod_db.StreamDatabase.from_file(os.path.join(workdir, "iTunesDB")).tracks
     plays = []
     for entry, track in zip(entries, tracks):
         count = entry.play_count
@@ -264,6 +271,30 @@ def backup_player(mount, dest_root, keep=3):
     return dest
 
 
+def refresh_backup(mount, backup, db):
+    """After a successful save: the backup becomes that saved state, so a
+    later failure in the same (possibly hours-long) sync goes back to it
+    rather than to the start. The database comes from the Pi's copy (no
+    USB read); play files the save merged (and deleted) leave the backup
+    too - restored, they would credit plays to the wrong tracks."""
+    finish_compaction(mount)               # the saved ArtworkDB points into the new art
+    for parts in BACKED_UP:
+        out = os.path.join(backup, *parts)
+        src = os.path.join(mount, *parts)
+        if os.path.isdir(out):
+            for name in os.listdir(out):
+                if not os.path.exists(os.path.join(src, name)):
+                    os.remove(os.path.join(out, name))
+            for name in os.listdir(src):
+                if name == "iTunesDB" or not os.path.isfile(os.path.join(src, name)):
+                    continue
+                shutil.copy2(os.path.join(src, name), os.path.join(out, name))
+            shutil.copy2(db.source, os.path.join(out, "iTunesDB"))
+        elif os.path.isfile(src):
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            shutil.copy2(src, out)
+
+
 def restore_backup(mount, backup):
     """Put a backup's iTunesDB/ArtworkDB back (after a failed write)."""
     undo_compaction(mount)            # the backup's ArtworkDB points into the old art
@@ -305,6 +336,11 @@ def _key(title, artist):
 def reconcile(db, record, guid, mount, delete_orphans=True, manifest=None):
     """Compare the live player with the record before changing anything.
 
+    - Files the copy log (Record.copied) lists that the database doesn't
+      have - copied before a crash, after the last save - are added back
+      without copying them again (live player only: delete_orphans=True).
+      They're returned in report["pending"] as (track, plan entry), to be
+      recorded once the database is saved (apply_plan does that).
     - Tracks the record has but the player doesn't: marked removed (all of
       them at once = the player was reset; logged as such).
     - Tracks on the player the record doesn't have: adopted if their comment
@@ -358,74 +394,60 @@ def reconcile(db, record, guid, mount, delete_orphans=True, manifest=None):
             adopted += 1
         else:
             foreign += 1
+    pending = []
+    if delete_orphans:
+        pending = readd_copied(db, record, guid, mount)
+        dirty = dirty or bool(pending)
     referenced = {ipod_path_to_rel(t.ipod_path) for t in db.tracks if t.ipod_path}
     orphans = sorted(music_files(mount) - referenced)
     if delete_orphans:
         for rel in orphans:
             os.remove(os.path.join(mount, rel))
     return {"missing": len(missing), "reset": reset, "adopted": adopted,
-            "foreign": foreign, "orphans": len(orphans), "dirty": dirty}
+            "foreign": foreign, "orphans": len(orphans), "dirty": dirty,
+            "readded": len(pending), "pending": pending}
+
+
+def readd_copied(db, record, guid, mount):
+    """Files copied onto the player after its database was last saved (a
+    crash or unplug mid-sync): add them to the database rather than
+    copying them again. Entries whose file is gone, or that the database
+    already has (saved, but the log not cleared), are dropped from the
+    log. Returns [(track, plan entry)] still to be recorded."""
+    logged = record.copied(guid)
+    if not logged:
+        return []
+    in_db = {t.ipod_path for t in db.tracks}
+    have = {navidrome_id_from(t) for t in db.tracks}
+    done, pending = [], []
+    for c in logged:
+        path, t = c["ipod_path"], c["entry"]
+        if path in in_db or c["navidrome_id"] in have \
+                or not os.path.isfile(os.path.join(mount, ipod_path_to_rel(path))):
+            done.append(path)
+            continue
+        overrides = {"album": t["album"]} if t.get("album") else {}
+        track = db.add_existing(path, **overrides)
+        fill_missing_names(track, t)
+        track.comment = NAVIDROME_TAG + t["id"]
+        have.add(t["id"])
+        pending.append((track, t))
+    record.clear_copied(guid, done)
+    if pending:
+        log_info(f"Added {len(pending)} track(s) copied before the last sync was "
+                 "interrupted (no need to copy them again)")
+    return pending
 
 
 # ================================================================== apply ====
 # The iPod browses by pre-sorted lists stored in the iTunesDB. pygpod 0.0.6
-# sorts each by one field (album, artist, ...) and leaves ties in the order
+# sorted each by one field (album, artist, ...) and left ties in the order
 # tracks were added, so an album's tracks came out in add order: a title
 # track added first (when its album name still differed) showed as track 1
-# (2026-10-19). Ties are broken like iTunes/libgpod: by album, disc, track.
+# (2026-10-19). ipod_db breaks ties like iTunes/libgpod: by album, disc,
+# track. The marker makes players written before that re-save once.
 SORT_ORDER_VERSION = "1"
 SORT_ORDER_MARKER = os.path.join("iPod_Control", "musicdock", "sort-order")
-
-
-def _sort_text(value):
-    value = (value or "").upper()                  # as pygpod's own sort does
-    return value[4:] if value.startswith("THE ") else value
-
-
-def _master_track_ids(db):
-    """Track IDs of the master playlist, in its order (pygpod internals)."""
-    for mhsd in db._root.children:
-        if mhsd.fields.get("mhsd_type") in (2, 3) and mhsd.children:
-            for mhyp in mhsd.children[0].children:
-                if mhyp.fields.get("playlist_type") == 1:
-                    return [c.fields.get("track_id") for c in mhyp.children
-                            if c.magic == b"mhip"]
-    return []
-
-
-def install_sort_order():
-    """Make pygpod's browse lists order an album's tracks by disc and track.
-
-    pygpod sorts each list with a stable sort on one field, so handing it the
-    tracks already ordered by the full key gives the right result. Applied
-    once per process; checked_save calls it before every save."""
-    from pygpod.model import database as pdb
-    original = pdb.Database._build_sort_pair
-    if getattr(original, "_musicdock", False):
-        return
-
-    def build_sort_pair(self, sort_key, field_name, tracks_meta):
-        ids = _master_track_ids(self)
-
-        def numbers(meta):
-            i = meta["index"]
-            t = self._track_lookup.get(ids[i]) if i < len(ids) else None
-            return (t.cd_number or 0, t.track_number or 0) if t else (0, 0)
-
-        def key(meta):
-            album, artist = _sort_text(meta["album"]), _sort_text(meta["artist"])
-            title = _sort_text(meta["title"])
-            if sort_key == 4:                                   # albums
-                return (album, *numbers(meta), title)
-            if sort_key == 5:                                   # artists
-                return (artist, album, *numbers(meta), title)
-            if sort_key == 7:                                   # genres
-                return (_sort_text(meta["genre"]), artist, album, *numbers(meta), title)
-            return (_sort_text(meta[field_name]), title)
-        return original(self, sort_key, field_name, sorted(tracks_meta, key=key))
-
-    build_sort_pair._musicdock = True
-    pdb.Database._build_sort_pair = build_sort_pair
 
 
 def sort_order_outdated(mount):
@@ -649,148 +671,40 @@ SHARED_ART_VERSION = "1"
 SHARED_ART_MARKER = os.path.join("iPod_Control", "musicdock", "shared-art")
 
 
-def _art_key(album, size):
-    """Tracks share an image when their album name and source cover size
-    match: the prepare job encodes an album's cover once, so its tracks'
-    covers are byte-identical, and a different cover is all but certain to
-    differ in size."""
-    return ((album or "").strip().casefold(), int(size or 0))
-
-
 def _shares_art(db):
-    d = db._device
+    d = db.device
     return bool(d) and d.generation.name in SHARED_ART_GENERATIONS
-
-
-def _link_art(mhit, image_id, size):
-    """Point a track at an image, as pygpod does when it adds one."""
-    from pygpod.utils.compat import put8int, put16lint, put32lint
-    header = bytearray(mhit.raw_header)
-    if len(header) > 0x7D:
-        put16lint(header, 0x7C, 1)                  # artwork_count
-    if len(header) > 0x83:
-        put32lint(header, 0x80, size)               # artwork_size
-    if len(header) > 0xA4:
-        put8int(header, 0xA4, 1)                    # has_artwork
-    if len(header) > 0x163:
-        put32lint(header, 0x160, image_id)          # mhii_link
-    mhit.raw_header = bytes(header)
-    mhit.fields.update(artwork_count=1, artwork_size=size, has_artwork=1,
-                       mhii_link=image_id)
-
-
-def _images(db):
-    """{image_id: mhii record} in the ArtworkDB ({} if it has none yet)."""
-    mgr = db._get_artwork_manager()
-    if mgr._root is None:
-        return {}
-    return {m.fields.get("image_id"): m for m in mgr._get_or_create_mhli().children}
-
-
-def _set_owner(mhii, dbid):
-    """The track an image records as its own (mhii song_id)."""
-    from pygpod.utils.compat import put64lint
-    header = bytearray(mhii.raw_header)
-    put64lint(header, 0x14, dbid)
-    mhii.raw_header = bytes(header)
-    mhii.fields["song_id"] = dbid
-
-
-def _art_index(db):
-    """{_art_key: image_id} for art already on the player (built once)."""
-    index = getattr(db, "_musicdock_art", None)
-    if index is None:
-        images = _images(db)
-        index = {}
-        for t in db.tracks:
-            if t.has_artwork and t.mhii_link in images:
-                index.setdefault(_art_key(t.album, t.artwork_size), t.mhii_link)
-        db._musicdock_art = index
-    return index
-
-
-def install_shared_artwork():
-    """Make pygpod reuse an album's image for its other tracks, and never
-    delete an image another track still shows. Applied once per process."""
-    from pygpod.model import database as pdb
-    if getattr(pdb.Database._add_artwork_for_track, "_musicdock", False):
-        return
-    original_add, original_remove = pdb.Database._add_artwork_for_track, pdb.Database.remove_track
-
-    def add_artwork_for_track(self, mhit, dbid, filepath, cover_art=None):
-        if not self._mountpoint or not _shares_art(self):
-            return original_add(self, mhit, dbid, filepath, cover_art)
-        try:
-            art = pdb.extract_artwork(filepath)
-            if not art and cover_art and os.path.isfile(cover_art):
-                with open(cover_art, "rb") as f:
-                    art = f.read()
-        except Exception:
-            art = None
-        if not art:
-            return original_add(self, mhit, dbid, filepath, cover_art)
-        track = next((t for t in reversed(self._tracks) if t.dbid == dbid), None)
-        key = _art_key(track.album if track else None, len(art))
-        index = _art_index(self)
-        if index.get(key) in _images(self):
-            _link_art(mhit, index[key], len(art))           # the album's image
-            return
-        original_add(self, mhit, dbid, filepath, cover_art)
-        if mhit.fields.get("mhii_link"):
-            index[key] = mhit.fields["mhii_link"]
-
-    def remove_track(self, track, delete_file=False):
-        link = track.mhii_link if track.has_artwork else 0
-        if link and self._mountpoint:
-            others = [t for t in self._tracks if t.track_id != track.track_id
-                      and t.has_artwork and t.mhii_link == link]
-            if others:
-                # Still shown by other tracks: keep the image (pygpod would
-                # delete it) and hand it to one of them if this track owned it.
-                track.record.fields["mhii_link"] = 0
-                mhii = _images(self).get(link)
-                if mhii is not None and mhii.fields.get("song_id") == track.dbid:
-                    _set_owner(mhii, others[0].dbid)
-            else:
-                index = getattr(self, "_musicdock_art", None) or {}
-                for k in [k for k, v in index.items() if v == link]:
-                    del index[k]
-        return original_remove(self, track, delete_file)
-
-    add_artwork_for_track._musicdock = True
-    pdb.Database._add_artwork_for_track = add_artwork_for_track
-    pdb.Database.remove_track = remove_track
 
 
 def share_existing_artwork(db):
     """One cover per album for art added before sharing: point each album's
     tracks at one of its images and drop the rest (compaction then shrinks
     the .ithmb files). Returns how many images were dropped."""
+    import ipod_db
     if not _shares_art(db):
         return 0
-    images = _images(db)
+    images = db.images()
     keep, dropped = {}, set()
     for t in db.tracks:
         if not (t.has_artwork and t.mhii_link in images):
             continue
-        key = _art_key(t.album, t.artwork_size)
-        image = keep.setdefault(key, t.mhii_link)
+        image = keep.setdefault(ipod_db.art_key(t.album, t.artwork_size), t.mhii_link)
         if t.mhii_link != image:
             dropped.add(t.mhii_link)
-            _link_art(t.record, image, t.artwork_size)
+            db.link_art(t, image, t.artwork_size)
     still_shown = {t.mhii_link for t in db.tracks if t.has_artwork}
-    owners = {t.dbid for t in db.tracks}
-    mgr = db._get_artwork_manager()
+    mgr = db.artwork_manager()
     for image_id in dropped - still_shown:
         mgr.remove_artwork(image_id)
+    shown_by = {}                                 # image -> dbids showing it, in order
+    for t in db.tracks:
+        if t.has_artwork:
+            shown_by.setdefault(t.mhii_link, []).append(t.dbid)
     for image_id in set(keep.values()):           # each kept image owned by a track it shows
         mhii = images[image_id]
-        if mhii.fields.get("song_id") not in owners or not any(
-                t.dbid == mhii.fields.get("song_id") and t.mhii_link == image_id
-                for t in db.tracks):
-            shown_by = next(t for t in db.tracks if t.has_artwork and t.mhii_link == image_id)
-            _set_owner(mhii, shown_by.dbid)
-    db._musicdock_art = {k: v for k, v in keep.items()}
+        if mhii.fields.get("song_id") not in shown_by[image_id]:
+            ipod_db.set_image_owner(mhii, shown_by[image_id][0])
+    db._art_index = dict(keep)
     return len(dropped - still_shown)
 
 
@@ -810,8 +724,8 @@ def mark_shared_art(mount):
 
 
 def checked_save(db, guid):
-    """Save only if pygpod will sign the DB the way this player needs."""
-    d = db._device
+    """Save only if the DB will be signed the way this player needs."""
+    d = db.device
     gen = d.generation.name if d else None
     if gen in SIGNED_GENERATIONS:
         ok = d.requires_hash and d.checksum_type.name == "HASH58"
@@ -822,15 +736,13 @@ def checked_save(db, guid):
                            f"dock can sign for ({d.model if d else 'no device'})")
     if (d.firewire_guid or "").upper() != guid.upper():
         raise HandlerError("refusing to save: SysInfo FireWire GUID doesn't match the player")
-    install_sort_order()
     install_artwork_compaction()
-    install_shared_artwork()
     db.save()
 
 
 def start_artwork_ids_at(db, first=ARTWORK_FIRST_ID):
     """New artwork gets image IDs from `first` up (pygpod 0.0.6 internals)."""
-    mgr = db._get_artwork_manager()
+    mgr = db.artwork_manager()
     if mgr._next_image_id < first:
         mgr._next_image_id = first
 
@@ -875,28 +787,57 @@ def fill_missing_names(track, t):
     return changed
 
 
-def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
-               progress=None, save=checked_save, dirty=False):
+SAVE_EVERY = 60 * 60       # seconds of copying between database saves
+
+
+def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
+               save=checked_save, dirty=False, pending=(), save_every=None,
+               clock=time.monotonic):
     """Make the player match the staged plan (prepare job's manifest).
 
     Order: remove tracks that left every target (with their files), add
-    missing ones in batches - saving the DB after each batch and only then
-    recording them as present - and rebuild the dock's playlists. A crash
-    loses at most the current batch; the next sync carries on.
+    missing ones, and rebuild the dock's playlists. The database is saved
+    once at the end, or after `save_every` seconds of copying (a save
+    rewrites the whole database: ~1 min at 40,000 tracks). Each copied file
+    goes into the copy log first, so a crash between saves loses nothing:
+    the next sync adds those files back (reconcile) and carries on. Tracks
+    are recorded as present only once a saved database has them.
     `dirty`: the DB was changed before this call (e.g. reconcile adopted
     tracks) and must be saved even if the plan changes nothing.
+    `pending`: (track, plan entry) already in the DB but not yet recorded
+    (reconcile's report["pending"]).
     Returns a summary dict.
     """
     if "tracks" not in manifest:
         raise ValueError("No staged plan: refusing to apply it (it would remove every track)")
-    install_shared_artwork()
     wanted = {t["id"]: t for t in manifest["tracks"]}
+    save_every = SAVE_EVERY if save_every is None else save_every
     saved = False
+    pending = list(pending)
     on_player = {t.dbid: t for t in db.tracks}
     present = {}
     for r in record.tracks(guid):
         if int(r["dbid"]) in on_player:
             present.setdefault(r["navidrome_id"], r)
+    for track, t in pending:
+        present.setdefault(t["id"], {"dbid": track.dbid, "navidrome_id": t["id"],
+                                     "artist": t.get("artist"), "title": t.get("title"),
+                                     "encoding": t.get("encoding")})
+
+    def commit():
+        """Save the DB, then record what it now holds."""
+        nonlocal saved
+        save(db, guid)                              # DB first ...
+        saved = True
+        with record.transaction():                  # ... then the record
+            for track, t in pending:
+                record.add_track(guid, track.dbid, ipod_path=track.ipod_path,
+                                 navidrome_id=t["id"], artist=t.get("artist"),
+                                 album=t.get("album"), title=t.get("title"),
+                                 track_no=t.get("track"), duration=t.get("duration"),
+                                 encoding=t.get("encoding"))
+        record.clear_copied(guid, [track.ipod_path for track, _ in pending])
+        pending.clear()
 
     # Tracks whose cached file changed encoding (e.g. mp3_quality) are replaced.
     changed = {nid for nid, r in present.items()
@@ -935,9 +876,9 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
         track = on_player[int(r["dbid"])]
         doomed.append(os.path.join(mount, ipod_path_to_rel(track.ipod_path)))
         db.remove_track(track, delete_file=False)
+        pending[:] = [(p, t) for p, t in pending if p is not track]
     if removals:
-        save(db, guid)
-        saved = True
+        commit()
         for r in removals:
             reason = ("re-encoded" if r["navidrome_id"] in changed
                       else "no longer in any synced playlist")
@@ -961,65 +902,60 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, batch_size=25,
         path = os.path.join(cache_dir, t["file"])
         if track.has_artwork or not os.path.exists(path):
             continue
-        db._add_artwork_for_track(track.record, track.dbid, path)   # pygpod 0.0.6
-        if track.has_artwork:
+        if db.add_artwork(track, path):
             art_added += 1
     if art_added:
         log_info(f"Added album art to {art_added} track(s) already on the player")
         dirty = True
     added, skipped_full = 0, 0
-    for i in range(0, len(additions), batch_size):
-        batch = []
-        for t in additions[i:i + batch_size]:
-            path = os.path.join(cache_dir, t["file"])
-            if not os.path.exists(path):
-                # The prepare job pruned or is replacing it; next sync gets it.
-                log_info(f"Skipping {t.get('title')}: not in the cache right now")
-                continue
-            if shutil.disk_usage(mount).free - os.path.getsize(path) < FREE_SPACE_MARGIN:
-                skipped_full = len(additions) - (i + len(batch))
-                break
-            if progress:
-                progress(added + len(batch), len(additions), t)
-            # Navidrome's album name, not the file's tag: they can differ
-            # (e.g. "Inertia (deluxe digital)" vs "Inertia"), and the player
-            # should match what the user sees in Navidrome.
-            overrides = {"album": t["album"]} if t.get("album") else {}
-            track = db.add_track(path, **overrides)
-            fill_missing_names(track, t)
-            track.comment = NAVIDROME_TAG + t["id"]
-            batch.append((track, t))
-        if batch:
-            save(db, guid)                          # DB first ...
-            saved = True
-            with record.transaction():              # ... then the record
-                for track, t in batch:
-                    record.add_track(guid, track.dbid, ipod_path=track.ipod_path,
-                                     navidrome_id=t["id"], artist=t.get("artist"),
-                                     album=t.get("album"), title=t.get("title"),
-                                     track_no=t.get("track"), duration=t.get("duration"),
-                                     encoding=t.get("encoding"))
-            added += len(batch)
-        if skipped_full:
+    last_save = clock()
+    for n, t in enumerate(additions):
+        path = os.path.join(cache_dir, t["file"])
+        if not os.path.exists(path):
+            # The prepare job pruned or is replacing it; next sync gets it.
+            log_info(f"Skipping {t.get('title')}: not in the cache right now")
+            continue
+        if shutil.disk_usage(mount).free - os.path.getsize(path) < FREE_SPACE_MARGIN:
+            skipped_full = len(additions) - n
             log_info(f"Player is full: {skipped_full} track(s) not added")
             break
+        if progress:
+            progress(added, len(additions), t)
+        # Navidrome's album name, not the file's tag: they can differ
+        # (e.g. "Inertia (deluxe digital)" vs "Inertia"), and the player
+        # should match what the user sees in Navidrome.
+        overrides = {"album": t["album"]} if t.get("album") else {}
+        track = db.add_track(path, **overrides)
+        fill_missing_names(track, t)
+        track.comment = NAVIDROME_TAG + t["id"]
+        record.log_copied(guid, track.ipod_path, t["id"], t)
+        pending.append((track, t))
+        added += 1
+        if clock() - last_save >= save_every:
+            log_info(f"Saving the player's database ({added} of {len(additions)} copied)")
+            commit()
+            last_save = clock()
 
-    playlists_changed = sync_playlists(db, record, guid, manifest)
-    if playlists_changed or (dirty and not saved):
-        save(db, guid)
+    playlists_changed = sync_playlists(db, record, guid, manifest, pending)
+    if pending or playlists_changed or (dirty and not saved):
+        commit()
     return {"added": added, "removed": removed, "replaced": len(changed), "renamed": renamed,
             "art_added": art_added, "not_added_full": skipped_full,
             "playlists_changed": playlists_changed}
 
 
-def sync_playlists(db, record, guid, manifest):
+def sync_playlists(db, record, guid, manifest, pending=()):
     """Create/update the dock's playlists (Favorites, tagged, configured) and
     delete ones it made that are no longer wanted. Playlists the dock didn't
-    make are never touched. Returns how many changed."""
+    make are never touched. `pending`: (track, plan entry) in the DB but
+    not yet recorded. Returns how many changed."""
     by_nid = {}
     for r in record.tracks(guid):
         by_nid.setdefault(r["navidrome_id"], int(r["dbid"]))
     known = {int(r["dbid"]) for r in record.tracks(guid)}
+    for track, t in pending:
+        by_nid.setdefault(t["id"], track.dbid)
+        known.add(track.dbid)
     tracks = {t.dbid: t for t in db.tracks}
     managed = record.managed_playlists(guid)
     existing = {p.name: p for p in db.playlists if not p.is_master}
@@ -1072,6 +1008,22 @@ def log_info(message):
 RECORD_COPY = os.path.join("iPod_Control", "musicdock", "dock.db")
 
 
+def open_database(mount, work_dir, snapshot=None):
+    """The live player's database (ipod_db.StreamDatabase), read from a
+    copy on the Pi - the session's snapshot of it if given, else copied
+    off the player - and saved back to the player. Builds its saves in
+    `work_dir`/db."""
+    import ipod_db
+    folder = os.path.join(work_dir, "db")
+    shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder)
+    source = os.path.join(folder, "iTunesDB")
+    shutil.copy2(snapshot or os.path.join(itunes_dir(mount), "iTunesDB"), source)
+    db = ipod_db.StreamDatabase(mount, source, folder)
+    db.share_art = _shares_art(db)
+    return db
+
+
 def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
                 write=False, client=None, usb_product=None, step=None, progress=None,
                 block_device=None):
@@ -1083,14 +1035,14 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
     3. Send queued plays if the server is reachable (else they wait).
     With write=True (config [device] write), also:
     4. Make sure SysInfo is complete, back up iTunesDB/ArtworkDB to the Pi.
-    5. Open the live DB (pygpod clears Play Counts here - already queued),
-       reconcile, apply the staged plan. On any error the backup is restored
-       and the error re-raised.
+    5. Open the live DB from the snapshot, merge the play counts into it
+       (already queued; the play files go once a save has them), reconcile,
+       apply the staged plan. On any error the backup is restored and the
+       error re-raised.
     Then a copy of the record is saved onto the player. Returns a summary.
     """
-    import pygpod
-
     import dock_plays
+    import ipod_db
     step = step or (lambda n, detail: None)
     summary = {"plays_new": 0, "plays_sent": 0, "plays_queued": 0,
                "added": 0, "removed": 0, "wrote": False}
@@ -1100,13 +1052,11 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
     copied = snapshot_play_data(mount, work_dir)
     name = None                        # the name given to the iPod (DockSetup.txt uses it)
     if "iTunesDB" in copied:
-        snap = pygpod.Database.from_file(os.path.join(work_dir, "iTunesDB"))
+        snap = ipod_db.StreamDatabase.from_file(os.path.join(work_dir, "iTunesDB"))
         name = getattr(snap.master_playlist, "name", None)
         reconcile(snap, record, guid, mount, delete_orphans=False, manifest=manifest)
         plays = plays_from_snapshot(work_dir, record, guid, tracks=snap.tracks)
-        # Let the snapshot go before the live database is opened: two full
-        # copies at once was ~37 MB extra at 1443 tracks (sync peak 139 vs
-        # 102 MB measured on the Pi, 2026-10-23).
+        # Let the snapshot's index go before the live database is opened.
         del snap
         gc.collect()
         summary["plays_new"] = record.queue_plays(guid, plays)
@@ -1132,8 +1082,11 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
         os.makedirs(backup_root, exist_ok=True)
         backup = backup_player(mount, backup_root)
         try:
-            install_shared_artwork()
-            db = pygpod.Database(mount)
+            snapshot = os.path.join(work_dir, "iTunesDB")
+            db = open_database(mount, work_dir, snapshot if "iTunesDB" in copied else None)
+            entries = read_play_entries(work_dir)
+            if entries:
+                db.merge_play_counts(entries)   # files deleted once a save has these
             report = reconcile(db, record, guid, mount, manifest=manifest)
             if report["reset"]:
                 log_info("Player appears to have been reset: rebuilding it")
@@ -1145,8 +1098,12 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             if reshare:
                 dropped = share_existing_artwork(db)
                 log_info(f"Album art: one cover per album ({dropped} duplicate images dropped)")
-            result = apply_plan(db, record, guid, mount, manifest, cache_dir,
-                                progress=progress, dirty=report["dirty"] or resort or reshare)
+            def save(db, guid):
+                checked_save(db, guid)
+                refresh_backup(mount, backup, db)
+            result = apply_plan(db, record, guid, mount, manifest, cache_dir, progress=progress,
+                                save=save, pending=report["pending"],
+                                dirty=report["dirty"] or resort or reshare or bool(entries))
             if resort:
                 mark_sort_order(mount)
             if reshare:
@@ -1156,6 +1113,7 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             log_info("Sync failed: restoring the player's database from the backup")
             restore_backup(mount, backup)
             raise
+        report.pop("pending")
         summary.update(result, reconcile=report, wrote=True)
 
     try:

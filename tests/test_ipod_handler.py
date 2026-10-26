@@ -40,7 +40,7 @@ class HandlerTests(unittest.TestCase):
     def art(self):
         """{(image_id, format): thumbnail bytes} as stored on the player."""
         import glob
-        mgr = self.db()._get_artwork_manager()
+        mgr = self.db().artwork_manager()
         out = {}
         for mhii in mgr._get_or_create_mhli().children:
             for child in mhii.children:
@@ -113,7 +113,7 @@ class HandlerTests(unittest.TestCase):
         a = self.album("Red", 3, (200, 30, 30))
         self.apply(self.manifest(a))
         before = self.pictures()
-        owner = next(m for m in self.db()._get_artwork_manager()._get_or_create_mhli().children)
+        owner = next(m for m in self.db().artwork_manager()._get_or_create_mhli().children)
         owner_dbid = owner.fields["song_id"]
         owner_title = next(t.title for t in self.db().tracks if t.dbid == owner_dbid)
         keep = [s for s in a if s["title"] != owner_title]                # remove the owner
@@ -121,7 +121,7 @@ class HandlerTests(unittest.TestCase):
         after = self.pictures()
         self.assertEqual(set(after), {s["title"] for s in keep})
         self.assertTrue(all(after[t] == before[t] for t in after))         # same picture
-        mhii = self.db()._get_artwork_manager()._get_or_create_mhli().children[0]
+        mhii = self.db().artwork_manager()._get_or_create_mhli().children[0]
         self.assertIn(mhii.fields["song_id"], {t.dbid for t in self.db().tracks})   # re-owned
         self.apply(self.manifest([]))
         self.assertEqual(self.art(), {})                                   # last one: gone
@@ -138,7 +138,7 @@ class HandlerTests(unittest.TestCase):
         h.checked_save(db, G)
         self.assertEqual(len(set(self.links().values())), 2)
         self.assertEqual(self.pictures(), before)                          # every cover kept
-        images = self.db()._get_artwork_manager()._get_or_create_mhli().children
+        images = self.db().artwork_manager()._get_or_create_mhli().children
         dbids = {t.dbid for t in self.db().tracks}
         self.assertTrue(all(i.fields["song_id"] in dbids for i in images))
 
@@ -227,14 +227,15 @@ class HandlerTests(unittest.TestCase):
             {"target": t, "name": n, "song_ids": ids} for t, n, ids in playlists]}
 
     def db(self):
-        import pygpod
-        return pygpod.Database(self.mount)
+        """The live player's database as the handler opens it (its own work
+        folder each time, so two can be open at once)."""
+        return h.open_database(self.mount, tempfile.mkdtemp(dir=self.tmp))
 
     def apply(self, manifest, **kw):
         db = self.db()
         report = h.reconcile(db, self.rec, G, self.mount, manifest=manifest)
         return h.apply_plan(db, self.rec, G, self.mount, manifest, self.cache,
-                            dirty=report["dirty"], **kw)
+                            dirty=report["dirty"], pending=report["pending"], **kw)
 
     def files(self):
         return h.music_files(self.mount)
@@ -318,7 +319,7 @@ class HandlerTests(unittest.TestCase):
                          [f"s{i}" for i in range(6)])
         self.assertGreater(cycle, 1)                       # it really took batches
 
-    def test_crash_mid_sync_resumes_without_duplicates(self):
+    def test_crash_mid_sync_resumes_without_copying_again(self):
         songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
         real_save, calls = h.checked_save, []
 
@@ -327,14 +328,54 @@ class HandlerTests(unittest.TestCase):
             if len(calls) == 2:
                 raise RuntimeError("power cut")
             real_save(db, guid)
-        with self.assertRaises(RuntimeError):
-            self.apply(self.manifest(songs), batch_size=2, save=crash_on_second_save)
-        self.assertEqual(len(self.db().tracks), 2)              # first batch saved
-        summary = self.apply(self.manifest(songs), batch_size=2)
-        self.assertEqual(summary["added"], 3)
+        with self.assertRaises(RuntimeError):         # save_every=0: a save per track
+            self.apply(self.manifest(songs), save_every=0, save=crash_on_second_save)
+        self.assertEqual(len(self.db().tracks), 1)              # the first save
+        self.assertEqual(len(self.files()), 2)                  # the second file got copied
+        self.assertEqual(len(self.rec.copied(G)), 1)            # ... and logged
+        from pygpod.device import fileutils
+        with mock.patch.object(fileutils, "copy_track_to_ipod",
+                               wraps=fileutils.copy_track_to_ipod) as copies:
+            summary = self.apply(self.manifest(songs))
+        self.assertEqual(summary["added"], 3)                   # only the 3 never copied
+        self.assertEqual(copies.call_count, 3)
         self.assertEqual(sorted(t.title for t in self.db().tracks),
                          [f"Song {i}" for i in range(5)])
-        self.assertEqual(len(self.files()), 5)                  # orphans cleaned up
+        self.assertEqual(len(self.files()), 5)
+        self.assertEqual(len(self.rec.tracks(G)), 5)
+        self.assertEqual(self.rec.copied(G), [])
+
+    def test_logged_file_that_is_gone_is_just_forgotten(self):
+        songs = [self.song(f"n{i}", f"Song {i}") for i in range(2)]
+
+        def crash(db, guid):
+            raise RuntimeError("power cut")
+        with self.assertRaises(RuntimeError):
+            self.apply(self.manifest(songs), save=crash)
+        for rel in self.files():
+            os.remove(os.path.join(self.mount, rel))            # e.g. a restore wiped them
+        summary = self.apply(self.manifest(songs))
+        self.assertEqual(summary["added"], 2)
+        self.assertEqual(len(self.db().tracks), 2)
+        self.assertEqual(self.rec.copied(G), [])
+
+    def test_database_saved_once_unless_an_hour_passes(self):
+        songs = [self.song(f"n{i}", f"Song {i}") for i in range(7)]
+        saves, now = [], [0]
+
+        def counting_save(db, guid):
+            saves.append(len(db.tracks))
+            h.checked_save(db, guid)
+
+        def clock():
+            now[0] += 25 * 60                   # each track "takes" 25 minutes
+            return now[0]
+        self.apply(self.manifest(songs[:3]), save=counting_save)
+        self.assertEqual(saves, [3])                            # one save at the end
+        saves.clear()
+        self.apply(self.manifest(songs), save=counting_save, clock=clock)
+        self.assertEqual(saves, [6, 7])                         # after an hour, then the end
+        self.assertEqual(self.rec.copied(G), [])
 
     def test_tracks_saved_but_not_recorded_are_adopted(self):
         a = self.song("n1", "One")
@@ -470,7 +511,7 @@ class HandlerTests(unittest.TestCase):
         gives them, read back from the saved iTunesDB."""
         import struct
         db = self.db()
-        ids = h._master_track_ids(db)
+        ids = [t.track_id for t in db.tracks]          # the master playlist's order
         title = {t.track_id: t.title for t in db.tracks}
         with open(os.path.join(self.mount, "iPod_Control", "iTunes", "iTunesDB"), "rb") as f:
             data = f.read()
@@ -687,9 +728,9 @@ class HandlerTests(unittest.TestCase):
                                   self.song("n2", "Two", cover=True)]))
         db = self.db()
         self.assertTrue(all(t.has_artwork for t in db.tracks))
-        ids = [m.fields.get("image_id") for m in db._get_artwork_manager()._iter_mhii()] \
-            if hasattr(db._get_artwork_manager(), "_iter_mhii") else None
-        nxt = db._get_artwork_manager()._next_image_id
+        ids = [m.fields.get("image_id") for m in db.artwork_manager()._iter_mhii()] \
+            if hasattr(db.artwork_manager(), "_iter_mhii") else None
+        nxt = db.artwork_manager()._next_image_id
         self.assertGreaterEqual(nxt, 101)                        # used 100 ...
         self.assertEqual({t.mhii_link for t in db.tracks}, {100})   # ... shared (one album)
         if ids is not None:

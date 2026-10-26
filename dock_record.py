@@ -27,6 +27,7 @@ Tables:
 """
 
 import contextlib
+import json
 import os
 import sqlite3
 import time
@@ -82,6 +83,17 @@ CREATE TABLE IF NOT EXISTS pending_plays (
     attempts      INTEGER NOT NULL DEFAULT 0,
     last_error    TEXT,
     UNIQUE (guid, dbid, played_at, seq)
+);
+-- Files copied onto a stock iPod since its database was last saved (the
+-- handler saves once an hour or at the end of a sync). After a crash the
+-- next sync adds these files to the database instead of deleting them.
+CREATE TABLE IF NOT EXISTS copied (
+    guid          TEXT NOT NULL,
+    ipod_path     TEXT NOT NULL,          -- as in the iTunesDB (":iPod_Control:Music:...")
+    navidrome_id  TEXT NOT NULL,
+    entry         TEXT NOT NULL,          -- the plan's track (JSON)
+    copied_at     INTEGER NOT NULL,
+    PRIMARY KEY (guid, ipod_path)
 );
 CREATE TABLE IF NOT EXISTS playlists (
     guid    TEXT NOT NULL,
@@ -219,6 +231,28 @@ class Record:
                 + ", ".join(f"{k} = excluded.{k}" for k in cols)
                 + ", state = 'present', changed_at = excluded.changed_at, note = NULL",
                 (guid, str(dbid), *cols.values(), now, now))
+
+    def log_copied(self, guid, ipod_path, navidrome_id, entry):
+        """A file is on the player but not yet in a saved database."""
+        with self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO copied (guid, ipod_path, navidrome_id, entry, "
+                "copied_at) VALUES (?, ?, ?, ?, ?)",
+                (guid, ipod_path, navidrome_id, json.dumps(entry), int(time.time())))
+
+    def copied(self, guid):
+        """[{ipod_path, navidrome_id, entry (dict)}] logged for this player."""
+        rows = self.db.execute("SELECT ipod_path, navidrome_id, entry FROM copied "
+                               "WHERE guid = ? ORDER BY copied_at, rowid", (guid,))
+        return [{"ipod_path": p, "navidrome_id": n, "entry": json.loads(e)} for p, n, e in rows]
+
+    def clear_copied(self, guid, paths):
+        """The database holding these files was saved (or they're gone). A
+        crash before this leaves entries for files the database already
+        has; the next sync just clears them."""
+        with self.db:
+            self.db.executemany("DELETE FROM copied WHERE guid = ? AND ipod_path = ?",
+                                [(guid, p) for p in paths])
 
     def mark_removed(self, guid, dbid, note):
         with self.db:

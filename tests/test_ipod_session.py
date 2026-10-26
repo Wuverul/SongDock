@@ -122,6 +122,21 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(self.rec.unsent_count(), (1, 0))         # play kept, matched
         self.assertTrue(os.path.exists(os.path.join(h.itunes_dir(self.mount), "Play Counts")))
 
+    def test_failure_after_an_hourly_save_goes_back_to_that_save(self):
+        import pygpod
+        with mock.patch.object(h, "SAVE_EVERY", 0), \
+                mock.patch.object(h, "sync_playlists", side_effect=OSError("USB unplugged")):
+            with self.assertRaises(OSError):
+                self.session(write=True)
+        db = pygpod.Database.from_file(os.path.join(h.itunes_dir(self.mount), "iTunesDB"))
+        self.assertEqual(sorted(t.title for t in db.tracks), ["BLOOM", "Make Love"])
+        self.assertEqual(len(self.rec.tracks(G)), 2)
+        # The save merged the play counts and deleted the file; the restore
+        # mustn't bring it back (its positions would credit the wrong songs).
+        self.assertFalse(os.path.exists(os.path.join(h.itunes_dir(self.mount), "Play Counts")))
+        self.assertEqual(db.tracks[0].play_count, 1)
+        self.assertEqual(self.rec.unsent_count(), (1, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

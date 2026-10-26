@@ -314,6 +314,41 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   SysInfo recovery, backup/restore (on the Pi under `backups/<GUID>/`, last 3),
   reconcile, apply the staged plan, playlists, `sync_player` session. A copy of
   the record is saved on the player at `iPod_Control/musicdock/dock.db`.
+- `ipod_db.py` (2026-10-26, Phase 5: 40,000-track / 400 GB libraries are a
+  requirement): **`StreamDatabase`, the iTunesDB without loading it all.**
+  pygpod parses everything into objects - measured on a fake Classic 7G:
+  1,500 tracks 33 MB open / 79 MB peak saving, 10,000 = 220 / 356 MB,
+  40,000 = 880 MB / 1.28 GB (iTunesDB 74 MB, ~1.85 KB/track); the Pi has
+  ~290 MB free, so pygpod tops out around 7-8k tracks. StreamDatabase
+  keeps an index (`TrackInfo`, slotted, ~1.4 KB/track) and saves by
+  streaming the previous file (a copy on the Pi) into a new one:
+  unchanged mhits copied byte for byte, edited ones parsed one at a time,
+  new ones built by pygpod (`_create_mhit`, file copy, ArtworkManager)
+  and held only until the save; master playlist + browse lists (disc/
+  track ties, replacing the old `install_sort_order` patch), album and
+  artist lists rebuilt; other playlists copied minus removed tracks or
+  rebuilt; unknown sections (e.g. type 5) copied raw, in the file's own
+  section order; hash58 = HMAC-SHA1 in chunks (`sign_hash58`). Written on
+  the Pi, then to `iTunesDB.musicdock-new` on the player, fsync, rename
+  (pygpod overwrote in place). Play counts: `merge_play_counts` (as
+  pygpod's apply), play files deleted only after a save. Shared art lives
+  here now (`add_artwork`, `art_users`, `_drop_art`). Databases pygpod
+  didn't write (missing sections) are tidied by pygpod once if <= 3000
+  tracks. **Measured at 40,000 tracks on the Pi:** open 12 s / 68 MB,
+  save 44 s / peak 114 MB (SD to SD; on the dock the USB write of the
+  74 MB file dominates, ~40-60 s per save). **Checked on the Nano's real
+  database:** saved unchanged = all 1454 mhits and every list identical;
+  the whole file differs only in the signature and the master's entry
+  position numbers (renumbered 0..n-1 like libgpod; pygpod left gaps).
+  `tests/test_ipod_db.py` makes the same changes through pygpod and
+  StreamDatabase and compares what pygpod reads back. The handler opens it
+  with `open_database(mount, work_dir, snapshot)` (from the session's
+  snapshot: no second USB read). Saves: hourly or at the end, with a
+  copy log (see "Resumable long syncs"). **Not yet built (next):** one
+  sync session spanning a prepare run's waves (each per-batch session at
+  40k costs ~1.5 min of re-plug/open/save; 1,600 of them ~40 h), and the
+  `Restoring n / N` screen. Also: backup_player still re-reads iTunes/
+  over USB at the start of each session.
 - `rockbox_handler.py`: **Rockbox players** (2026-10-23; built against fake
   players; **first hardware run 2026-10-25** with a USB flash drive +
   empty `.rockbox`: 1454 tracks in 34.5 min, 101 cover.jpg, 7 playlists,
@@ -636,9 +671,19 @@ what is and isn't on the iPod.**
   (fsync) → upload what can be sent → back up `iPod_Control/iTunes/` → open
   with pygpod (deletes `Play Counts`, already queued) → remove tracks that left
   the targets (`delete_file=True`) → add new tracks → save → unmount.
-- **Resumable long syncs:** add tracks in batches (e.g. 25), saving the DB
-  (with a fresh backup) after each batch, so an interrupted first sync loses
-  at most one batch and the next sync resumes. Progress on the `syncing`
+- **Resumable long syncs:** (2026-10-26, replacing saves every 25 tracks)
+  the DB is saved at the end of a sync or after `SAVE_EVERY` (60 min) of
+  copying - a save rewrites the whole DB, ~1 min at 40,000 tracks (user:
+  "it's relatively safe to assume the iPod will not be intentionally
+  removed early"). Each copied file goes into the record's `copied` log
+  first (path, Navidrome ID, plan entry); after a crash the next sync's
+  reconcile re-adds logged files the DB lacks (`readd_copied`,
+  `StreamDatabase.add_existing`: no re-copy) instead of deleting them as
+  orphans. Tracks are recorded present only after a save has them
+  (`apply_plan`'s `pending`; `sync_playlists` sees them too). After each
+  save `refresh_backup` makes the backup that saved state (DB from the
+  Pi's copy; play files the save merged are dropped from it), so a later
+  failure restores to the last save, not the session start. Progress on the `syncing`
   screen: `Copying 12/72: Artist - Title`.
 - **Before every save:** confirm `requires_hash` / HASH58 and the GUID (else
   pygpod writes an unsigned DB the iPod rejects); start artwork IDs at 100.
