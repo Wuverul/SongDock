@@ -212,8 +212,9 @@ def render(screen, args):
     when = datetime.fromtimestamp(args.at) if args.at else datetime.now()
     now = when.strftime("%-I:%M %p")
 
-    def header(text, inverted):
-        x = max(4, (WIDTH - d.textlength(text, font=title_f)) // 2)   # centered
+    def header(text, inverted, room=WIDTH):
+        # Centered in `room` (the bar left of an icon, when there is one).
+        x = max(4, (room - d.textlength(text, font=title_f)) // 2)
         if inverted:
             d.rectangle((0, 0, WIDTH, 32), fill=0)
             d.text((x, 5), text, font=title_f, fill=255)
@@ -221,10 +222,18 @@ def render(screen, args):
             d.rectangle((0, 0, WIDTH - 1, 32), outline=0, width=2)
             d.text((x, 5), text, font=title_f, fill=0)
 
+    def icon_rows(kind):
+        import dock_icons
+        return dock_icons.ICONS.get(dock_icons.KIND_ICON.get(kind or "", ""))
+
+    def title_room(kind):
+        """Width left for the title beside the player icon (WIDTH without one)."""
+        rows = icon_rows(kind)
+        return WIDTH - 8 - len(rows[0]) - 4 if rows else WIDTH
+
     def device_icon(kind, inverted=True):
         """The player type (iPod, Rockbox, other) in the top bar's right corner."""
-        import dock_icons
-        rows = dock_icons.ICONS.get(dock_icons.KIND_ICON.get(kind, ""))
+        rows = icon_rows(kind)
         if not rows:
             return
         left, top = WIDTH - 8 - len(rows[0]), (33 - len(rows)) // 2
@@ -279,7 +288,7 @@ def render(screen, args):
         # Concurrent batches: music still converting while a batch is copied
         # to the docked iPod. "Synced" has its own total: songs re-added from
         # the cache need copying but no conversion. Bar: both together.
-        header("PREPARE & SYNC", inverted=True)
+        header("PREPARE & SYNC", inverted=True, room=title_room(args.device))
         device_icon(args.device)
         sep = "\u00b7" if has_glyphs else "-"
         to_copy = args.to_copy or args.total or 0
@@ -299,7 +308,7 @@ def render(screen, args):
 
     elif screen == "syncing":
         step = f"  {args.step}/{args.total}" if args.step and args.total else ""
-        header(f"SYNCING{step}", inverted=True)
+        header(f"SYNCING{step}", inverted=True, room=title_room(args.device))
         device_icon(args.device)
         rows = [("Do not remove player", body_f)]
         if args.detail:

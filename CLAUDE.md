@@ -655,7 +655,11 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   nothing of unclear licence is published; also no Rockbox/USB logos. Text, not PNG: deploy.sh excludes *.png. dock_sync sets
   `PLAYER["kind"]` after mounting (the first "Mounting player" screen has
   no icon); dock_status keeps a sync screen's icon on redraws that don't
-  pass `--device` (the prepare job's PREPARE & SYNC updates).
+  pass `--device` (the prepare job's PREPARE & SYNC updates). The title
+  is centred in the bar left of the icon (`title_room`): with the Pi's
+  DejaVu Sans Bold, "PREPARE & SYNC" nearly touched it. **Previews on the
+  Mac use a fallback font** (no DejaVu), smaller than the real screens:
+  judge layouts from `--preview` renders made on the Pi.
 - `dock_limits.py` (2026-10-26, user's thresholds): notes - 20k songs
   "Large library: syncs may be slower", 30k "slowdowns or crashes may
   occur", 45k (stock) "close to the limit"; songs = max(on the player,
