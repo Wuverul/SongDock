@@ -324,6 +324,12 @@ DOCK_RESYNC = os.path.join(HERE, "dock_resync.py")
 # This sync's restore (dock_restore: songs on the player when it started,
 # and in all) for the copy screens; empty when it isn't one.
 RESTORE = {}
+# The player type once it's known (after mounting), for the screens' icon.
+PLAYER = {}
+
+
+def device_args():
+    return ["--device", PLAYER["kind"]] if PLAYER.get("kind") else []
 
 
 class Screen:
@@ -369,6 +375,7 @@ def run_sync(device, show, work=None, total=None):
     Returns True if the player was synced and is safe to remove.
     """
     total = total or (IPOD_STEPS if work else TOTAL_STEPS)
+    PLAYER.clear()
     import dock_progress
     batch = {}     # concurrent batches: this sync's place in the prepare run
 
@@ -390,7 +397,7 @@ def run_sync(device, show, work=None, total=None):
         if RESTORE:          # a restore: songs on the iPod out of all of them
             args += ["--restored", str(RESTORE["have"] + (part_done or 0)),
                      "--restore-total", str(RESTORE["total"])]
-        return args
+        return args + device_args()
 
     def step(n, detail, part_done=None, part_total=None):
         # Progress redraws are nice-to-have: SYNCING is already on screen,
@@ -404,7 +411,7 @@ def run_sync(device, show, work=None, total=None):
                 show(*args)
             else:
                 show("syncing", "--step", str(n), "--total", str(total),
-                     "--detail", detail, *part)
+                     "--detail", detail, *part, *device_args())
         except Exception:
             log.exception("Progress redraw failed (continuing)")
 
@@ -607,6 +614,7 @@ def make_ipod_work(cfg, guid, product, write):
         rockbox = rockbox_handler.is_rockbox(device.root)
         generic = not rockbox and not os.path.isdir(os.path.join(device.root, "iPod_Control"))
         kind = "rockbox" if rockbox else "generic" if generic else "stock"
+        PLAYER["kind"] = kind
         player_guid = guid
         if generic:
             # A plain music-folder player: known by the ID the dock writes on

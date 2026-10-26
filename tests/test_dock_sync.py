@@ -242,6 +242,14 @@ class OptInTests(unittest.TestCase):
         self.assertTrue(summary["paused"])
         later.assert_not_called()                 # a fake device: nothing to re-plug
 
+    def test_the_player_type_reaches_the_screens(self):
+        self.ipod(marker="MediaDock.txt")
+        dock_sync.PLAYER.clear()
+        self.run_work(known=True)
+        self.assertEqual(dock_sync.device_args(), ["--device", "stock"])
+        dock_sync.PLAYER.clear()
+        self.assertEqual(dock_sync.device_args(), [])
+
     def test_unmarked_ipod_left_completely_alone(self):
         self.ipod()
         summary, sp, dev = self.run_work(known=False)

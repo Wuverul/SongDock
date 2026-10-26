@@ -87,6 +87,34 @@ class WifiRefreshTests(unittest.TestCase):
 
 
 @unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+class DeviceIconTests(WifiRefreshTests):
+    """The player type as an icon in the sync screens' top bar."""
+
+    def corner(self, *argv):
+        """White pixels in the top bar's right corner (where the icon goes)."""
+        img = dock_status.render(argv[0], dock_status.build_parser().parse_args(
+            list(argv) + ["--wifi", "-50"])).convert("L")
+        w = img.size[0]
+        return sum(img.getpixel((x, y)) == 255 for x in range(w - 30, w) for y in range(2, 31))
+
+    def test_each_player_type_gets_its_icon(self):
+        import dock_icons
+        for kind, icon in dock_icons.KIND_ICON.items():
+            inked = sum(row.count("#") for row in dock_icons.ICONS[icon])
+            self.assertEqual(self.corner("syncing", "--step", "5", "--total", "6",
+                                         "--device", kind), inked, kind)
+            self.assertEqual(self.corner("prepsync", "--done", "1", "--total", "2",
+                                         "--device", kind), inked, kind)
+        self.assertEqual(self.corner("syncing", "--step", "1", "--total", "6"), 0)
+
+    def test_redraws_that_dont_know_the_player_keep_its_icon(self):
+        dock_status.main(["prepsync", "--done", "1", "--total", "9", "--device", "rockbox"])
+        dock_status.main(["prepsync", "--done", "2", "--total", "9", "--force"])  # prepare job
+        self.assertEqual(self.rendered[-1].device, "rockbox")
+        self.assertIn("rockbox", dock_status.load_state()["argv"])
+
+
+@unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
 class DarkModeTests(unittest.TestCase):
     def render(self, invert):
         args = dock_status.build_parser().parse_args(

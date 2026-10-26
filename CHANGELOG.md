@@ -31,6 +31,10 @@ Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs).
 - **RESTORING screen** for a new or wiped iPod, which fills over several
   syncs: one count across all of them and the time left, instead of each
   round counting on its own. Not yet tried on a real new iPod.
+- **Player icon on SYNCING and PREPARE & SYNC:** a click-wheel player
+  (stock iPod), music notes (Rockbox) or a USB plug (other players) in the
+  top bar's corner shows which kind of player is syncing (from the second
+  screen on, once the player is mounted).
 - **Size notes** in `musicdock-status`, the sync log and the iPod's
   `MediaDock.txt`: a large library from 20,000 songs (syncs may be slower)
   and 30,000 (slowdowns or crashes may occur); close to the limit from

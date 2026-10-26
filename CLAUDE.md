@@ -646,6 +646,16 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (USB `error -71`) made the kernel disable the port
   (`usb1-port1/disable` = 1); nothing was detected until a reboot. Fixed
   by `dock_usbport.py` (below).
+- `dock_icons.py` (2026-10-26, user request): 22 px 1-bit icons as text
+  rows ("#" = white), drawn for this project - a click-wheel player (stock
+  iPod), beamed notes (Rockbox), a USB plug (generic) - in the top bar's
+  right corner of SYNCING and PREPARE & SYNC (`--device
+  stock|rockbox|generic`; `KIND_ICON`). The user's own icon images
+  (tmp/, unknown licence) were replaced by these at their request, so
+  nothing of unclear licence is published; also no Rockbox/USB logos. Text, not PNG: deploy.sh excludes *.png. dock_sync sets
+  `PLAYER["kind"]` after mounting (the first "Mounting player" screen has
+  no icon); dock_status keeps a sync screen's icon on redraws that don't
+  pass `--device` (the prepare job's PREPARE & SYNC updates).
 - `dock_limits.py` (2026-10-26, user's thresholds): notes - 20k songs
   "Large library: syncs may be slower", 30k "slowdowns or crashes may
   occur", 45k (stock) "close to the limit"; songs = max(on the player,

@@ -221,6 +221,18 @@ def render(screen, args):
             d.rectangle((0, 0, WIDTH - 1, 32), outline=0, width=2)
             d.text((x, 5), text, font=title_f, fill=0)
 
+    def device_icon(kind, inverted=True):
+        """The player type (iPod, Rockbox, other) in the top bar's right corner."""
+        import dock_icons
+        rows = dock_icons.ICONS.get(dock_icons.KIND_ICON.get(kind, ""))
+        if not rows:
+            return
+        left, top = WIDTH - 8 - len(rows[0]), (33 - len(rows)) // 2
+        for y, row in enumerate(rows):
+            for x, cell in enumerate(row):
+                if cell == "#":
+                    d.point((left + x, top + y), fill=255 if inverted else 0)
+
     def lines(rows, top=42):
         y = top
         for text, font in rows:
@@ -268,6 +280,7 @@ def render(screen, args):
         # to the docked iPod. "Synced" has its own total: songs re-added from
         # the cache need copying but no conversion. Bar: both together.
         header("PREPARE & SYNC", inverted=True)
+        device_icon(args.device)
         sep = "\u00b7" if has_glyphs else "-"
         to_copy = args.to_copy or args.total or 0
         if args.restore_total:
@@ -287,6 +300,7 @@ def render(screen, args):
     elif screen == "syncing":
         step = f"  {args.step}/{args.total}" if args.step and args.total else ""
         header(f"SYNCING{step}", inverted=True)
+        device_icon(args.device)
         rows = [("Do not remove player", body_f)]
         if args.detail:
             rows.append((fit(args.detail, body_f), body_f))
@@ -734,6 +748,8 @@ def build_parser():
     p.add_argument("--restore-total", type=int, help="prepsync: a restore's songs in all")
     p.add_argument("--left", type=int, metavar="SECONDS",
                    help="restoring: estimated time left")
+    p.add_argument("--device", choices=["stock", "rockbox", "generic"],
+                   help="syncing/prepsync: the player type, shown as an icon")
     p.add_argument("--pending-add", type=int,
                    help="idle: tracks the next sync will add to the iPod")
     p.add_argument("--pending-remove", type=int, default=0,
@@ -789,6 +805,14 @@ def main(argv=None):
     args = build_parser().parse_args(raw)
     if args.wifi is None:
         args.wifi = read_wifi()              # read once: drawn and recorded
+    if args.screen in SYNC_SCREENS and args.device is None and not args.preview:
+        # Redraws that don't know the player (e.g. the prepare job's PREPARE &
+        # SYNC updates) keep the icon a sync screen already shows.
+        before = load_state()
+        if before.get("screen") in SYNC_SCREENS and "--device" in (before.get("argv") or []):
+            argv_before = before["argv"]
+            args.device = argv_before[argv_before.index("--device") + 1]
+            raw += ["--device", args.device]
 
     img = render(args.screen, args)
 
