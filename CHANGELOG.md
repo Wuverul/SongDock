@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
+
+More kinds of players, and a dock that tells you when its USB port has
+stopped working. Run the installer again to update (INSTALL.md,
+"Updating"): it adds the new USB check.
 
 - **Other music players:** any USB player with a `MediaDock.txt` in its top
   folder gets music copied into a `MediaDock` folder, tagged playlists'

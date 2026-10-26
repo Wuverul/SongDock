@@ -783,7 +783,7 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 6. 3D-printed dock enclosure
 7. Documentation, setup guide, and packaging for friends. **v0.5.0 released
    2026-10-24** (tag `v0.5.0`, GitHub release with `songdock-0.5.0.tar.gz`,
-   MIT; VERSION file drives `make_release.sh`; CHANGELOG.md). **0.5.1 (2026-10-25)** = 0.5.0 + the timer fix only, built from branch `release-0.5` (cherry-pick), so untested features on main (generic players, `flac`) wait for 0.6.0; main's VERSION says 0.5.1 too. **Built
+   MIT; VERSION file drives `make_release.sh`; CHANGELOG.md). **0.5.1 (2026-10-25)** = 0.5.0 + the timer fix only, built from branch `release-0.5` (cherry-pick), so untested features on main (generic players, `flac`) wait for 0.6.0. **0.6.0 (2026-10-25)** from main: generic players, Rockbox on hardware (flash drive), `flac`, USB NOT WORKING, "player" wording. **Built
    2026-10-16:** README.md, INSTALL.md, `make_release.sh` (builds
    `dist/music-dock/` + `dist/music-dock-<date>.tar.gz`: only Pi code, pi/,
    vendor/, docs; refuses to build on failing tests or personal data; no macOS
@@ -938,6 +938,18 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 - **Manual test with 3 tracks passed on the Nano (2026-10-16):** MP3s
   (2 converted V0, 1 original 320k with a 4000x4000 cover) played cleanly,
   showed art, and sorted correctly. Not yet tested on the Pi itself.
+- **Gapless (checked 2026-10-25, not built):** stock iPods with gapless
+  support (Classic, video 5.5G, nano 2G+) read pregap/postgap/samplecount/
+  gapless_data/gapless_track_flag from the iTunesDB (mhit 0xB8/0xBC/0xC8/
+  0xF8/0x100); iTunes fills them. pygpod 0.0.6 reads them but never writes
+  them: all 1413 tracks on the Nano had zeros. The dock's MP3s carry the
+  LAME/Xing delay+padding (ffmpeg "Lavc61.19"; values computed like
+  gtkpod's mp3_get_track_gapless matched a decoded sample count exactly).
+  **User hears no gaps on the Nano's albums**, so nothing was built; build
+  it only if a gap is actually heard (e.g. a friend's Classic). Probe
+  script idea: walk MP3 frames, gapless_data = bytes up to the 8th-from-
+  last frame, samplecount = frames x 1152 - delay - padding (+1 frame for
+  CBR "Info").
 - **ffmpeg's built-in AAC encoder produces audible high-frequency artifacts**
   (user heard them on the Nano; measured 8-15 noise bursts per 28s vs 1 for
   Apple's encoder, and decoded peaks up to +3 dBFS on loud masters). The Pi
