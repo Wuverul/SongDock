@@ -759,7 +759,7 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 6. 3D-printed dock enclosure
 7. Documentation, setup guide, and packaging for friends. **v0.5.0 released
    2026-10-24** (tag `v0.5.0`, GitHub release with `songdock-0.5.0.tar.gz`,
-   MIT; VERSION file drives `make_release.sh`; CHANGELOG.md). **Built
+   MIT; VERSION file drives `make_release.sh`; CHANGELOG.md). **0.5.1 (2026-10-25)** = 0.5.0 + the timer fix only, built from branch `release-0.5` (cherry-pick), so untested features on main (generic players, `flac`) wait for 0.6.0; main's VERSION says 0.5.1 too. **Built
    2026-10-16:** README.md, INSTALL.md, `make_release.sh` (builds
    `dist/music-dock/` + `dist/music-dock-<date>.tar.gz`: only Pi code, pi/,
    vendor/, docs; refuses to build on failing tests or personal data; no macOS

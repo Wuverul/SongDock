@@ -2,11 +2,6 @@
 
 ## Unreleased
 
-- **Fix: the dock stopped checking for new music after a restart.** The
-  check-interval setting's timer override also removed the "1 minute
-  after boot" check, so after a reboot the first check never ran and
-  nothing started the next ones. Running the installer again (as when
-  updating) repairs an existing dock.
 - **Other music players:** any USB player with a `MediaDock.txt` in its top
   folder gets music copied into a `MediaDock` folder, tagged playlists'
   songs included (no playlists on the player). No plays are read; SAFE TO
@@ -14,6 +9,14 @@
 - **`flac = false`** (`[device]`, or `FLAC=no` in `DockSetup.txt`): with
   stock-iPod compatibility off, FLAC is still converted (to `convert_to`)
   for players that can't play it; other formats are copied as they are.
+
+## 0.5.1
+
+- **Fix: the dock stopped checking for new music after a restart.** The
+  check-interval setting's timer override also removed the "1 minute
+  after boot" check, so after a reboot the first check never ran and
+  nothing started the next ones. Running the installer again (as when
+  updating) repairs an existing dock.
 
 ## 0.5.0 - first release
 
