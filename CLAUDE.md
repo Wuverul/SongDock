@@ -712,7 +712,11 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   existing old-format handling swaps them. `DockSetup.txt` `FLAC=yes|no`
   (accepted on a stock-compatible dock too, noted "used once the dock is
   Rockbox-only").
-- `tests/`: `python3 -m unittest discover -s tests -v`.
+- `tests/`: `python3 -m unittest discover -s tests -v`. **On the Pi** /tmp is
+  a 208 MB tmpfs and the handler keeps `FREE_SPACE_MARGIN` (200 MB) free on
+  a player, so the handler tests' fake iPods (in /tmp) need /tmp nearly
+  empty: a stray 10 MB file there made 40 of them fail as "player full"
+  (2026-10-26).
 
 ## Development workflow
 
