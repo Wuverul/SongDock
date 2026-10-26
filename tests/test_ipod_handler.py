@@ -410,6 +410,26 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((summary["added"], summary["removed"]), (2, 0))  # waiting kept
         self.assertEqual(len(self.rec.tracks(G)), 3)
 
+    def test_safe_hours_stop_copying_and_finish_the_sync(self):
+        songs = [self.song(f"n{i}", f"Song {i}") for i in range(4)]
+        favs = [("starred", "Favorites", [s["id"] for s in songs])]
+        checks = []
+
+        def wall():                          # the window opens after two songs
+            checks.append(1)
+            return 0 if len(checks) <= 2 else 1000
+        first = self.interim(songs[:3], songs[3:], favs)
+        later = [self.manifest(songs, favs)]           # never reached: safe hours
+        summary, saves = self.follow(later, first, deadline=500, wall=wall)
+        self.assertTrue(summary["paused"])
+        self.assertEqual(summary["added"], 2)
+        self.assertEqual(saves, [2])                     # finished properly: one save
+        pls = {p.name: len(p.tracks) for p in self.db().playlists if not p.is_master}
+        self.assertEqual(pls, {"Favorites": 2})
+        self.assertEqual(len(self.rec.tracks(G)), 2)
+        self.assertEqual(self.rec.copied(G), [])
+        self.assertEqual(self.apply(self.manifest(songs, favs))["added"], 2)   # after
+
     def test_unsaved_tracks_are_capped(self):
         songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
         with mock.patch.object(h, "SAVE_AFTER", 2):

@@ -24,6 +24,13 @@ Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs).
   back once the preferred network is in range (never during a sync; if that
   fails, it returns to the fallback and waits 30 minutes). Run the installer
   again to add it.
+- **Safe hours:** `safe_hours = "07:00-10:00"` (or `SafeHours=` in
+  `DockSetup.txt`) - no syncs in that daily window, so you can grab the iPod
+  in the morning. A sync running when it opens finishes early; a docked
+  iPod syncs once it's over.
+- **RESTORING screen** for a new or wiped iPod, which fills over several
+  syncs: one count across all of them and the time left, instead of each
+  round counting on its own. Not yet tried on a real new iPod.
 - **A song too big for the dock's cache is skipped** (more than half the room
   it can ever have: `max_cache_gb`, or what keeping the SD card under 80%
   full leaves). Before, such a song - on a very small SD card, or a long mix

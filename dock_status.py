@@ -77,11 +77,11 @@ FULL_REFRESH_EVERY = 20             # partial (flash-free) updates before a full
 
 PROGRESS_SCREENS = {"syncing", "preparing", "prepsync"}   # rate-limited when repeated
 SYNC_SCREENS = {"syncing", "prepsync"}         # "do not remove": nothing else covers them
-PREPARE_SCREENS = {"idle", "preparing"}       # drawn by the prepare job
+PREPARE_SCREENS = {"idle", "preparing", "restoring"}       # drawn by the prepare job
 # Resting screens --refresh may redraw when Wi-Fi connects or drops. Active
 # screens (syncing, preparing, boot) redraw often enough on their own.
 REFRESHABLE = {"idle", "safe", "failed", "notsynced", "wifi", "wififail", "setup",
-               "setupfail", "usbstuck"}
+               "setupfail", "usbstuck", "restoring", "safehours"}
 # Options that control drawing rather than what's drawn; not saved for --refresh.
 CONTROL_OPTIONS = {"--force": 0, "--only-over": 1, "--preview": 1, "--at": 1,
                    "--wifi": 1, "--ip": 1}
@@ -270,11 +270,19 @@ def render(screen, args):
         header("PREPARE & SYNC", inverted=True)
         sep = "\u00b7" if has_glyphs else "-"
         to_copy = args.to_copy or args.total or 0
-        lines([(f"Converting {args.done or 0}/{args.total or 0}", body_f),
-               (f"Synced {args.synced or 0}/{to_copy}", body_f),
-               (f"Do not remove {sep} {now}", small_f)])
-        if (args.total or 0) + to_copy:
-            progress_bar((args.done or 0) + (args.synced or 0), (args.total or 0) + to_copy)
+        if args.restore_total:
+            # Restoring a new or wiped iPod: songs on it out of all of them,
+            # not this round's (dock_restore.py).
+            lines([(f"Converting {args.done or 0:,}/{args.total or 0:,}", body_f),
+                   (f"On iPod {args.restored or 0:,}/{args.restore_total:,}", body_f),
+                   (f"Do not remove {sep} {now}", small_f)])
+            progress_bar(args.restored or 0, args.restore_total)
+        else:
+            lines([(f"Converting {args.done or 0}/{args.total or 0}", body_f),
+                   (f"Synced {args.synced or 0}/{to_copy}", body_f),
+                   (f"Do not remove {sep} {now}", small_f)])
+            if (args.total or 0) + to_copy:
+                progress_bar((args.done or 0) + (args.synced or 0), (args.total or 0) + to_copy)
 
     elif screen == "syncing":
         step = f"  {args.step}/{args.total}" if args.step and args.total else ""
@@ -357,6 +365,32 @@ def render(screen, args):
         if "MediaDock" in (args.reason or ""):
             rows.append(("Add MediaDock.txt to sync it", small_f))
         rows.append((f"Checked {now}", small_f))
+        lines(rows)
+
+    elif screen == "restoring":
+        # Filling a new or wiped iPod over several rounds (dock_restore.py):
+        # one count for the whole job. Drawn by the prepare job between
+        # syncs, when the iPod is ejected.
+        header("RESTORING", inverted=False)
+        rows = [(f"{args.done or 0:,}/{args.total or 0:,} songs on the iPod", body_f)]
+        if args.detail:
+            rows.append((fit(args.detail, small_f), small_f))
+        import dock_restore
+        left = dock_restore.left_text(args.left)
+        sep = "\u00b7" if has_glyphs else "-"
+        rows.append((fit(f"{left} {sep} {now}" if left else f"Updated {now}", small_f), small_f))
+        rows.append(("OK to unplug: continues when docked", small_f))
+        lines(rows)
+        if args.total:
+            progress_bar(args.done or 0, args.total)
+
+    elif screen == "safehours":
+        # Safe Hours (dock_safehours.py): no syncs in this window.
+        header("SAFE HOURS", inverted=False)
+        rows = [("Safe to remove", body_f)]
+        if args.detail:
+            rows.append((fit(args.detail, body_f), body_f))
+        rows.append((f"Since {now}", small_f))
         lines(rows)
 
     elif screen == "usbstuck":
@@ -676,7 +710,7 @@ def build_parser():
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
                                       "failed", "starting", "offline", "notsynced", "wifi", "wififail",
                                       "setup", "setupfail", "prepsync",
-                                      "connecting", "usbstuck"])
+                                      "connecting", "usbstuck", "restoring", "safehours"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
                    help="syncing: items done within this step (fills the bar)")
@@ -695,6 +729,11 @@ def build_parser():
                    help="prepsync: syncs so far this run (kept in the state file, not shown)")
     p.add_argument("--to-copy", type=int,
                    help="prepsync: tracks that must reach the player (default --total)")
+    p.add_argument("--restored", type=int,
+                   help="prepsync: a restore's songs on the player so far (with --restore-total)")
+    p.add_argument("--restore-total", type=int, help="prepsync: a restore's songs in all")
+    p.add_argument("--left", type=int, metavar="SECONDS",
+                   help="restoring: estimated time left")
     p.add_argument("--pending-add", type=int,
                    help="idle: tracks the next sync will add to the iPod")
     p.add_argument("--pending-remove", type=int, default=0,

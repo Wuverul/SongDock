@@ -214,6 +214,34 @@ class OptInTests(unittest.TestCase):
             summary = dock_sync.make_ipod_work(cfg, "G", 0x1263, write)(dev, lambda *a, **k: None)
         return summary, sp, dev
 
+    def test_safe_hours_deadline_and_restore_count_reach_the_handler(self):
+        self.ipod(marker="MediaDock.txt")
+        with open(os.path.join(self.root, "manifest.json"), "w") as f:
+            json.dump({"tracks": [{"id": f"s{i}"} for i in range(600)]}, f)   # a new iPod
+        cfg = {"sync": {"cache_dir": self.root, "safe_hours": "07:00-10:00"},
+               "server": {"url": "https://x", "username": "u", "password": "p"}}
+        record = mock.Mock()
+        record.player.return_value = {"guid": "G"}
+        record.tracks.return_value = []
+        dev = FakeDevice(self.root)
+        dev.make_writable = mock.Mock()
+        steps = []
+
+        def sync_player(*a, **kw):
+            kw["progress"](0, 600, {"artist": "A", "title": "T"})
+            return {"added": 1, "paused": True}
+        with mock.patch("dock_record.Record", return_value=record), \
+                mock.patch("ipod_handler.sync_player", side_effect=sync_player) as sp, \
+                mock.patch("dock_restore.state_path",
+                           return_value=os.path.join(self.root, "restore.json")), \
+                mock.patch("dock_safehours.schedule_after") as later:
+            summary = dock_sync.make_ipod_work(cfg, "G", 0x1263, True)(
+                dev, lambda *a, **k: steps.append(a[1]))
+        self.assertIsInstance(sp.call_args.kwargs["deadline"], float)
+        self.assertEqual(steps, ["Restoring 1/600: A - T"])
+        self.assertTrue(summary["paused"])
+        later.assert_not_called()                 # a fake device: nothing to re-plug
+
     def test_unmarked_ipod_left_completely_alone(self):
         self.ipod()
         summary, sp, dev = self.run_work(known=False)
@@ -728,10 +756,39 @@ class NextPlanTests(unittest.TestCase):
                                               sleep=lambda _: self.fail("waited"),
                                               running=lambda: None))
 
+    def test_stops_waiting_when_safe_hours_begin(self):
+        plan = dock_sync.next_plan(self.cache, {"generated": "1"}, sleep=lambda _: None,
+                                   running=lambda: {"run": 1}, deadline=100,
+                                   clock=lambda: 100)
+        self.assertIsNone(plan)
+
     def test_a_newer_plan_wins_even_after_the_run_ended(self):
         self.write({"tracks": [], "generated": "9"})
         plan = dock_sync.next_plan(self.cache, {"generated": "1"}, running=lambda: None)
         self.assertEqual(plan["generated"], "9")
+
+
+class SafeHoursSyncTests(unittest.TestCase):
+    """No sync starts in the window: the player isn't even mounted."""
+
+    def check(self, hour, safe_hours="07:00-10:00"):
+        from datetime import datetime
+        shown = []
+        with mock.patch.object(dock_sync, "dock_config_or_empty",
+                               return_value={"sync": {"safe_hours": safe_hours}}):
+            blocked = dock_sync.safe_hours_now(lambda *a, **kw: shown.append(a),
+                                               schedule=False,
+                                               now=datetime(2026, 10, 27, hour, 30))
+        return blocked, shown
+
+    def test_inside_the_window_nothing_is_mounted(self):
+        blocked, shown = self.check(8)
+        self.assertTrue(blocked)
+        self.assertEqual(shown, [("safehours", "--detail", "Syncs resume at 10:00 AM")])
+
+    def test_outside_or_off_syncs_as_usual(self):
+        self.assertEqual(self.check(11), (False, []))
+        self.assertEqual(self.check(8, safe_hours=""), (False, []))
 
 
 if __name__ == "__main__":

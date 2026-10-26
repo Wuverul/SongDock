@@ -229,6 +229,19 @@ sync_batch_size = "auto"
 Checking more often means new music reaches a docked iPod sooner; each check
 that finds nothing new takes a few seconds and changes nothing.
 
+**Safe hours** (no syncs in a daily window, e.g. so a sync doesn't hold the
+iPod on the dock when you leave in the morning):
+
+```toml
+[sync]
+safe_hours = "07:00-10:00"
+```
+
+Or put `SafeHours=07:00-10:00` in `DockSetup.txt` on the iPod. An iPod docked
+in the window just charges and stays usable; a sync already running when it
+opens stops copying and finishes (SAFE HOURS on screen). Either way, a
+still-docked iPod syncs when the window ends.
+
 **Moving the dock to another Wi-Fi network:** put a file named **`wifi.txt`**
 in the iPod's top folder (next to `MediaDock.txt`):
 

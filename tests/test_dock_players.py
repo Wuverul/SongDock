@@ -331,6 +331,18 @@ class SettingsTests(PlayersBase):
         self.assertEqual(self.apply("StockCompatible=yes\n", this=NANO)["done"],
                          ["Already compatible with stock iPods"])
 
+    def test_safe_hours(self):
+        result = self.apply("SafeHours=7-10\n")
+        self.assertEqual(result["done"], ["Safe hours 07:00-10:00"])
+        self.assertEqual(self.settings()["sync"]["safe_hours"], "07:00-10:00")
+        self.assertEqual(self.apply("SafeHours=07:00-10:00\n")["done"],
+                         ["Safe hours already 07:00-10:00"])
+        self.assertEqual(self.apply("SafeHours=off\n")["done"], ["Safe hours off"])
+        self.assertEqual(self.settings()["sync"]["safe_hours"], "")
+        result = self.apply("SafeHours=morning\n")
+        self.assertFalse(result["ok"])
+        self.assertIn("07:00-10:00", result["reason"])
+
     def test_flac_switch(self):
         with open(self.config, "a") as f:
             f.write('\n[device]\ntype = "rockbox"\n')

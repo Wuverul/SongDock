@@ -213,6 +213,8 @@ for a dark case):
 | **DOCK UPDATED / SETUP NOT USED** | Result of a `DockSetup.txt` on the iPod (see `MediaDock README.txt` on the iPod) |
 | **NO WI-FI / CLOCK NOT SET** | The dock can't reach the network after starting up |
 | **USB NOT WORKING** | A plug-in failed (e.g. a loose connector) and the dock's USB port stopped responding. Unplug the dock's power briefly to restart it; until then, players aren't noticed |
+| **RESTORING** | Filling a new or wiped iPod, which takes several syncs: songs on the iPod so far out of all of them, and the time left. Safe to unplug between syncs (not yet tried on a real new iPod) |
+| **SAFE HOURS** | Inside the `safe_hours` window: no syncs. Shows when syncing resumes; safe to unplug |
 
 After a sync, the screen goes back to DOCK READY when you unplug the iPod, or
 after 10 minutes.

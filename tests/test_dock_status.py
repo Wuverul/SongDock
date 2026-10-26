@@ -162,6 +162,26 @@ class RestScreenTests(WifiRefreshTests):
         self.assertEqual(self.draws, [])
         self.assertEqual(dock_status.load_state()["screen"], "usbstuck")
 
+    def test_the_prepare_job_never_covers_safe_hours(self):
+        import dock_prepare
+        dock_status.main(["safehours", "--detail", "Syncs resume at 10:00 AM"])
+        self.draws.clear()
+        dock_status.main(["idle", "--only-over", dock_prepare.DRAW_OVER])
+        self.assertEqual(self.draws, [])
+        self.assertEqual(dock_status.load_state()["screen"], "safehours")
+
+    def test_restoring_is_a_resting_screen_others_can_replace(self):
+        import dock_prepare
+        import dock_resync
+        dock_status.main(["restoring", "--done", "12340", "--total", "40000",
+                          "--detail", "Preparing 431/2,500", "--left", "180000"])
+        self.assertEqual(dock_status.load_state()["screen"], "restoring")
+        dock_status.main(["restoring", "--done", "12400", "--total", "40000",
+                          "--detail", "Next sync: +60", "--only-over", dock_prepare.DRAW_OVER])
+        self.assertIn("12400", dock_status.load_state()["argv"])
+        dock_status.main(["connecting", "--only-over", dock_resync.CONNECTING_OVER])
+        self.assertEqual(dock_status.load_state()["screen"], "connecting")
+
     def test_usb_not_responding_never_covers_a_sync(self):
         import dock_usbport
         dock_status.main(["syncing", "--step", "5", "--total", "6"])

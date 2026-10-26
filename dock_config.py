@@ -26,7 +26,9 @@ DEFAULTS = {
              # Concurrent batches: on (2026-10-23) after the memory fixes -
              # verified on a Zero 2 W; single-core Pis skip it by themselves.
              # "auto": sized per run (dock_prepare.batch_size).
-             "sync_batch_size": "auto"},
+             "sync_batch_size": "auto",
+             # e.g. "07:00-10:00": no syncs then (dock_safehours.py); "" = off
+             "safe_hours": ""},
     "device": {"type": "stock_ipod", "convert_to": "mp3", "mp3_quality": "v0",
                "aac_bitrate": "256k", "write": False, "auto_resync": True,
                "flac": True},                  # Rockbox-only dock: FLAC as-is (false = convert)
@@ -121,6 +123,12 @@ def load(path=None):
     if b != "auto" and not (isinstance(b, int) and not isinstance(b, bool) and 0 <= b <= 1000):
         raise ConfigError(f'{path}: sync_batch_size must be "auto" or a whole number of '
                           f'tracks from 0 to 1000 (0 = only when all are prepared)')
+    try:
+        import dock_safehours
+        dock_safehours.parse(cfg["sync"]["safe_hours"])
+    except (ValueError, AttributeError) as e:
+        raise ConfigError(f'{path}: [sync] {e}' if "safe hours" in str(e)
+                          else f'{path}: safe_hours must look like "07:00-10:00"')
     m = cfg["sync"]["check_interval_minutes"]
     if not (isinstance(m, int) and not isinstance(m, bool) and 1 <= m <= 1440):
         raise ConfigError(f"{path}: check_interval_minutes must be a whole number of "

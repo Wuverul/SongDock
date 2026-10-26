@@ -154,6 +154,11 @@ Music format (stock iPods and Rockbox players):
   Either way, the dock's copy of the music is redone in the new format and
   songs already on players are swapped at the next syncs.
 
+A daily window with no syncs, e.g. to grab the iPod for a morning commute:
+  SafeHours=07:00-10:00  (local time; SafeHours=off to turn it off)
+  An iPod docked then just charges; a sync running when the window opens
+  finishes early. Either way it syncs afterwards if it's still docked.
+
 The Navidrome server and the account the dock signs in with:
   Server=https://music.example.com
   Username=your-name
@@ -213,6 +218,12 @@ WHAT THE SCREEN MEANS
                      Results of {wifi} and {setup} (see above).
   USB NOT WORKING    A plug-in failed and the dock stopped noticing
                      players. Unplug the dock's power briefly to restart it.
+  RESTORING          Filling a new or wiped iPod, which takes several
+                     syncs: songs on the iPod so far, and the time left.
+                     Safe to unplug between syncs; it carries on when
+                     docked.
+  SAFE HOURS         No syncs right now (SafeHours=, see above). Safe to
+                     unplug; shows when syncing resumes.
 Plays are never lost: if Navidrome can't be reached, the dock keeps them
 and sends them later.
 

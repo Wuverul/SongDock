@@ -21,6 +21,8 @@ and the list of known iPods written into its MediaDock.txt.
                                  stock iPod docked on a Rockbox-only dock
     FLAC=no                      Rockbox-only dock: convert FLAC too, for
                                  players that can't play it (FLAC=yes: as-is)
+    SafeHours=07:00-10:00        no syncs in this daily window (local time;
+                                 SafeHours=off to turn it off)
 
 (see dock_players.py for what forgetting does). Several lines are fine.
 Rules, as for wifi.txt:
@@ -53,7 +55,8 @@ ACTIONS = {"forget": dock_players.forget, "keep": dock_players.keep}
 SETTINGS = {"playlisttag": "PlaylistTag", "syncstarred": "SyncStarred",
             "syncfavorites": "SyncStarred", "server": "Server", "username": "Username",
             "password": "Password", "newlibrary": "NewLibrary",
-            "stockcompatible": "StockCompatible", "flac": "FLAC"}
+            "stockcompatible": "StockCompatible", "flac": "FLAC",
+            "safehours": "SafeHours"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
 
@@ -181,6 +184,18 @@ def plan_settings(settings, cfg):
             done.append("FLAC already " + ("copied as-is" if on else "converted"))
         if changes.get(("device", "type"), cfg["device"].get("type")) != "rockbox":
             done[-1] += " (used once the dock is Rockbox-only)"
+    if "SafeHours" in settings:
+        import dock_safehours
+        try:
+            window = dock_safehours.parse(settings["SafeHours"])
+        except dock_safehours.SafeHoursError:
+            raise SetupFileError("SafeHours must look like 07:00-10:00 (or off)")
+        value = dock_safehours.text(window)
+        if value != cfg["sync"].get("safe_hours", ""):
+            changes[("sync", "safe_hours")] = value
+            done.append(f"Safe hours {value}" if value else "Safe hours off")
+        else:
+            done.append(f"Safe hours already {value or 'off'}")
     return changes, done, login, new_library
 
 

@@ -646,6 +646,37 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (USB `error -71`) made the kernel disable the port
   (`usb1-port1/disable` = 1); nothing was detected until a reboot. Fixed
   by `dock_usbport.py` (below).
+- `dock_safehours.py` (2026-10-26, user request: "grab your iPod before a
+  morning commute"): `[sync] safe_hours = "07:00-10:00"` ("" = off; may
+  wrap midnight; DockSetup.txt `SafeHours=`). In the window: dock_sync's
+  `safe_hours_now` runs before mounting - shows SAFE HOURS, doesn't mount
+  (iPod charges, stays usable), schedules `dock_resync.py
+  --after-safe-hours` with a transient systemd timer at the window's end
+  (`schedule_after`: unit musicdock-after-safe-hours, RemainAfterElapse=no;
+  "already exists" = scheduled). That mode re-plugs known iPods even with
+  their disk up (never mounted), or puts DOCK READY over SAFE HOURS if
+  none is docked. dock_resync defers its own requests in the window. A
+  sync running when the window opens: `deadline` = next window start;
+  apply_plan stops copying (`session["paused"]`), follow_plans stops
+  following, the final pass still does playlists + the save; dock_sync
+  schedules the after-job and shows SAFE HOURS ("Synced +N, rest after
+  10:00 AM"). Prepare keeps converting (no iPod). Rockbox/generic: only
+  the "don't start" part (no deadline in their copy loop). Not on
+  hardware yet. A reboot inside the window drops the transient timer; a
+  docked iPod then syncs at boot only after the window (the boot-time
+  sync is blocked and reschedules).
+- `dock_restore.py` (2026-10-26, user request; **not tested on hardware:
+  needs a new/wiped iPod**): a player missing >= `RESTORE_MIN` (500) songs
+  of its plan starts a restore (restore.json next to the record: start
+  time + songs then; survives reboots); it lasts until nothing is
+  missing. Screens count songs on the player / whole plan: the prepare
+  job draws RESTORING (new resting screen, in DRAW_OVER, CONNECTING_OVER,
+  usbport SHOW_OVER, REFRESHABLE) instead of PREPARING and DOCK READY,
+  with "Preparing n/m" or "Next sync: +n" and the time left from the pace
+  since the start (after 25 songs); the sync's SYNCING detail becomes
+  "Restoring 12,341/40,000: artist - title" and PREPARE & SYNC gets "On
+  iPod n/N" (`--restored/--restore-total`). The prepare job keeps the
+  pending check on DOCK READY's arguments (`pending`), not the screen's.
 - `dock_wifiprefer.py` (2026-10-26, user request, after the dock sat on
   the far fallback network for ~14 h at 0.15 MB/s): NetworkManager joins
   the best saved network but never leaves a working one. Root timer

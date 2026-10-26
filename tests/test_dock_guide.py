@@ -29,7 +29,8 @@ class GuideTests(unittest.TestCase):
                        "PlaylistTag=", "SyncStarred=no", "Server=", "Username=",
                        "NewLibrary=yes", "StockCompatible=no", "StockCompatible=yes", "FLAC=no",
                        "comment contains #car", "the playlist \"Road Trip\"",
-                       "\"Favorites\"", "deleted right away", "SAFE TO REMOVE"):
+                       "\"Favorites\"", "deleted right away", "SAFE TO REMOVE",
+                       "SafeHours=07:00-10:00", "RESTORING", "SAFE HOURS"):
             self.assertIn(needle, text)
         self.assertLessEqual(max(len(line) for line in text.splitlines()), 80)
 

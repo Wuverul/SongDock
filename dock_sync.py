@@ -320,6 +320,10 @@ def list_contents(root, limit=LIST_LIMIT):
 
 # ---------------------------------------------------------------- screen ----
 DOCK_STATUS = os.path.join(HERE, "dock_status.py")
+DOCK_RESYNC = os.path.join(HERE, "dock_resync.py")
+# This sync's restore (dock_restore: songs on the player when it started,
+# and in all) for the copy screens; empty when it isn't one.
+RESTORE = {}
 
 
 class Screen:
@@ -382,7 +386,11 @@ def run_sync(device, show, work=None, total=None):
             batch["synced"] = batch["base"] + part_done
         synced = batch["synced"]
         dock_progress.write_copied(prep["run"], synced, batch["syncs"])
-        return dock_progress.screen_args(prep, synced, batch["syncs"])
+        args = dock_progress.screen_args(prep, synced, batch["syncs"])
+        if RESTORE:          # a restore: songs on the iPod out of all of them
+            args += ["--restored", str(RESTORE["have"] + (part_done or 0)),
+                     "--restore-total", str(RESTORE["total"])]
+        return args
 
     def step(n, detail, part_done=None, part_total=None):
         # Progress redraws are nice-to-have: SYNCING is already on screen,
@@ -459,6 +467,13 @@ def run_sync(device, show, work=None, total=None):
                  "--removed", str(summary.get("removed", 0)),
                  "--plays", str(summary.get("plays_sent", 0)),
                  "--queued", str(summary.get("plays_queued", 0)), force=True)
+        elif summary.get("paused"):
+            import dock_safehours
+            window = dock_safehours.from_config(dock_config_or_empty())
+            resume = (f"rest after {dock_safehours.clock_text(dock_safehours.window_end(window))}"
+                      if window else "rest at the next sync")
+            show("safehours", "--detail", f"Synced +{summary.get('added', 0)}, {resume}",
+                 force=True)
         elif summary.get("setup"):
             import dock_setup
             s = summary["setup"]
@@ -490,6 +505,34 @@ def run_sync(device, show, work=None, total=None):
         log.exception("Couldn't draw final screen; SYNCING stays up")
         return False
     return error is None
+
+
+def dock_config_or_empty():
+    try:
+        import dock_config
+        return dock_config.load()
+    except Exception:
+        return {}
+
+
+def safe_hours_now(show, schedule=True, now=None):
+    """Safe hours (dock_safehours): if the window is open, don't mount the
+    player - it charges and stays usable - show SAFE HOURS, and have a
+    still-docked iPod synced when the window ends. Returns True if so."""
+    import dock_safehours
+    window = dock_safehours.from_config(dock_config_or_empty())
+    if not dock_safehours.active(window, now):
+        return False
+    resume = dock_safehours.clock_text(dock_safehours.window_end(window, now))
+    log.info("Safe hours (%s): not syncing; a docked iPod syncs after %s",
+             dock_safehours.text(window), resume)
+    try:
+        show("safehours", "--detail", f"Syncs resume at {resume}", force=True)
+    except Exception:
+        log.exception("Couldn't draw SAFE HOURS")
+    if schedule:
+        dock_safehours.schedule_after(window, DOCK_RESYNC, now=now)
+    return True
 
 
 def whole_disk(dev_path):
@@ -571,10 +614,32 @@ def make_ipod_work(cfg, guid, product, write):
             log.info("Rockbox player: syncing files and playlists")
         client = Client(cfg["server"]["url"], cfg["server"]["username"],
                         cfg["server"]["password"])
+        # Safe hours: a sync still copying when the window opens wraps up.
+        import dock_safehours
+        window = dock_safehours.from_config(cfg)
+        opens = dock_safehours.next_start(window)
+        deadline = opens.timestamp() if opens else None
+
+        RESTORE.clear()
+        if kind == "stock" and writing and not refused:
+            try:
+                import dock_restore
+                present = {r["navidrome_id"] for r in record.tracks(player_guid)}
+                info = dock_restore.status(player_guid, present, manifest)
+                if info:
+                    RESTORE.update(have=info["have"], total=info["total"])
+                    log.info("Restoring this iPod: %d of %d songs on it", info["have"],
+                             info["total"])
+            except Exception:
+                log.exception("Couldn't work out the restore count (continuing)")
 
         def progress(n, total, t):
-            step(5, f"Copying {n + 1}/{total}: {t.get('artist')} - {t.get('title')}",
-                 part_done=n, part_total=total)
+            what = f"{t.get('artist')} - {t.get('title')}"
+            if RESTORE:                              # one count for the whole restore
+                detail = f"Restoring {RESTORE['have'] + n + 1:,}/{RESTORE['total']:,}: {what}"
+            else:
+                detail = f"Copying {n + 1}/{total}: {what}"
+            step(5, detail, part_done=n, part_total=total)
         try:
             summary = handler.sync_player(
                 device.root, player_guid, record, manifest, cache_dir,
@@ -582,8 +647,8 @@ def make_ipod_work(cfg, guid, product, write):
                 backup_root=os.path.join(base, "backups", player_guid),
                 write=writing and not refused, client=client, usb_product=product, step=step,
                 progress=progress, block_device=whole_disk(getattr(device, "path", "")),
-                **({"next_plan": lambda plan: next_plan(cache_dir, plan)} if kind == "stock"
-                   else {"kind": kind}))
+                **({"next_plan": lambda plan: next_plan(cache_dir, plan, deadline=deadline),
+                    "deadline": deadline} if kind == "stock" else {"kind": kind}))
         finally:
             record.close()
         if mac_formatted:
@@ -601,6 +666,12 @@ def make_ipod_work(cfg, guid, product, write):
                 raise SyncError("Stock iPod: dock is set up for Rockbox")
             # else: SETUP NOT USED shows why the DockSetup.txt failed
         elif writing:
+            if summary.get("paused"):
+                log.info("Safe hours from %s: stopped copying; the rest follows after "
+                         "%s if the iPod is still docked", dock_safehours.text(window),
+                         dock_safehours.clock_text(dock_safehours.window_end(window)))
+                if not isinstance(device, FakeDevice):
+                    dock_safehours.schedule_after(window, DOCK_RESYNC)
             applied = {"generated": summary.get("applied", manifest.get("generated"))}
             summary["followup"] = ask_for_followup(cfg, applied, player_guid)
             try:
@@ -617,7 +688,8 @@ def make_ipod_work(cfg, guid, product, write):
 FOLLOW_POLL = 30          # seconds between looks for the prepare run's next plan
 
 
-def next_plan(cache_dir, applied, poll=FOLLOW_POLL, sleep=time.sleep, running=None):
+def next_plan(cache_dir, applied, poll=FOLLOW_POLL, sleep=time.sleep, running=None,
+              deadline=None, clock=time.time):
     """For a sync following a prepare run (ipod_handler.follow_plans): wait
     for the plan after `applied` and return it, or None once no prepare
     run is left to hand one over (it ended or crashed without a newer
@@ -634,8 +706,8 @@ def next_plan(cache_dir, applied, poll=FOLLOW_POLL, sleep=time.sleep, running=No
             newest = None
         if newest and "tracks" in newest and newest.get("generated") != applied.get("generated"):
             return newest
-        if running() is None:
-            return None
+        if running() is None or (deadline and clock() >= deadline):
+            return None                     # run over, or safe hours begin
         sleep(poll)
 
 
@@ -840,6 +912,10 @@ def main(argv=None):
     lock = acquire_lock()
     if lock is None:
         log.info("Another sync is already running; exiting")
+        return 0
+
+    if not args.list_only and safe_hours_now(Screen(preview_dir).show,
+                                             schedule=not args.fake_device):
         return 0
 
     work = None

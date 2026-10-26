@@ -44,7 +44,8 @@ APPLE = "05ac"
 REPLUG_PAUSE = 2              # seconds between dropping the iPod and taking it back
 SYNC_START_WAIT = 60          # seconds for the sync to take over the screen
 # CONNECTING may replace any resting screen, never SYNCING or the boot screens.
-CONNECTING_OVER = ("none,idle,preparing,safe,failed,notsynced,wifi,wififail,setup,"
+CONNECTING_OVER = ("none,idle,preparing,restoring,safehours,safe,failed,notsynced,wifi,"
+                   "wififail,setup,"
                    "setupfail")
 
 
@@ -141,13 +142,15 @@ def replug(device_dir, sleep=time.sleep):
 
 def resync(usb_root=USB_DEVICES, block_root=BLOCK, record=RECORD,
            sync_running=None, sleep=time.sleep, show=draw, state=screen_state,
-           clock=time.monotonic):
+           clock=time.monotonic, after_safe_hours=False):
     """Re-plug every eligible docked iPod. Returns how many were re-plugged.
 
     Shows CONNECTING first, so the dock visibly does something and the
     unplug rule (which fires as the iPod drops off USB) doesn't redraw
     DOCK READY in between. If no sync takes over within a minute (the iPod
     didn't come back), the previous screen is put back with its own time.
+    after_safe_hours: also re-plug an iPod whose disk is up - one docked
+    during safe hours was never mounted (dock_safehours).
     """
     if sync_running is None:
         from dock_prepare import sync_running
@@ -165,7 +168,7 @@ def resync(usb_root=USB_DEVICES, block_root=BLOCK, record=RECORD,
     for device_dir, serial in docked_apple_devices(usb_root):
         if serial.upper() not in known:
             log.info("iPod %s: not one the dock syncs; leaving it alone", serial)
-        elif disk_present(device_dir, block_root):
+        elif disk_present(device_dir, block_root) and not after_safe_hours:
             log.info("iPod %s: its disk is already up; leaving it alone", serial)
         else:
             log.info("iPod %s is docked and new music is ready: re-plugging it", serial)
@@ -184,13 +187,36 @@ def resync(usb_root=USB_DEVICES, block_root=BLOCK, record=RECORD,
     return replugged
 
 
-def main():
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+def safe_hours_window():
     try:
-        os.remove(REQUEST)                 # first, so the path unit can't loop
-    except FileNotFoundError:
-        pass
-    resync()
+        import dock_config
+        import dock_safehours
+        return dock_safehours.from_config(dock_config.load())
+    except Exception:
+        return None
+
+
+def main(argv=None):
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    argv = sys.argv[1:] if argv is None else argv
+    after = "--after-safe-hours" in argv
+    if not after:
+        try:
+            os.remove(REQUEST)             # first, so the path unit can't loop
+        except FileNotFoundError:
+            pass
+    import dock_safehours
+    window = safe_hours_window()
+    if dock_safehours.active(window):
+        # No syncs now: a docked iPod gets this one when the window ends.
+        log.info("Safe hours (%s): the sync waits until %s", dock_safehours.text(window),
+                 dock_safehours.clock_text(dock_safehours.window_end(window)))
+        dock_safehours.schedule_after(window, os.path.abspath(__file__))
+        return
+    if not resync(after_safe_hours=after) and after:
+        # Nothing docked any more: put DOCK READY over SAFE HOURS (the next
+        # prepare run fills in the details).
+        draw("idle", "--only-over", "safehours")
 
 
 if __name__ == "__main__":

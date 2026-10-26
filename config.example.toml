@@ -35,6 +35,11 @@ sync_batch_size = "auto"           # while converting, hand new tracks to a dock
                                    # e.g. Zero 2 W; a Zero W converts first anyway). "auto":
                                    # 1/20 of the run, 25 to 500 tracks each. A number = that
                                    # many; 0 = sync only once everything is converted.
+safe_hours = ""                    # e.g. "07:00-10:00": no syncs in this daily window (local
+                                   # time), so you can grab the iPod in the morning. An
+                                   # iPod docked then just charges; a sync running when it
+                                   # starts finishes early. Either way it syncs afterwards
+                                   # if still docked. "" = off.
 
 [device]
 type = "stock_ipod"                # stock_ipod: music converted for stock iPods (MP3/ALAC);

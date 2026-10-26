@@ -800,7 +800,8 @@ def new_session(pending=(), clock=time.monotonic):
 
 def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                save=checked_save, dirty=False, pending=(), save_every=None,
-               clock=time.monotonic, session=None, final=True):
+               clock=time.monotonic, session=None, final=True, deadline=None,
+               wall=time.time):
     """Make the player match the staged plan (prepare job's manifest).
 
     Order: remove tracks that left every target (with their files), add
@@ -818,6 +819,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     A sync that follows a prepare run applies each plan it hands over with
     one `session` (new_session) and final=False - copying only, saving on
     the clock - and the last with final=True (playlists, closing save).
+    `deadline` (Unix time; safe hours): copying stops then, the rest waits
+    for the next sync (session["paused"]); the closing steps still run.
     Returns a summary dict.
     """
     if "tracks" not in manifest:
@@ -926,6 +929,11 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         session["dirty"] = True
     added, skipped_full = 0, 0
     for n, t in enumerate(additions):
+        if deadline and wall() >= deadline:
+            session["paused"] = True
+            log_info(f"Safe hours: stopping with {len(additions) - n} track(s) still to "
+                     "copy (they follow at the next sync)")
+            break
         path = os.path.join(cache_dir, t["file"])
         if not os.path.exists(path):
             # The prepare job pruned or is replacing it; next sync gets it.
@@ -981,11 +989,14 @@ def follow_plans(db, record, guid, mount, manifest, cache_dir, next_plan, sessio
 
     plan, waves = manifest, 1
     while True:
-        follow = next_plan is not None and plan.get("interim")
+        follow = next_plan is not None and plan.get("interim") and not session.get("paused")
         add(apply_plan(db, record, guid, mount, plan, cache_dir, session=session,
                        dirty=dirty, final=not follow, **kw))
         dirty = False
         if not follow:
+            break
+        if session.get("paused"):     # safe hours: finish with what's on the player
+            add(apply_plan(db, record, guid, mount, plan, cache_dir, session=session, **kw))
             break
         nxt = next_plan(plan)
         if nxt is None:               # the run went away: finish with what we have
@@ -998,6 +1009,7 @@ def follow_plans(db, record, guid, mount, manifest, cache_dir, next_plan, sessio
         log_info(f"Followed the prepare run through {waves} plans in one sync")
     total["plans"] = waves
     total["applied"] = plan.get("generated")
+    total["paused"] = bool(session.get("paused"))
     return total
 
 
@@ -1083,7 +1095,7 @@ def open_database(mount, work_dir, snapshot=None):
 
 def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
                 write=False, client=None, usb_product=None, step=None, progress=None,
-                block_device=None, next_plan=None):
+                block_device=None, next_plan=None, deadline=None):
     """One dock session for a stock iPod (the sync job's steps 2-5).
 
     2. Snapshot the play data and DB, map plays to songs (reconciling the
@@ -1160,7 +1172,7 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
                 refresh_backup(mount, backup, db)
             result = follow_plans(
                 db, record, guid, mount, manifest, cache_dir, next_plan, progress=progress,
-                save=save, session=new_session(report["pending"]),
+                save=save, session=new_session(report["pending"]), deadline=deadline,
                 dirty=report["dirty"] or resort or reshare or bool(entries))
             if resort:
                 mark_sort_order(mount)

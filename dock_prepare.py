@@ -111,7 +111,7 @@ TAG_FIELDS = (("title", "title"), ("artist", "artist"), ("album", "album"),
 MAX_DISK_FRACTION = 0.80     # keep the SD card under 80% full (CLAUDE.md)
 MIN_FREE_FOR_KEPT = 0.25     # below 25% free, kept (removed) tracks go first
 DAY = 86400
-DRAW_OVER = "none,idle,preparing"     # never over syncing/safe/failed/boot
+DRAW_OVER = "none,idle,preparing,restoring"   # never over syncing/safe/failed/boot/safehours
 
 
 class PrepareError(Exception):
@@ -1478,17 +1478,25 @@ def main(argv=None):
 
     from dock_sync import Screen
     screen = Screen(args.preview_dir)
+    previous = read_manifest(cache_dir)
+    # Restoring a new or wiped iPod (dock_restore): RESTORING with one count
+    # for the whole job instead of this run's PREPARING.
+    import dock_restore
+    restore = None if args.dry_run else dock_restore.for_last_player(previous)
 
     def show(name, *screen_args):
         if args.dry_run:
             return
+        if restore and name == "preparing":
+            a = dict(zip(screen_args[::2], screen_args[1::2]))
+            name, *screen_args = dock_restore.screen_args(
+                restore, f"Preparing {int(a.get('--done', 0)):,}/{int(a.get('--total', 0)):,}")
         try:
             # dock_status checks --only-over under the panel lock.
             screen.show(name, *screen_args, "--only-over", DRAW_OVER)
         except Exception:
             log.exception("Screen update failed (continuing)")
 
-    previous = read_manifest(cache_dir)
     client = Client(cfg["server"]["url"], cfg["server"]["username"],
                     cfg["server"]["password"])
     if not args.dry_run:
@@ -1566,10 +1574,12 @@ def main(argv=None):
                     time.time() - state.get("last_draw", 0) < dock_status.MIN_PROGRESS_INTERVAL:
                 return
             synced, syncs = dock_progress.copied(run_id)
+            extra = (["--restored", str(restore["have"] + synced),
+                      "--restore-total", str(restore["total"])] if restore else [])
             screen.show(*dock_progress.screen_args(dock_progress.running_prepare() or
                                                    {"done": done, "total": total},
                                                    synced, syncs),
-                        "--only-over", "prepsync")
+                        *extra, "--only-over", "prepsync")
         except Exception:
             log.exception("PREPARE & SYNC redraw failed (continuing)")
 
@@ -1616,6 +1626,14 @@ def main(argv=None):
     idle = ["idle", "--ready", str(summary["ready"]), "--total", str(summary["total"])]
     if not args.dry_run:
         idle += pending_args(read_manifest(cache_dir))
+    pending = list(idle)                    # DOCK READY's arguments: what's left to sync
+    if not args.dry_run:
+        info = dock_restore.for_last_player(read_manifest(cache_dir))
+        if info:
+            a = dict(zip(idle[1::2], idle[2::2]))
+            adds = int(a.get("--pending-add", 0))
+            idle = dock_restore.screen_args(
+                info, f"Next sync: +{adds:,}" if adds else "Preparing the next part")
     prev_ready = len(previous.get("tracks", [])) + len(previous.get("on_player", []))
     changed = summary["added"] or summary["removed"] or prev_ready != summary["ready"]
     if args.preview_dir:
@@ -1626,7 +1644,8 @@ def main(argv=None):
         # (dock_status checks --only-over under the panel lock).
         import dock_status
         state = dock_status.load_state()
-        if state.get("screen") in (None, "idle", "preparing") and state.get("argv") != idle:
+        if state.get("screen") in (None, "idle", "preparing", "restoring") and \
+                state.get("argv") != idle:
             show(*idle)
     log.info("Done: %d/%d ready (%d added, %d removed, %d skipped)",
              summary["ready"], summary["total"], summary["added"],
@@ -1638,7 +1657,7 @@ def main(argv=None):
     idle_now = idle
     batched = bool(summary.get("batches")) and dock_progress.running_prepare() is not None
     asked = False
-    if changed and not args.dry_run and not args.preview_dir and has_pending(idle):
+    if changed and not args.dry_run and not args.preview_dir and has_pending(pending):
         if batched:
             dock_progress.mark_final()
         asked = ask_for_sync(read_manifest(cache_dir))

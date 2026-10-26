@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import dock_prepare  # noqa: E402
@@ -139,6 +140,24 @@ class ResyncTests(unittest.TestCase):
     def test_left_alone_when_disk_is_up(self):
         self.sys.device("1-1", disk_size=31559176)          # mounted or about to be
         self.assertEqual(self.resync(), 0)
+
+    def test_after_safe_hours_an_ipod_never_mounted_is_replugged(self):
+        real = self.sys.device("1-1", disk_size=31559176)   # docked in the window: disk up
+        n = dock_resync.resync(self.sys.usb, self.sys.block, self.record,
+                               sync_running=lambda: self.running, sleep=self.sleep,
+                               show=self.show, state=self.state, clock=lambda: self.t,
+                               after_safe_hours=True)
+        self.assertEqual(n, 1)
+        self.assertEqual(self.authorized(real), "1")
+
+    def test_in_safe_hours_the_resync_waits_for_the_end(self):
+        with mock.patch.object(dock_resync, "safe_hours_window", return_value=(0, 1439)), \
+                mock.patch("dock_safehours.schedule_after") as later, \
+                mock.patch.object(dock_resync, "resync") as now, \
+                mock.patch.object(dock_resync, "REQUEST", self.request):
+            dock_resync.main([])
+        later.assert_called_once()
+        now.assert_not_called()
 
     def test_left_alone_during_a_sync(self):
         real = self.sys.device("1-1", disk_size=0)
