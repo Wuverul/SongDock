@@ -315,8 +315,10 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   reconcile, apply the staged plan, playlists, `sync_player` session. A copy of
   the record is saved on the player at `iPod_Control/musicdock/dock.db`.
 - `rockbox_handler.py`: **Rockbox players** (2026-10-23; built against fake
-  players, **untested on hardware**: the USB identity under Rockbox - serial
-  used as the GUID, whether udev's trigger fires - is the main unknown).
+  players; **first hardware run 2026-10-25** with a USB flash drive +
+  empty `.rockbox`: 1454 tracks in 34.5 min, 101 cover.jpg, 7 playlists,
+  all 1646 entries resolve; identified by the drive's USB serial. Still
+  untested: a real Rockbox player's USB identity and `.scrobbler.log`).
   Chosen per player by a `.rockbox` folder (`opt_in_status` accepts
   `.rockbox` or `iPod_Control`; MediaDock.txt still required). Same plan,
   cache and record; the record's dbid is the file's path. Only
@@ -557,7 +559,13 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   SAFE shows "No play count - unsupported", `--no-plays`). Identified by
   `MediaDock/.musicdock/player-id` (`SD` + 14 hex), created only in write
   mode, since cheap players share USB serials; a read-only dock skips them.
-  Untested on hardware.
+  **Verified 2026-10-25 with a USB flash drive** (USB 0x55a9): no
+  MediaDock.txt -> NOT SYNCED "No MediaDock.txt on this player", nothing
+  written; with it -> 1454 tracks at ~1.4 s/track (vs 2.75 s to the Nano),
+  no playlists. Test players were then deleted from the record (backup
+  `dock.db.before-test-players-*`). **Hardware gotcha:** a bad plug-in
+  (USB `error -71`) made the kernel disable the port
+  (`usb1-port1/disable` = 1); nothing was detected until a reboot.
 - **`[device] flac` (2026-10-24, user request):** default true; only used
   with `type = "rockbox"`. false = `dock_prepare.format_mode` returns
   `rockbox_no_flac`: FLAC -> `convert_to`, everything else (Ogg/Opus/MP3)
@@ -907,8 +915,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   5 min, DOCK READY showed the pending removals, the next dock removed all 29
   (each logged with its reason, record history kept, Favorites updated) in 44 s.
 - **Real-use checks still pending** (tested on fake iPods / fake servers):
-  plays queued while Navidrome is down, docking during boot, wifi.txt on a real
-  network.
+  plays queued while Navidrome is down (can't be tested by stopping the
+  server: it's someone else's). Docking during boot: verified (2026-10-23
+  Nano, 2026-10-25 flash drive at 12 s; the sync waited for the boot
+  screens). wifi.txt on a real network: verified 2026-10-18 and 2026-10-23.
 - **Manual test with 3 tracks passed on the Nano (2026-10-16):** MP3s
   (2 converted V0, 1 original 320k with a 4000x4000 cover) played cleanly,
   showed art, and sorted correctly. Not yet tested on the Pi itself.

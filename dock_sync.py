@@ -519,10 +519,11 @@ def make_ipod_work(cfg, guid, product, write):
             manifest = {}
         record = Record()
         status = opt_in_status(device.root, record.player(guid) is not None)
+        # Rockbox and generic players are "players" in messages, not iPods.
+        what = "iPod" if os.path.isdir(os.path.join(device.root, "iPod_Control")) else "player"
         if status in ("not_ipod", "unmarked"):
             record.close()
-            reason = (f"No {MARKER} on this player" if status == "not_ipod"
-                      else f"No {MARKER} on this iPod")
+            reason = f"No {MARKER} on this {what}"
             log.info("Not syncing: %s (nothing read or written)", reason)
             return {"not_synced": reason}
         # A Mac-formatted iPod is HFS+, which Linux can't safely write: read
@@ -539,7 +540,7 @@ def make_ipod_work(cfg, guid, product, write):
                     f.write(MARKER_TEXT)
                     f.flush()
                     os.fsync(f.fileno())
-                log.info("Created %s on this already-synced iPod", MARKER)
+                log.info("Created %s on this already-synced %s", MARKER, what)
         rockbox = rockbox_handler.is_rockbox(device.root)
         generic = not rockbox and not os.path.isdir(os.path.join(device.root, "iPod_Control"))
         kind = "rockbox" if rockbox else "generic" if generic else "stock"
@@ -603,7 +604,7 @@ def make_ipod_work(cfg, guid, product, write):
             try:
                 import dock_guide
                 if dock_guide.write_guide(device.root, cfg, kind=kind):
-                    log.info("Updated %s on the iPod", dock_guide.GUIDE_FILE)
+                    log.info("Updated %s on the %s", dock_guide.GUIDE_FILE, what)
             except Exception:
                 log.exception("Couldn't write the guide (continuing)")
         log.info("Session summary: %s", summary)

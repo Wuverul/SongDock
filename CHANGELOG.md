@@ -5,7 +5,12 @@
 - **Other music players:** any USB player with a `MediaDock.txt` in its top
   folder gets music copied into a `MediaDock` folder, tagged playlists'
   songs included (no playlists on the player). No plays are read; SAFE TO
-  REMOVE says "No play count - unsupported". Untested on real hardware.
+  REMOVE says "No play count - unsupported". Tried with a USB flash drive
+  standing in for a player.
+- **Rockbox players** ran on real hardware for the first time, a USB flash
+  drive with a `.rockbox` folder: 1,454 songs, covers and 7 playlists, all
+  correct. Reading plays from a real Rockbox player is still untested.
+- Messages say "player" rather than "iPod" for Rockbox and other players.
 - **`flac = false`** (`[device]`, or `FLAC=no` in `DockSetup.txt`): with
   stock-iPod compatibility off, FLAC is still converted (to `convert_to`)
   for players that can't play it; other formats are copied as they are.

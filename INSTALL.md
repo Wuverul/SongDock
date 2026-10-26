@@ -240,7 +240,7 @@ UNCHANGED** means it went back to its old network and left the file there,
 with the reason on screen. Add `Hidden=yes` for a hidden network; leave out
 the password for an open one.
 
-**Rockbox players** (untested on real hardware so far): opt in the same way,
+**Rockbox players** (tried with a flash drive standing in for one, not yet a real player): opt in the same way,
 with `MediaDock.txt` in the player's top folder. The dock recognizes Rockbox
 by its `.rockbox` folder and then:
 
@@ -286,8 +286,8 @@ Rockbox-only dock still has its plays read, and a `DockSetup.txt` with
 it has been converted.
 
 **Other music players** (cheap MP3 players, SnowSky-style players: anything
-that plays a folder of music, without Rockbox; untested on real hardware so
-far): put an empty `MediaDock.txt` in the player's top folder (on the drive
+that plays a folder of music, without Rockbox; tried with a USB flash drive
+standing in for one): put an empty `MediaDock.txt` in the player's top folder (on the drive
 you want synced, if it shows up as two) and dock it. The dock needs
 `write = true` for these, since it has nothing to read from them. It then:
 

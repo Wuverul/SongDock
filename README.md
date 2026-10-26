@@ -59,13 +59,14 @@ music in the background, so syncs are quick.
   music library only: there are no playlists on the player. These players
   don't keep a play history the dock can read, so **no plays reach
   Navidrome**; SAFE TO REMOVE says "No play count - unsupported". Like
-  Rockbox players, they need an unplug and replug to sync new music, and
-  none has been tried on real hardware yet.
+  Rockbox players, they need an unplug and replug to sync new music. Tried
+  so far with a USB flash drive standing in for one, not with a real
+  player.
 
   On stock firmware, an unsupported iPod gets **SYNC FAILED** with its
-  model name, before anything on it is changed. Rockbox support in the
-  dock is built and tested in software but not yet on a real player (see
-  "Known limitations").
+  model name, before anything on it is changed. Rockbox support has been
+  tried with a USB flash drive set up like a Rockbox player, but not yet
+  with a real one (see "Known limitations").
 
   **How the two differ in the dock:**
 
@@ -249,12 +250,15 @@ untested on hardware or not built.
   tried; with Rockbox, so should the iPod photo/color, 4th generation and
   mini (see the table above). Newer nanos, the iPod touch and the shuffle
   work with neither.
-- **Rockbox support is untested on a real player.** It's built and tested
-  in software. The main unknown is how a Rockbox player identifies itself
-  over USB: if the dock can't identify it, the sync stops with "Can't
-  identify the player" before changing anything.
-- **Other music players are untested on real hardware**, and the dock
-  can't read their plays at all. A player that shows up as two drives
+- **Rockbox support is untested on a real player.** A USB flash drive set
+  up like one got its music, covers and playlists as expected, but reading
+  plays from Rockbox's log hasn't run on a real player. The other unknown
+  is how a Rockbox player identifies itself over USB: if the dock can't
+  identify it, the sync stops with "Can't identify the player" before
+  changing anything.
+- **Other music players are untested with a real player** (a USB flash
+  drive standing in for one worked), and the dock can't read their plays
+  at all. A player that shows up as two drives
   (built-in memory and a memory card) syncs only the drive with
   `MediaDock.txt` on it.
 - **iPods bigger than the dock's storage** fill over several syncs. This is

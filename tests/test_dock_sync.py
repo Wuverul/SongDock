@@ -226,6 +226,12 @@ class OptInTests(unittest.TestCase):
         self.assertEqual(summary, {"not_synced": "No MediaDock.txt on this player"})
         sp.assert_not_called()
 
+    def test_unmarked_rockbox_player_is_called_a_player(self):
+        os.makedirs(os.path.join(self.root, ".rockbox"))
+        summary, sp, _ = self.run_work(known=False)
+        self.assertEqual(summary, {"not_synced": "No MediaDock.txt on this player"})
+        sp.assert_not_called()
+
     def test_generic_player_gets_files_only_under_its_own_id(self):
         # A plain music-folder player (no iPod_Control, no .rockbox) that opted in.
         open(os.path.join(self.root, "MediaDock.txt"), "w").close()
