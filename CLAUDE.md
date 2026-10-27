@@ -963,6 +963,34 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    record backup and the cache side are built; hardware test with a cache
    smaller than the library pending. Rockbox handler built 2026-10-23
    (fake players only; see `rockbox_handler.py`).
+   **Planned: lossless for chosen songs (user, 2026-10-26; after the
+   trip).** Not built yet, in this order:
+   1. **Hi-res down-conversion first.** `audio_options` for `alac` is
+      only `-c:a alac`, so 24-bit / 96 kHz FLAC stays hi-res: 3-4x the
+      size, and stock iPod firmware is believed not to play ALAC above
+      16-bit / 48 kHz (confirm on the Classic). Convert to 16-bit 44.1
+      kHz (`-sample_fmt s16p -ar 44100`, or keep 48 kHz sources at 48);
+      record it in `encoding` so existing ALAC files are redone. MP3 V0
+      is unaffected (LAME already outputs 16-bit).
+   2. **A `#lossless` playlist tag** (setting e.g. `[sync] lossless_tag =
+      "#lossless"`, "none" = ignore it - the per-dock switch, e.g. off
+      for a dock serving a 16 GB Nano; `LosslessTag=` in DockSetup.txt;
+      whole word, any case, like `playlist_tag`). Any song in a playlist
+      whose comment has it gets lossless *when the server has a lossless
+      source* (FLAC/ALAC/WAV): ALAC for stock iPods, FLAC as-is for
+      Rockbox; everything else as now (MP3 V0). The playlist needn't be
+      synced (a "Lossless" list of albums/songs works); a song in any
+      #lossless playlist wins. Playlists only: Navidrome has no editable
+      album/song comment (tags come from the files, which the server
+      owner controls). Most of the machinery exists: each manifest track
+      already has its own `encoding`, a changed encoding already re-
+      converts and replaces the song on the player, and stock iPods mix
+      MP3 and ALAC fine. Work: choose the format per song in the prepare
+      job instead of per dock, the setting + DockSetup + guide, tests.
+   3. **Space:** dock_limits' notes and the ALAC suggestion should count
+      lossless songs at their real size (`plan_bytes` uses cached sizes,
+      so mostly right once they're cached). ~25-30 MB per CD-quality ALAC
+      song: a 512 GB Classic holds ~15-20k all-ALAC songs vs ~60k MP3 V0.
 6. 3D-printed dock enclosure
 7. Documentation, setup guide, and packaging for friends. **v0.5.0 released
    2026-10-24** (tag `v0.5.0`, GitHub release with `songdock-0.5.0.tar.gz`,
