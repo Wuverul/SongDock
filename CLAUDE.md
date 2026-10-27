@@ -987,6 +987,21 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
       converts and replaces the song on the player, and stock iPods mix
       MP3 and ALAC fine. Work: choose the format per song in the prepare
       job instead of per dock, the setting + DockSetup + guide, tests.
+   **Format rules (user, 2026-10-26): never "upgrade" a lossy source.**
+   Lossless output (ALAC/FLAC) only from a lossless source (FLAC, WAV,
+   ALAC). MP3 and AAC/M4A sources stay as they are (today:
+   `NATIVE_FORMATS` keeps them - correct). OGG/Opus (and other lossy
+   formats an iPod can't play) always become MP3 for stock iPods and basic
+   music players - never ALAC. Gaps today, to close with this work:
+   (a) `convert_to = "alac"` turns OGG/Opus into ALAC (everything not
+   native goes to `convert_to`); the per-song format choice must send
+   lossy sources to MP3, and the stale-encoding check must compare each
+   song with *its* format, not the dock's (or OGG songs re-convert every
+   run). (b) A Rockbox-only dock (`type = "rockbox"`) copies OGG as-is,
+   which Rockbox plays but a basic player docked there may not: one cache
+   holds one format per song, so serving OGG to Rockbox and MP3 to a basic
+   player needs either per-kind formats or "lossy non-MP3 -> MP3 on any
+   dock that also serves basic players".
    3. **Space:** dock_limits' notes and the ALAC suggestion should count
       lossless songs at their real size (`plan_bytes` uses cached sizes,
       so mostly right once they're cached). ~25-30 MB per CD-quality ALAC
