@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.7.1
+
+Lossless songs by playlist, and one artist listing per artist.
+
+**To update:** copy the new package over and run the installer again, as in INSTALL.md ("Updating"). Your settings, cache and the record of what's on your players are kept.
+- **Your Artists menu will change at the next sync.** This is on by default and only changes names on the player, with nothing re-copied. To keep the old names, set `primary_artist = false` in `[sync]`.
+- **Lossless does nothing until you tag a playlist** with `#lossless`.
+
+**Lossless for chosen songs**
+- Add `#lossless` to a playlist's comment in Navidrome and its songs sync as ALAC (FLAC on a Rockbox-only dock), if the server's copy is lossless. The new file replaces the MP3, so a song is never on the player twice. Remove the tag and the MP3 comes back. Set `lossless_tag`, or `LosslessTag=` in `DockSetup.txt`, to change the tag or turn it off.
+- Lossy sources are never "upgraded": MP3 and AAC stay as they are, and Ogg/Opus becomes MP3, including on a dock set to `convert_to = "alac"`.
+- ALAC is always 16-bit, 48 kHz at most, because stock iPods are believed not to play more. 16-bit sources stay bit-exact. Existing ALAC files are converted again once.
+- Plays are read and queued before a file is swapped, and the iPod keeps the song's play count, skips, rating and last played.
+- The tag needs an iPod in the dock's list (a Rockbox player on a Rockbox-only dock with `flac = false`), so a dock serving only basic MP3 players gets plain MP3.
+- DOCK READY shows "Lossless pending: 109 songs" or "Format changes: 4 songs", and a docked iPod re-syncs for them.
+
+**One listing per artist**
+- A song lists under its album's artist, or on a Various Artists album under the first name in its credit. Anyone else moves to the title: "Doin' It Right (feat. Panda Bear)". On a real library of 1,455 songs, 557 listings became 217.
+- A comma, `&` or `/` separates names only with evidence, so "Above & Beyond" stays whole: Navidrome lists the names separately, or one appears alone in your library. Credits left whole are listed in `MediaDock.txt` and `musicdock-status`, and `artist_names` protects a name.
+- Spellings differing only in case or punctuation merge ("leavv" and "Leavv").
+- **`compilation_albums`** lists chosen compilations as one artist, e.g. `"Now That's What I Call Music"`, or `"Monthly Mix = My Mixes"` to name it. Also `CompilationAlbums=` in `DockSetup.txt`.
+
+**Known limits**
+- A dock serving both an iPod and a basic MP3 player has one cache, so the basic player gets the ALAC files too and may not play them.
+- A hi-res ALAC file on the server is copied as it is, so it could reach an iPod that can't play it.
+- Songs in a listed compilation can't be browsed by their real artists on the player.
+- Verified on an iPod nano 4G: ALAC playback including a 24-bit/96 kHz source, album art, playlists, and 187 plays sent during a swap. Not yet tried on hardware: ALAC on an iPod Classic, `CompilationAlbums=` in `DockSetup.txt`, and a docked iPod re-syncing by itself for format swaps.
+
 ## 0.7.0
 
 Getting ready for big iPods (e.g. a 512 GB Classic with 40,000 songs), plus

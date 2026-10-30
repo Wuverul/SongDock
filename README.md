@@ -99,6 +99,17 @@ music in the background, so syncs are quick.
   `DockSetup.txt`) still converts FLAC, to the same format as for stock
   iPods, while other formats are copied as they are.
 
+- **Lossless for chosen songs:** add `#lossless` to a playlist's comment in
+  Navidrome and its songs sync as ALAC (FLAC on a Rockbox-only dock) if the
+  server's copy is lossless, replacing the MP3. ALAC takes about 3 times the
+  space. Lossy files are never "upgraded".
+
+- **One listing per artist:** a song lists under its album's artist, or on a
+  Various Artists album the first name in its credit, with anyone else moved to
+  the title as "(feat. X)". Only the player's names change. `compilation_albums`
+  lists chosen compilations as one artist; `primary_artist = false` turns this
+  off.
+
 - **The iPod must be formatted FAT32 ("Windows format").** An iPod restored
   with Finder/iTunes on a **Mac** is usually formatted for Mac (HFS+), which the
   dock can't write to. Restore it once with iTunes on a **Windows** PC. See
