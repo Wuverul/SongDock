@@ -101,6 +101,7 @@ album the first name in its credit. A song by "A feat. B", "A, B" or "A & B"
 lists under A and is titled "Song (feat. B)". A comma, & or / stays part of
 the name if nothing shows two people (MediaDock.txt lists these).
 This only changes the names on the iPod, not in Navidrome.
+Compilations can list as one artist instead: see CompilationAlbums below.
 When a song leaves all of those, the next sync removes it from the iPod;
 {removal}
 
@@ -144,6 +145,11 @@ Which music syncs:
   PlaylistTag=#car       sync the playlists whose Navidrome comment has
                          #car (instead of {tag or "no tag"}); PlaylistTag=none stops
                          syncing tagged playlists
+  CompilationAlbums=Now That's What I Call Music; Monthly Mix = My Mixes
+                         list albums whose name contains these words as one
+                         artist, the songs' artists going to their titles.
+                         "= name" chooses the artist's name. Separate them
+                         with ;. This replaces the whole list; =none clears it
   SyncStarred=no         stop syncing starred songs, e.g. to keep a big
                          library starred in a desktop app while the iPod
                          gets playlists only; SyncStarred=yes turns it back

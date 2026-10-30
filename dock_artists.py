@@ -6,8 +6,9 @@ collaboration as its own artist (2026-10-30: 557 for 1455 songs). The dock
 files a song under one artist instead, and moves anyone else to the title.
 Only the player's names change; Navidrome and the cached files don't.
 
-  0. An album whose name contains a key of [album_artists] in the config gets
-     that artist: {"Some Series" = "Some Series Releases"}.
+  0. Compilations the user lists ([sync] compilation_albums) get one artist of
+     their own, the song's artists going to the title: "Now That's What I Call
+     Music", or "Chillhop Essentials = Chillhop Releases" to name it.
   1. A song is credited to its album's artist (user, 2026-10-30), or to the
      first of them: Caribou on a Porter Robinson album -> Porter Robinson.
      Compilations ("Various Artists") are the exception: step 2.
@@ -40,6 +41,16 @@ GUESTS = re.compile(r"\s+[(\[.]?(?:feat\.?|ft\.?|featuring|w/)\s+(.+?)[)\]]?\s*$
 PARTNERS = re.compile(r"\s*[,;]\s*|\s+\u2022\s+|\s+[&/]\s+")
 COMPILATION = re.compile(r"\bvarious(?: artists)?\b", re.I)
 TITLE_CREDIT = re.compile(r"\b(?:feat|ft|featuring)\b", re.I)
+
+
+def compilations(entries):
+    """{words in the album name (lower case): artist} from compilation_albums
+    entries: "words", listed under those words, or "words = artist"."""
+    found = {}
+    for entry in entries or ():
+        words, _, artist = entry.partition("=")
+        found[words.strip().casefold()] = artist.strip() or words.strip()
+    return found
 
 
 def same_artist(name):
@@ -96,12 +107,13 @@ def _album_artist(song):
     return song.get("displayAlbumArtist") or song.get("albumArtist") or ""
 
 
-def tidy(songs, extra_names=(), unproven=None, by_album=None):
+def tidy(songs, extra_names=(), unproven=None, compilation_albums=()):
     """Give each song its one artist and credit the others in its title.
     Changes the song records in place. Returns how many changed. Pass a set
     as `unproven` to get the credits left whole for lack of evidence.
-    by_album: [album_artists] from the config."""
+    compilation_albums: [sync] compilation_albums from the config."""
     keep = (*KEEP_NAMES, *extra_names)
+    chosen = compilations(compilation_albums)
     kept = {k.casefold() for k in keep}
     credits = {s["id"]: without_guests(s["artist"])[0] for s in songs if s.get("artist")}
     alone = {same_artist(c) for c in credits.values() if not PARTNERS.search(c)}
@@ -115,8 +127,8 @@ def tidy(songs, extra_names=(), unproven=None, by_album=None):
 
     def album_main(song):
         name = (song.get("album") or "").casefold()
-        for words, artist in (by_album or {}).items():
-            if words.casefold() in name:
+        for words, artist in chosen.items():
+            if words in name:
                 return artist
         album = _album_artist(song)
         if not album or COMPILATION.search(album):

@@ -666,11 +666,12 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   musicdock-status. `artists` can't decide it alone: it often holds a whole
   credit as one name. Spellings differing only in case or punctuation take
   the most common. `KEEP_NAMES` + `[sync] artist_names` are never split;
-  `primary_artist = false` turns it all off. **`[album_artists]`** (user,
-  2026-10-30): album name contains the key -> that artist, ahead of the
-  rules above; the user's Pi lists all 27 Chillhop Essentials albums (720
-  songs) as "Chillhop Releases" (their own config, deliberately not a
-  default). `fill_missing_names` makes
+  `primary_artist = false` turns it all off. **`[sync] compilation_albums`** (user,
+  2026-10-30; `DockSetup.txt` `CompilationAlbums=`): albums whose name
+  contains the words list as one artist, ahead of the rules above, e.g.
+  "Now That's What I Call Music", or "Chillhop Essentials = Chillhop
+  Releases" to name it. Empty by default; the user's Pi has that Chillhop
+  entry (27 albums, 720 songs). `fill_missing_names` makes
   title and artist follow the plan like the album, in the iTunesDB only (no
   re-copy); Rockbox re-tags. The album artist field itself is left alone.
   **On the Nano 2026-10-30** (first version): one sync renamed 345 tracks

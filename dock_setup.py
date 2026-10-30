@@ -7,6 +7,7 @@ and the list of known iPods written into its MediaDock.txt.
     Keep=Jo's iPod (nano)        bring a forgotten iPod back
     PlaylistTag=#car             sync playlists tagged #car instead ("none" = off)
     LosslessTag=none             no lossless songs on this dock (default #lossless)
+    CompilationAlbums=A = B; C   these compilations list as one artist ("none" = off)
     SyncStarred=no               don't sync starred songs (also SyncFavorites=)
     Server=https://music.example.com      a new Navidrome address (or several,
                                           comma-separated, in the order to try); needs
@@ -53,7 +54,8 @@ log = logging.getLogger("dock_setup")
 SETUP_FILE = "DockSetup.txt"
 GUIDE_FILE = "MediaDock README.txt"     # the manual (dock_guide.py)
 ACTIONS = {"forget": dock_players.forget, "keep": dock_players.keep}
-SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "syncstarred": "SyncStarred",
+SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
+            "compilationalbums": "CompilationAlbums", "syncstarred": "SyncStarred",
             "syncfavorites": "SyncStarred", "server": "Server", "username": "Username",
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
@@ -138,6 +140,17 @@ def plan_settings(settings, cfg):
         changes[("sync", "lossless_tag")] = lossless
         done.append(f"Playlists tagged {lossless} sync as lossless" if lossless
                     else "No playlists sync as lossless")
+    if "CompilationAlbums" in settings:
+        value = settings["CompilationAlbums"]
+        if not value:
+            raise SetupFileError('CompilationAlbums needs album names (or "none")')
+        albums = [] if value.lower() in ("none", "off") else \
+            [" = ".join(p.strip() for p in a.split("=", 1)) for a in value.split(";") if a.strip()]
+        if not all(a.partition("=")[0].strip() for a in albums):
+            raise SetupFileError("CompilationAlbums needs a name before each =")
+        changes[("sync", "compilation_albums")] = albums
+        done.append(f"{len(albums)} compilation(s) list as one artist" if albums
+                    else "No compilations list as one artist")
     if "SyncStarred" in settings:
         on = yes_no("SyncStarred", settings["SyncStarred"])
         targets = ([t for t in targets if t != "starred"] if not on else

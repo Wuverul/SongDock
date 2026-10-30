@@ -86,16 +86,20 @@ class AlbumArtistTests(unittest.TestCase):
         self.assertEqual(self.tidied(artist="Solo", displayAlbumArtist="Chillhop Music"),
                          ("Chillhop Music", "T (feat. Solo)"))
 
-    def test_a_chosen_album_series_gets_its_own_artist(self):
+    def test_a_listed_compilation_gets_one_artist(self):
         for album_artist in ("Various Artists", "Label", "Label \u2022 Various Artists"):
             songs = [{"id": "1", "artist": "Aso, Bao", "title": "T", "album": "Mix Series: Fall",
                       "displayAlbumArtist": album_artist},
                      {"id": "2", "artist": "Aso", "title": "U", "album": "Aso's Album",
                       "displayAlbumArtist": "Aso"}]
-            a.tidy(songs, by_album={"mix series": "Mix Releases"})
+            a.tidy(songs, compilation_albums=["mix series = Mix Releases"])
             self.assertEqual((songs[0]["artist"], songs[0]["title"]),
                              ("Mix Releases", "T (feat. Aso, Bao)"))
             self.assertEqual(songs[1]["artist"], "Aso")
+
+    def test_a_compilation_without_a_name_lists_under_its_words(self):
+        self.assertEqual(a.compilations(["Now That's Music", "Mix = Mixes"]),
+                         {"now that's music": "Now That's Music", "mix": "Mixes"})
 
     def test_a_band_with_and_in_its_name_survives_on_its_album(self):
         self.assertEqual(self.tidied(artist="Above & Beyond",

@@ -21,7 +21,7 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
              "playlist_tag": "#ipod", "lossless_tag": "#lossless",
-             "primary_artist": True, "artist_names": [], "workers": "auto", "removal_grace_days": 7,
+             "primary_artist": True, "artist_names": [], "compilation_albums": [], "workers": "auto", "removal_grace_days": 7,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -36,7 +36,6 @@ DEFAULTS = {
                "flac": True},                  # Rockbox-only dock: FLAC as-is (false = convert)
     "display": {"theme": "", "invert": False,      # theme "" = follow invert (older configs)
                 "model": "v4"},                    # Waveshare 2.13" HAT version: v4, v3, v2
-    "album_artists": {},     # album name contains the key -> list under this artist
     "genres": {"unmatched": dock_genres.DEFAULT_UNMATCHED,
                "groups": dock_genres.DEFAULT_GROUPS},
 }
@@ -114,9 +113,11 @@ def load(path=None):
             or not all(isinstance(n, str) for n in names):
         raise ConfigError(f'{path}: primary_artist must be true or false, and artist_names '
                           'a list like ["Now, Now"]')
-    if not all(isinstance(v, str) and k.strip() and v.strip()
-               for k, v in cfg["album_artists"].items()):
-        raise ConfigError(f'{path}: [album_artists] lines look like "Some Series" = "An Artist"')
+    albums = cfg["sync"]["compilation_albums"]
+    if not isinstance(albums, list) or not all(
+            isinstance(a, str) and a.partition("=")[0].strip() for a in albums):
+        raise ConfigError(f'{path}: compilation_albums must be a list like '
+                          '["Chillhop Essentials = Chillhop Releases", "Now That\'s What I Call Music"]')
     lossless = cfg["sync"]["lossless_tag"]
     if not isinstance(lossless, str) or any(c.isspace() for c in lossless):
         raise ConfigError(f'{path}: lossless_tag must be one word, e.g. "#lossless" ("" = off)')

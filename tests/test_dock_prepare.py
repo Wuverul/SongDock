@@ -1259,12 +1259,13 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(dock_config.ConfigError, "flac"):
             dock_config.load(self.write(base + '[device]\nflac="no"\n'))
 
-    def test_album_artists_are_checked(self):
-        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[album_artists]\n'
-        self.assertEqual(dock_config.load(self.write(base + '"Mix" = "Mixes"\n'))
-                         ["album_artists"], {"Mix": "Mixes"})
-        with self.assertRaisesRegex(dock_config.ConfigError, "album_artists"):
-            dock_config.load(self.write(base + '"Mix" = 3\n'))
+    def test_compilation_albums_are_checked(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
+        self.assertEqual(dock_config.load(self.write(base + 'compilation_albums=["Mix = M"]\n'))
+                         ["sync"]["compilation_albums"], ["Mix = M"])
+        for bad in ('"Mix"', '[3]', '["= M"]'):
+            with self.assertRaisesRegex(dock_config.ConfigError, "compilation_albums"):
+                dock_config.load(self.write(base + f'compilation_albums={bad}\n'))
 
     def test_lossless_tag_defaults_on_and_is_checked(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'

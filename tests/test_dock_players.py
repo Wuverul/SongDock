@@ -237,6 +237,16 @@ class SettingsTests(PlayersBase):
         self.assertFalse(os.path.exists(os.path.join(self.dir, "DockSetup.txt")))
         self.assertEqual(self.server.logins, [])                  # no sign-in to test
 
+    def test_compilation_albums_from_the_ipod(self):
+        result = self.apply("CompilationAlbums=Now That's What I Call Music;"
+                            "Chillhop Essentials=Chillhop Releases\n")
+        self.assertTrue(result["ok"])
+        self.assertEqual(self.settings()["sync"]["compilation_albums"],
+                         ["Now That's What I Call Music", "Chillhop Essentials = Chillhop Releases"])
+        self.apply("CompilationAlbums=none\n")
+        self.assertEqual(self.settings()["sync"]["compilation_albums"], [])
+        self.assertIn("needs a name", self.apply("CompilationAlbums== X\n")["reason"])
+
     def test_lossless_tag_can_be_turned_off(self):
         result = self.apply("LosslessTag=none\n")
         self.assertTrue(result["ok"])
