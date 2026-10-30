@@ -312,6 +312,9 @@ def music_section(manifest, cfg, cache_dir):
     if kept:
         line += f", {kept} removed but kept for now"
     lines.append(line)
+    if manifest.get("unsplit_artists"):
+        import dock_artists
+        lines.append(dock_artists.note(manifest["unsplit_artists"]))
     tracks_dir = os.path.join(cache_dir, "tracks")
     size = 0
     if os.path.isdir(tracks_dir):

@@ -652,19 +652,26 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (USB `error -71`) made the kernel disable the port
   (`usb1-port1/disable` = 1); nothing was detected until a reboot. Fixed
   by `dock_usbport.py` (below).
-- `dock_artists.py` (2026-10-30, user request; **not yet seen on a real
-  iPod**): one Artists listing per artist. The prepare job gives each
-  song its main artist and moves guests to the title: `feat.`/`ft.`/
-  `featuring`/`w/` and comma lists (first name = main, user's choice) go;
-  `&` and `/` are equal partners and stay their own listing. Spellings
-  differing only in case or punctuation take the most common. Real names
-  with a comma: `KEEP_NAMES` + `[sync] artist_names`. `primary_artist =
-  false` turns it off. Navidrome's `artists` list isn't used: it often
-  holds a whole credit as one name. Real library: 557 listings -> 288, 367
-  songs changed, longest title 66 characters. `fill_missing_names` now
-  makes title and artist follow the plan like the album, in the iTunesDB
-  only (no re-copy); Rockbox re-tags. The album artist is left alone
-  (Rockbox folders, "Chillhop Music • Various Artists").
+- `dock_artists.py` (2026-10-30, user request): one Artists listing per
+  artist. The prepare job gives each song its main artist and moves guests
+  to the title. `feat.`/`ft.`/`featuring`/`w/` always go. `&` and `/`: a
+  credit naming the song's album artist files under it ("No Mana & Chipzel"
+  on No Mana's album), unless that credit is itself some synced release's
+  album artist ("Porter Robinson & Madeon" has one: equal partners, own
+  listing, even on Porter's albums). Otherwise it stays whole. **Commas**
+  (first name = main, user's choice) count as a list only with evidence:
+  Navidrome's `artists` names a part separately or has `;`, or a part
+  appears alone in the library. Without it the credit stays whole and goes
+  in the manifest's `unsplit_artists`, shown in MediaDock.txt and
+  musicdock-status. `artists` can't decide it alone: it often holds a whole
+  credit as one name. Spellings differing only in case or punctuation take
+  the most common. `KEEP_NAMES` + `[sync] artist_names` are never split;
+  `primary_artist = false` turns it all off. `fill_missing_names` makes
+  title and artist follow the plan like the album, in the iTunesDB only (no
+  re-copy); Rockbox re-tags. The album artist is left alone. A credit not
+  naming the album artist stays ("EDDIE & Bad Disk" on a No Mana album).
+  **On the Nano 2026-10-30** (first version): one sync renamed 345 tracks
+  with no re-copy; albums stayed whole, guests show in titles.
 - `dock_icons.py` (2026-10-26, user request): 22 px 1-bit icons as text
   rows ("#" = white), drawn for this project - a click-wheel player (stock
   iPod), beamed notes (Rockbox), a USB plug (generic) - in the top bar's

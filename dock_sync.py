@@ -528,7 +528,9 @@ def size_notes(record, guid, root, manifest, cfg, kind):
                                          dock_limits.plan_bytes(manifest or {}))
         for note in notes:
             log.warning("%s", note)
-        return notes
+        import dock_artists
+        artists = dock_artists.note((manifest or {}).get("unsplit_artists"))
+        return notes + [artists] if artists else notes
     except Exception:
         log.exception("Couldn't check the player's size (continuing)")
         return []

@@ -18,6 +18,7 @@ class SplitTests(unittest.TestCase):
                 ("Foo Featuring Bar", ("Foo", "Bar")),
                 ("Foo (feat. Bar)", ("Foo", "Bar")),
                 ("usedcvnt w/ Akiba", ("usedcvnt", "Akiba")),
+                ("Purity Ring .feat Young Magic", ("Purity Ring", "Young Magic")),
                 ("Daft Punk feat. Pharrell Williams & Nile Rodgers",
                  ("Daft Punk", "Pharrell Williams & Nile Rodgers"))):
             self.assertEqual(a.split_credit(credit), want)
@@ -48,6 +49,68 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(a.split_credit("chromo, the dreamer, Aso"),
                          ("chromo, the dreamer", "Aso"))
         self.assertEqual(a.split_credit("Mine, Yours", keep=("mine, yours",)), ("Mine, Yours", None))
+
+
+class AlbumArtistTests(unittest.TestCase):
+    def test_a_credit_naming_the_album_artist_files_under_it(self):
+        for credit, want in (("No Mana & Chipzel", ("No Mana", "Chipzel")),
+                             ("James Egbert & No Mana", ("No Mana", "James Egbert")),
+                             ("Kero Kero Bonito / No Mana", ("No Mana", "Kero Kero Bonito")),
+                             ("A & No Mana / B feat. C", ("No Mana", "A, B, C"))):
+            self.assertEqual(a.split_credit(credit, album_artist="No Mana"), want)
+
+    def test_a_release_under_both_names_makes_them_equal(self):
+        self.assertEqual(a.split_credit("Porter Robinson & Madeon",
+                                        album_artist="Porter Robinson", duo=True),
+                         ("Porter Robinson & Madeon", None))
+
+    def test_a_credit_without_the_album_artist_stays(self):
+        self.assertEqual(a.split_credit("EDDIE & Bad Disk", album_artist="No Mana"),
+                         ("EDDIE & Bad Disk", None))
+        self.assertEqual(a.split_credit("Bao & Venuz", album_artist="Various Artists"),
+                         ("Bao & Venuz", None))
+
+    def test_tidy_tells_the_two_apart(self):
+        songs = [{"id": "1", "artist": "PR & Madeon", "title": "A", "displayAlbumArtist": "PR"},
+                 {"id": "2", "artist": "PR & Madeon", "title": "B",
+                  "displayAlbumArtist": "PR & Madeon"},
+                 {"id": "3", "artist": "PR & Zo", "title": "C", "displayAlbumArtist": "PR"}]
+        a.tidy(songs)
+        self.assertEqual([s["artist"] for s in songs], ["PR & Madeon", "PR & Madeon", "PR"])
+        self.assertEqual(songs[2]["title"], "C (feat. Zo)")
+
+
+class CommaEvidenceTests(unittest.TestCase):
+    def tidied(self, *songs):
+        records = [{"id": str(i), "title": "T", **s} for i, s in enumerate(songs)]
+        unproven = set()
+        a.tidy(records, unproven=unproven)
+        return [r["artist"] for r in records], unproven
+
+    def test_navidrome_listing_the_names_separately_proves_it(self):
+        artists = [{"name": "DLJ"}, {"name": "9ICK"}]
+        self.assertEqual(self.tidied({"artist": "DLJ, 9ICK", "artists": artists}),
+                         (["DLJ"], set()))
+        self.assertEqual(self.tidied({"artist": "A, B", "artists": [{"name": "A;B"}]}),
+                         (["A"], set()))
+
+    def test_either_name_alone_in_the_library_proves_it(self):
+        self.assertEqual(self.tidied({"artist": "A, B"}, {"artist": "A"})[0], ["A", "A"])
+        self.assertEqual(self.tidied({"artist": "A, B"}, {"artist": "B"})[0], ["A", "B"])
+        self.assertEqual(self.tidied({"artist": "a, b"}, {"artist": "A."})[0][0], "A.")
+
+    def test_no_evidence_keeps_the_name_and_reports_it(self):
+        one = {"artist": "Hello, Goodbye", "artists": [{"name": "Hello, Goodbye"}]}
+        self.assertEqual(self.tidied(one), (["Hello, Goodbye"], {"Hello, Goodbye"}))
+
+    def test_a_guest_in_artists_is_not_evidence(self):
+        one = {"artist": "Hello, Goodbye ft. Guest",
+               "artists": [{"name": "Hello, Goodbye"}, {"name": "Guest"}]}
+        self.assertEqual(self.tidied(one), (["Hello, Goodbye"], {"Hello, Goodbye"}))
+
+    def test_known_names_are_not_reported(self):
+        self.assertEqual(self.tidied({"artist": "chromo, the dreamer"}),
+                         (["chromo, the dreamer"], set()))
 
 
 class TidyTests(unittest.TestCase):
