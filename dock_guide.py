@@ -96,10 +96,10 @@ Chosen in Navidrome, not on the iPod:
 {chosen}
 {tag_how}
 {lossless_how}
-Artists are listed by main artist: a song by "A feat. B" or "A, B" lists
-under A and is titled "Song (feat. B)". "A & B" lists under A on A's album,
-and stays its own artist if it has a release under both names. A credit with
-a comma stays whole if nothing shows two people (MediaDock.txt lists these).
+Each song lists under one artist: its album's artist, or on a Various Artists
+album the first name in its credit. A song by "A feat. B", "A, B" or "A & B"
+lists under A and is titled "Song (feat. B)". A comma, & or / stays part of
+the name if nothing shows two people (MediaDock.txt lists these).
 This only changes the names on the iPod, not in Navidrome.
 When a song leaves all of those, the next sync removes it from the iPod;
 {removal}

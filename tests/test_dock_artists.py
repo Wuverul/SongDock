@@ -26,18 +26,21 @@ class SplitTests(unittest.TestCase):
     def test_first_of_a_comma_list_is_main(self):
         self.assertEqual(a.split_credit("Afroham, Pleij"), ("Afroham", "Pleij"))
         self.assertEqual(a.split_credit("San Holo, Big Gigantic & Evalyn"),
-                         ("San Holo", "Big Gigantic & Evalyn"))
+                         ("San Holo", "Big Gigantic, Evalyn"))
         self.assertEqual(a.split_credit("Afroham, No Spirit ft. BAKERMAN"),
                          ("Afroham", "No Spirit, BAKERMAN"))
         self.assertEqual(a.split_credit("LEASHES • Someone;Other"),
-                         ("LEASHES", "Someone;Other"))
+                         ("LEASHES", "Someone, Other"))
 
-    def test_equal_partners_stay_together(self):
-        for credit in ("Porter Robinson & Madeon", "Pentagon / Porter Robinson",
-                       "Flitz&Suppe", "Psalm//Trees"):
-            self.assertEqual(a.split_credit(credit), (credit, None))
+    def test_first_of_partners_is_main(self):
+        self.assertEqual(a.split_credit("Porter Robinson & Madeon"),
+                         ("Porter Robinson", "Madeon"))
+        self.assertEqual(a.split_credit("Pentagon / Porter Robinson"),
+                         ("Pentagon", "Porter Robinson"))
         self.assertEqual(a.split_credit("Bao & Venuz Beats feat. Justin Wyatt"),
-                         ("Bao & Venuz Beats", "Justin Wyatt"))
+                         ("Bao", "Venuz Beats, Justin Wyatt"))
+        for credit in ("Flitz&Suppe", "Psalm//Trees"):
+            self.assertEqual(a.split_credit(credit), (credit, None))
 
     def test_names_that_only_look_like_credits(self):
         for credit in ("Ft. Lauderdale", "Left Boy", "Without Words", "Feat"):
@@ -52,32 +55,41 @@ class SplitTests(unittest.TestCase):
 
 
 class AlbumArtistTests(unittest.TestCase):
-    def test_a_credit_naming_the_album_artist_files_under_it(self):
+    def test_a_song_takes_its_albums_artist(self):
         for credit, want in (("No Mana & Chipzel", ("No Mana", "Chipzel")),
                              ("James Egbert & No Mana", ("No Mana", "James Egbert")),
-                             ("Kero Kero Bonito / No Mana", ("No Mana", "Kero Kero Bonito")),
-                             ("A & No Mana / B feat. C", ("No Mana", "A, B, C"))):
-            self.assertEqual(a.split_credit(credit, album_artist="No Mana"), want)
+                             ("A & No Mana / B feat. C", ("No Mana", "A, B, C")),
+                             ("Caribou", ("No Mana", "Caribou")),
+                             ("No Mana", ("No Mana", None))):
+            self.assertEqual(a.split_credit(credit, album_main="No Mana"), want)
 
-    def test_a_release_under_both_names_makes_them_equal(self):
-        self.assertEqual(a.split_credit("Porter Robinson & Madeon",
-                                        album_artist="Porter Robinson", duo=True),
-                         ("Porter Robinson & Madeon", None))
+    def tidied(self, **song):
+        records = [{"id": "1", "title": "T", **song}, {"id": "2", "artist": "Solo", "title": "S"}]
+        a.tidy(records)
+        return records[0]["artist"], records[0]["title"]
 
-    def test_a_credit_without_the_album_artist_stays(self):
-        self.assertEqual(a.split_credit("EDDIE & Bad Disk", album_artist="No Mana"),
-                         ("EDDIE & Bad Disk", None))
-        self.assertEqual(a.split_credit("Bao & Venuz", album_artist="Various Artists"),
-                         ("Bao & Venuz", None))
+    def test_tidy_uses_the_first_album_artist(self):
+        self.assertEqual(self.tidied(artist="Caribou", displayAlbumArtist="Solo & Madeon"),
+                         ("Solo", "T (feat. Caribou)"))
 
-    def test_tidy_tells_the_two_apart(self):
-        songs = [{"id": "1", "artist": "PR & Madeon", "title": "A", "displayAlbumArtist": "PR"},
-                 {"id": "2", "artist": "PR & Madeon", "title": "B",
-                  "displayAlbumArtist": "PR & Madeon"},
-                 {"id": "3", "artist": "PR & Zo", "title": "C", "displayAlbumArtist": "PR"}]
-        a.tidy(songs)
-        self.assertEqual([s["artist"] for s in songs], ["PR & Madeon", "PR & Madeon", "PR"])
-        self.assertEqual(songs[2]["title"], "C (feat. Zo)")
+    def test_a_remixer_named_in_the_title_isnt_credited_twice(self):
+        self.assertEqual(self.tidied(artist="Caribou", title="Song (Caribou Remix)",
+                                     displayAlbumArtist="Solo"),
+                         ("Solo", "Song (Caribou Remix)"))
+
+    def test_compilations_keep_the_tracks_own_artist(self):
+        for album in ("Various Artists", "Chillhop Music \u2022 Various Artists"):
+            self.assertEqual(self.tidied(artist="Solo feat. X", displayAlbumArtist=album),
+                             ("Solo", "T (feat. X)"))
+
+    def test_a_label_album_artist_is_an_artist(self):
+        self.assertEqual(self.tidied(artist="Solo", displayAlbumArtist="Chillhop Music"),
+                         ("Chillhop Music", "T (feat. Solo)"))
+
+    def test_a_band_with_and_in_its_name_survives_on_its_album(self):
+        self.assertEqual(self.tidied(artist="Above & Beyond",
+                                     displayAlbumArtist="Above & Beyond"),
+                         ("Above & Beyond", "T"))
 
 
 class CommaEvidenceTests(unittest.TestCase):
@@ -107,6 +119,11 @@ class CommaEvidenceTests(unittest.TestCase):
         one = {"artist": "Hello, Goodbye ft. Guest",
                "artists": [{"name": "Hello, Goodbye"}, {"name": "Guest"}]}
         self.assertEqual(self.tidied(one), (["Hello, Goodbye"], {"Hello, Goodbye"}))
+
+    def test_and_needs_evidence_too(self):
+        self.assertEqual(self.tidied({"artist": "Hall & Oates"}),
+                         (["Hall & Oates"], {"Hall & Oates"}))
+        self.assertEqual(self.tidied({"artist": "A & B"}, {"artist": "A"})[0], ["A", "A"])
 
     def test_known_names_are_not_reported(self):
         self.assertEqual(self.tidied({"artist": "chromo, the dreamer"}),
