@@ -14,6 +14,12 @@
 > The developer's own hosts, addresses and device IDs are in
 > `CLAUDE.local.md` (git-ignored, never published).
 
+> **`TASKS.md` is the project's private task list (user, 2026-10-30;
+> git-ignored, never published).** Update it in
+> the same change as any work, and whenever a task or plan is added, changed
+> or proven on hardware, so it never has to be rebuilt by hand. Read it when
+> asked about project status.
+
 A Raspberry Pi dock that keeps an iPod's music in sync with a Navidrome server:
 it uploads what was played, pulls the current weekly playlists, and charges the
 player overnight. An e-ink screen shows whether it's safe to unplug.
@@ -646,6 +652,19 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   (USB `error -71`) made the kernel disable the port
   (`usb1-port1/disable` = 1); nothing was detected until a reboot. Fixed
   by `dock_usbport.py` (below).
+- `dock_artists.py` (2026-10-30, user request; **not yet seen on a real
+  iPod**): one Artists listing per artist. The prepare job gives each
+  song its main artist and moves guests to the title: `feat.`/`ft.`/
+  `featuring`/`w/` and comma lists (first name = main, user's choice) go;
+  `&` and `/` are equal partners and stay their own listing. Spellings
+  differing only in case or punctuation take the most common. Real names
+  with a comma: `KEEP_NAMES` + `[sync] artist_names`. `primary_artist =
+  false` turns it off. Navidrome's `artists` list isn't used: it often
+  holds a whole credit as one name. Real library: 557 listings -> 288, 367
+  songs changed, longest title 66 characters. `fill_missing_names` now
+  makes title and artist follow the plan like the album, in the iTunesDB
+  only (no re-copy); Rockbox re-tags. The album artist is left alone
+  (Rockbox folders, "Chillhop Music • Various Artists").
 - `dock_icons.py` (2026-10-26, user request): 22 px 1-bit icons as text
   rows ("#" = white), drawn for this project - a click-wheel player (stock
   iPod), beamed notes (Rockbox), a USB plug (generic) - in the top bar's

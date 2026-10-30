@@ -56,7 +56,7 @@ rsync -av --delete \
   --exclude __pycache__ --exclude '*.pyc' \
   --exclude previews --exclude '*.png' \
   --exclude config.toml --exclude '*.local.toml' --exclude .env \
-  --exclude cache --exclude tmp \
+  --exclude cache --exclude tmp --exclude TASKS.md \
   ./ "$PI:$REMOTE_DIR/"
 
 if [ "$INSTALL" -eq 1 ]; then

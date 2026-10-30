@@ -700,6 +700,22 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(len(self.db().tracks), 1)
         self.assertEqual(self.rec.tracks(G)[0]["encoding"], "mp3 320k")
 
+    def test_artist_and_title_follow_the_plan_without_a_copy(self):
+        one, two = self.song("n1", "One"), self.song("n2", "Two")
+        self.apply(self.manifest([one, two]))
+        files = self.files()
+        renamed = dict(two, artist="Main", title="Two (feat. Guest)")
+        self.apply(self.manifest([dict(one, artist="Main"), renamed]))
+        self.assertEqual(self.files(), files)
+        tracks = {t.title: t for t in self.db().tracks}
+        self.assertEqual(tracks["Two (feat. Guest)"].artist, "Main")
+        self.assertEqual(tracks["One"].artist, "Main")
+        # The saved artist list, which is what the iPod's Artists menu reads.
+        with open(os.path.join(self.mount, "iPod_Control", "iTunes", "iTunesDB"), "rb") as f:
+            saved = f.read()
+        self.assertIn("Main".encode("utf-16-le"), saved)
+        self.assertEqual(saved.count(b"mhii"), 1)      # one artist item
+
     def test_replacing_a_file_keeps_the_ipods_counts(self):
         a = self.song("n1", "One")
         self.apply(self.manifest([a]))

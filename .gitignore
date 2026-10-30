@@ -30,3 +30,4 @@ id_*
 
 # Release packages (make_release.sh)
 dist/
+TASKS.md

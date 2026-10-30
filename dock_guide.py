@@ -96,6 +96,9 @@ Chosen in Navidrome, not on the iPod:
 {chosen}
 {tag_how}
 {lossless_how}
+Artists are listed by main artist: a song by "A feat. B" or "A, B" lists
+under A and is titled "Song (feat. B)". "A & B" stays its own artist. This
+only changes the names on the iPod, not in Navidrome.
 When a song leaves all of those, the next sync removes it from the iPod;
 {removal}
 

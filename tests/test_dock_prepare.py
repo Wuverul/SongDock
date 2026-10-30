@@ -382,6 +382,17 @@ class PrepareTests(unittest.TestCase):
         cfg["sync"].update(playlist_tag="#ipod", lossless_tag="#lossless")
         return cfg
 
+    def test_plan_lists_the_main_artist_and_can_be_turned_off(self):
+        s = song("f", "mp3", artist="Daft Punk feat. Panda Bear", title="Doin' it Right")
+        self.run_prepare(FakeServer(songs=[dict(s)]))
+        planned = self.manifest()["tracks"][0]
+        self.assertEqual((planned["artist"], planned["title"]),
+                         ("Daft Punk", "Doin' it Right (feat. Panda Bear)"))
+        cfg = config()
+        cfg["sync"]["primary_artist"] = False
+        self.run_prepare(FakeServer(songs=[dict(s)]), cfg)
+        self.assertEqual(self.manifest()["tracks"][0]["artist"], "Daft Punk feat. Panda Bear")
+
     def test_lossless_playlist_makes_alac_of_lossless_sources_only(self):
         songs = [song("f", "flac"), song("m", "mp3"), song("o", "opus")]
         self.run_prepare(self.lossless_server(*songs), self.lossless_config())

@@ -24,6 +24,10 @@ lossless_tag = "#lossless"         # songs in a playlist with this tag in its co
                                    # about 3x the space. "" = off, e.g. for a small iPod. Ignored
                                    # until the dock has synced an iPod (or, on a Rockbox-only
                                    # dock with flac = false, a Rockbox player).
+primary_artist = true              # "A feat. B" and "A, B" list under A, with "(feat. B)" in the
+                                   # title; "A & B" stays its own artist. On the player only.
+artist_names = []                  # real names with a comma, e.g. ["Now, Now"]; common ones
+                                   # are already known
 cache_dir = "~/musicdock/cache"
 max_cache_gb = 20                  # music cached on the dock (about 2 MB per minute);
                                    # up to ~35 on a 64 GB card. Also stops at 80% full.

@@ -783,20 +783,19 @@ def pending_conversions(manifest, records):
 
 
 def fill_missing_names(track, t):
-    """Use Navidrome's title/artist where the file had none: pygpod then
-    titles the track with the file name (the Navidrome ID) and no artist.
-    The album always follows Navidrome (as when the track was added), so a
-    corrected album name in the plan reaches tracks already on the player.
-    So does the genre: the plan's simplified one (dock_genres), not the
-    file's tags. Returns the names of the fields changed (empty: none)."""
+    """Names follow the plan, not the file's tags, on new tracks and those
+    already on the player (no re-copy): Navidrome's album, the main artist
+    with guests in the title (dock_artists), the simplified genre
+    (dock_genres), and a title when the file had none. Returns the names of
+    the fields changed (empty: none)."""
     changed = set()
     if t.get("album") and track.album != t["album"]:
         track.album = t["album"]
         changed.add("album")
-    if t.get("title") and (not track.title or track.title == t["id"]):
+    if t.get("title") and track.title != t["title"]:
         track.title = t["title"]
         changed.add("title")
-    if t.get("artist") and not track.artist:
+    if t.get("artist") and track.artist != t["artist"]:
         track.artist = t["artist"]
         changed.add("artist")
     if t.get("genre") and track.genre != t["genre"]:

@@ -20,7 +20,8 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
-             "playlist_tag": "#ipod", "lossless_tag": "#lossless", "workers": "auto", "removal_grace_days": 7,
+             "playlist_tag": "#ipod", "lossless_tag": "#lossless",
+             "primary_artist": True, "artist_names": [], "workers": "auto", "removal_grace_days": 7,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -107,6 +108,11 @@ def load(path=None):
     if not isinstance(cfg["sync"]["playlist_tag"], str) or \
             any(c.isspace() for c in cfg["sync"]["playlist_tag"]):
         raise ConfigError(f'{path}: playlist_tag must be one word, e.g. "#ipod" ("" = off)')
+    names = cfg["sync"]["artist_names"]
+    if not isinstance(cfg["sync"]["primary_artist"], bool) or not isinstance(names, list) \
+            or not all(isinstance(n, str) for n in names):
+        raise ConfigError(f'{path}: primary_artist must be true or false, and artist_names '
+                          'a list like ["Now, Now"]')
     lossless = cfg["sync"]["lossless_tag"]
     if not isinstance(lossless, str) or any(c.isspace() for c in lossless):
         raise ConfigError(f'{path}: lossless_tag must be one word, e.g. "#lossless" ("" = off)')

@@ -62,6 +62,7 @@ from datetime import datetime, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import dock_artists  # noqa: E402
 import dock_config  # noqa: E402
 import dock_genres  # noqa: E402
 from subsonic import Client, SubsonicError  # noqa: E402
@@ -967,6 +968,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         client, cfg["sync"]["targets"], known,
         cfg["sync"].get("favorites_playlist", "Favorites"),
         cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info)
+    if cfg["sync"].get("primary_artist", True):
+        dock_artists.tidy(targets, cfg["sync"].get("artist_names", ()))
     genres, album_types = plan_genres(client, cfg, targets, previous, album_info)
     lossless_on = (bool(previous.get("lossless_playlists")) if player_kinds is None else
                    bool(LOSSLESS_PLAYERS.get(device, set()) & set(player_kinds)))
