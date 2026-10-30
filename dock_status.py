@@ -186,9 +186,19 @@ def wifi_bars(dbm):
 def pending_line(args, has_glyphs=True):
     add, remove = args.pending_add or 0, args.pending_remove or 0
     if not add and not remove:
-        return "iPod is up to date"
+        return conversions_line(args) or "iPod is up to date"
     minus = "\u2212" if has_glyphs else "-"
     return f"Next sync: +{add}  {minus}{remove} tracks"
+
+
+def conversions_line(args):
+    """Songs the next sync swaps for another format, or None. They aren't
+    added or removed, so the +/- counts don't show them."""
+    if args.pending_lossless:
+        return f"Lossless pending: {args.pending_lossless} songs"
+    if args.pending_format:
+        return f"Format changes: {args.pending_format} songs"
+    return None
 
 
 def syncing_progress(args):
@@ -494,6 +504,8 @@ def render(screen, args):
         if args.pending_add is not None:
             # What the next sync will do to the docked iPod (prepare job).
             rows = [(pending_line(args, has_glyphs), body_f)]
+            if (args.pending_add or args.pending_remove) and conversions_line(args):
+                rows.append((conversions_line(args), small_f))
             if args.total and (args.ready or 0) < args.total:
                 rows.append((f"{args.ready or 0}/{args.total} tracks prepared", small_f))
             if args.last_sync:
@@ -764,6 +776,10 @@ def build_parser():
                    help="idle: tracks the next sync will add to the iPod")
     p.add_argument("--pending-remove", type=int, default=0,
                    help="idle: tracks the next sync will remove")
+    p.add_argument("--pending-lossless", type=int, default=0,
+                   help="idle: songs the next sync swaps for lossless files")
+    p.add_argument("--pending-format", type=int, default=0,
+                   help="idle: songs the next sync swaps for another format")
     p.add_argument("--last-sync", type=float, metavar="EPOCH",
                    help="idle: when the iPod was last synced")
     p.add_argument("--queued", type=int, default=0,

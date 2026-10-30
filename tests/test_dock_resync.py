@@ -202,6 +202,10 @@ class PrepareRequestTests(unittest.TestCase):
             base + ["--pending-add", "3", "--pending-remove", "0", "--last-sync", "1"]))
         self.assertTrue(dock_prepare.has_pending(
             base + ["--pending-add", "0", "--pending-remove", "2", "--last-sync", "1"]))
+        self.assertTrue(dock_prepare.has_pending(
+            base + ["--pending-add", "0", "--pending-lossless", "9", "--last-sync", "1"]))
+        self.assertTrue(dock_prepare.has_pending(
+            base + ["--pending-add", "0", "--pending-format", "9", "--last-sync", "1"]))
 
 
 if __name__ == "__main__":

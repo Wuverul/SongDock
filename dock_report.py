@@ -261,9 +261,10 @@ def ipod_section(record_path, manifest, now=None):
                   if "forgotten_at" not in r.keys() or r["forgotten_at"] is None), None)
         if not p:
             return ["iPod: never synced"], {}
-        present = [r[0] for r in db.execute(
-            "SELECT navidrome_id FROM tracks WHERE guid = ? AND state = 'present'",
+        records = [dict(r) for r in db.execute(
+            "SELECT navidrome_id, encoding FROM tracks WHERE guid = ? AND state = 'present'",
             (p["guid"],))]
+        present = [r["navidrome_id"] for r in records]
         sent, waiting, unmatched, oldest = db.execute(
             "SELECT SUM(sent_at IS NOT NULL), "
             "SUM(sent_at IS NULL AND navidrome_id IS NOT NULL), "
@@ -276,8 +277,11 @@ def ipod_section(record_path, manifest, now=None):
              f"{when(p['last_sync'])} ({ago(p['last_sync'], now)}), {len(set(present))} tracks"]
     if manifest:
         add, remove = ipod_handler.pending_changes(manifest, present)
-        lines.append("Next sync: " + (f"+{add} -{remove} tracks" if add or remove
-                                      else "nothing to change"))
+        lossless, other = ipod_handler.pending_conversions(manifest, records)
+        changes = [f"+{add} -{remove} tracks"] if add or remove else []
+        changes += [f"{lossless} to lossless"] if lossless else []
+        changes += [f"{other} to another format"] if other else []
+        lines.append("Next sync: " + (", ".join(changes) or "nothing to change"))
     plays = f"Plays: {sent or 0} sent so far, {waiting or 0} waiting to send"
     if unmatched:
         plays += f", {unmatched} unmatched (songs the dock didn't add)"

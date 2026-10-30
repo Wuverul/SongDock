@@ -987,6 +987,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    cache: its generic player does get the ALAC. **Replacing keeps counts:**
    plays are queued and sent before the swap; `TrackInfo.take_history`
    carries the iPod's count, skips, rating, last played to the new track.
+   **DOCK READY shows pending swaps (user, 2026-10-30):** "Lossless
+   pending: 109 songs" / "Format changes: n songs" instead of "up to
+   date" (a small extra row beside +/- counts); `pending_conversions`.
+   They also count for the auto re-sync, so a docked iPod swaps by itself.
    The notes below are the original plan:
    1. **Hi-res down-conversion first.** `audio_options` for `alac` is
       only `-c:a alac`, so 24-bit / 96 kHz FLAC stays hi-res: 3-4x the

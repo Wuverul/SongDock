@@ -764,6 +764,24 @@ def pending_changes(manifest, present_ids):
     return len(ready - set(present_ids)), len(set(present_ids) - targeted_ids(manifest))
 
 
+def pending_conversions(manifest, records):
+    """(to lossless, other) counts of songs the next sync replaces because
+    their format changed, as apply_plan's `changed`. records: Record.tracks."""
+    wanted = {t["id"]: t for t in manifest.get("tracks", [])}
+    lossless = other = 0
+    for nid in {r["navidrome_id"] for r in records
+                if r["navidrome_id"] in wanted and r.get("encoding")
+                and wanted[r["navidrome_id"]].get("encoding")
+                and r["encoding"] != wanted[r["navidrome_id"]]["encoding"]}:
+        t = wanted[nid]
+        if t["encoding"].startswith("alac") or \
+                (t["encoding"] == "original" and (t.get("source_suffix") or "").lower() == "flac"):
+            lossless += 1
+        else:
+            other += 1
+    return lossless, other
+
+
 def fill_missing_names(track, t):
     """Use Navidrome's title/artist where the file had none: pygpod then
     titles the track with the file name (the Navidrome ID) and no artist.

@@ -1443,11 +1443,14 @@ def pending_args(manifest):
             player = record.last_synced_player()
             if not player:
                 return []
-            present = {r["navidrome_id"] for r in record.tracks(player["guid"])}
+            records = record.tracks(player["guid"])
         finally:
             record.close()
-        add, remove = ipod_handler.pending_changes(manifest, present)
+        add, remove = ipod_handler.pending_changes(
+            manifest, {r["navidrome_id"] for r in records})
+        lossless, other = ipod_handler.pending_conversions(manifest, records)
         return ["--pending-add", str(add), "--pending-remove", str(remove),
+                "--pending-lossless", str(lossless), "--pending-format", str(other),
                 "--last-sync", str(int(player["last_sync"]))]
     except Exception:
         log.exception("Couldn't work out the next sync's changes")
@@ -1457,7 +1460,8 @@ def pending_args(manifest):
 def has_pending(idle_args):
     """True if DOCK READY's arguments say the next sync changes something."""
     a = dict(zip(idle_args[1::2], idle_args[2::2]))
-    return int(a.get("--pending-add", 0)) + int(a.get("--pending-remove", 0)) > 0
+    return any(int(a.get(k, 0)) for k in ("--pending-add", "--pending-remove",
+                                          "--pending-lossless", "--pending-format"))
 
 
 def resync_coming():

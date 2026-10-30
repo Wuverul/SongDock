@@ -765,11 +765,12 @@ def ask_for_followup(cfg, applied, guid):
         from dock_record import Record
         record = Record()
         try:
-            present = {r["navidrome_id"] for r in record.tracks(guid)}
+            records = record.tracks(guid)
         finally:
             record.close()
-        add, remove = ipod_handler.pending_changes(newest, present)
-        if not (add or remove):
+        add, remove = ipod_handler.pending_changes(
+            newest, {r["navidrome_id"] for r in records})
+        if not (add or remove or any(ipod_handler.pending_conversions(newest, records))):
             return False
         dock_resync.request()
     except Exception:
