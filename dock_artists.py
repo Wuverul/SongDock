@@ -6,6 +6,8 @@ collaboration as its own artist (2026-10-30: 557 for 1455 songs). The dock
 files a song under one artist instead, and moves anyone else to the title.
 Only the player's names change; Navidrome and the cached files don't.
 
+  0. An album whose name contains a key of [album_artists] in the config gets
+     that artist: {"Some Series" = "Some Series Releases"}.
   1. A song is credited to its album's artist (user, 2026-10-30), or to the
      first of them: Caribou on a Porter Robinson album -> Porter Robinson.
      Compilations ("Various Artists") are the exception: step 2.
@@ -94,10 +96,11 @@ def _album_artist(song):
     return song.get("displayAlbumArtist") or song.get("albumArtist") or ""
 
 
-def tidy(songs, extra_names=(), unproven=None):
+def tidy(songs, extra_names=(), unproven=None, by_album=None):
     """Give each song its one artist and credit the others in its title.
     Changes the song records in place. Returns how many changed. Pass a set
-    as `unproven` to get the credits left whole for lack of evidence."""
+    as `unproven` to get the credits left whole for lack of evidence.
+    by_album: [album_artists] from the config."""
     keep = (*KEEP_NAMES, *extra_names)
     kept = {k.casefold() for k in keep}
     credits = {s["id"]: without_guests(s["artist"])[0] for s in songs if s.get("artist")}
@@ -111,6 +114,10 @@ def tidy(songs, extra_names=(), unproven=None):
             any(";" in a.get("name", "") for a in listed or [])
 
     def album_main(song):
+        name = (song.get("album") or "").casefold()
+        for words, artist in (by_album or {}).items():
+            if words.casefold() in name:
+                return artist
         album = _album_artist(song)
         if not album or COMPILATION.search(album):
             return None

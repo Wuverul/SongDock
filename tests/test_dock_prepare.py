@@ -1259,6 +1259,13 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(dock_config.ConfigError, "flac"):
             dock_config.load(self.write(base + '[device]\nflac="no"\n'))
 
+    def test_album_artists_are_checked(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[album_artists]\n'
+        self.assertEqual(dock_config.load(self.write(base + '"Mix" = "Mixes"\n'))
+                         ["album_artists"], {"Mix": "Mixes"})
+        with self.assertRaisesRegex(dock_config.ConfigError, "album_artists"):
+            dock_config.load(self.write(base + '"Mix" = 3\n'))
+
     def test_lossless_tag_defaults_on_and_is_checked(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
         self.assertEqual(dock_config.load(self.write(base))["sync"]["lossless_tag"], "#lossless")

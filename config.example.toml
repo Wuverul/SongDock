@@ -79,6 +79,10 @@ model = "v4"                       # Waveshare 2.13" e-Paper HAT version, printe
                                    # back of the screen: "v4" (tested), "v3" or "v2".
                                    # A V2 does a full refresh (brief flash) every update.
 
+[album_artists]                    # albums whose name contains the words on the left list under
+                                   # the artist on the right (player only), the real artists in
+                                   # the title. For example: "Monthly Mix" = "Monthly Mix Releases"
+
 [genres]
 # The iPod's Genres menu. Navidrome gives songs several genre tags, and the
 # iPod showed every combination as its own genre. Instead, each song goes in

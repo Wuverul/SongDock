@@ -970,7 +970,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info)
     unsplit_artists = set()
     if cfg["sync"].get("primary_artist", True):
-        dock_artists.tidy(targets, cfg["sync"].get("artist_names", ()), unsplit_artists)
+        dock_artists.tidy(targets, cfg["sync"].get("artist_names", ()), unsplit_artists,
+                          cfg.get("album_artists"))
     genres, album_types = plan_genres(client, cfg, targets, previous, album_info)
     lossless_on = (bool(previous.get("lossless_playlists")) if player_kinds is None else
                    bool(LOSSLESS_PLAYERS.get(device, set()) & set(player_kinds)))
