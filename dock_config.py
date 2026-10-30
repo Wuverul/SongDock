@@ -20,7 +20,7 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
-             "playlist_tag": "#ipod", "workers": "auto", "removal_grace_days": 7,
+             "playlist_tag": "#ipod", "lossless_tag": "#lossless", "workers": "auto", "removal_grace_days": 7,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -107,6 +107,12 @@ def load(path=None):
     if not isinstance(cfg["sync"]["playlist_tag"], str) or \
             any(c.isspace() for c in cfg["sync"]["playlist_tag"]):
         raise ConfigError(f'{path}: playlist_tag must be one word, e.g. "#ipod" ("" = off)')
+    lossless = cfg["sync"]["lossless_tag"]
+    if not isinstance(lossless, str) or any(c.isspace() for c in lossless):
+        raise ConfigError(f'{path}: lossless_tag must be one word, e.g. "#lossless" ("" = off)')
+    if lossless and lossless.lower() == cfg["sync"]["playlist_tag"].lower():
+        raise ConfigError(f"{path}: lossless_tag and playlist_tag can't be the same tag: "
+                          "every tagged playlist would become lossless")
     if not targets and not cfg["sync"]["playlist_tag"]:
         # targets = [] is fine: playlists found by their tag only.
         raise ConfigError(f'{path}: nothing to sync: targets is empty and playlist_tag '

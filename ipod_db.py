@@ -135,6 +135,7 @@ class TrackInfo:
     __slots__ = ("track_id", "dbid", "_title", "_artist", "_album", "_genre", "_composer",
                  "_comment", "ipod_path", "track_number", "cd_number", "duration_ms",
                  "has_artwork", "mhii_link", "artwork_size", "play_count", "skip_count",
+                 "rating", "time_played",
                  "_offset", "_length", "_strings", "_header", "_record")
 
     title = _name_property("title")
@@ -157,6 +158,7 @@ class TrackInfo:
         t.track_id, t.dbid = _u32(raw, 0x10), _u64(raw, 0x70)
         t.duration_ms, t.track_number = _u32(raw, 0x28), _u32(raw, 0x2C)
         t.play_count, t.cd_number = _u32(raw, 0x50), _u32(raw, 0x5C)
+        t.rating, t.time_played = _u8(raw, 0x1F), _u32(raw, 0x58)
         t.artwork_size = _u32(raw, 0x80)
         t.skip_count = _u32(raw, 0x9C) if hl >= 0xF4 else 0
         t.has_artwork = bool(_u8(raw, 0xA4)) if hl >= 0xF4 else False
@@ -210,6 +212,17 @@ class TrackInfo:
         if self._header is None:
             self._header = {}
         self._header[offset] = (fmt, value)
+
+    def take_history(self, old):
+        """Keep the iPod's own counts when a song's file is replaced. Plays
+        reach Navidrome from the Play Counts file, never from these totals,
+        so nothing is sent twice."""
+        self.play_count, self.skip_count = old.play_count, old.skip_count
+        self.rating, self.time_played = old.rating, old.time_played
+        self.set_header(0x50, "<I", old.play_count)
+        self.set_header(0x9C, "<I", old.skip_count)
+        self.set_header(0x1F, "<B", old.rating)
+        self.set_header(0x58, "<I", old.time_played)
 
     def link_art(self, image_id, size):
         """Point the track at an album-art image, as pygpod does."""
@@ -532,9 +545,11 @@ class StreamDatabase:
                 t.play_count += entry.play_count
                 t.set_header(0x50, "<I", t.play_count)
             if entry.time_played > 0:
+                t.time_played = entry.time_played
                 t.set_header(0x58, "<I", entry.time_played)
             if entry.rating >= 0:
-                t.set_header(0x1F, "<B", min(entry.rating, 255))
+                t.rating = min(entry.rating, 255)
+                t.set_header(0x1F, "<B", t.rating)
             if entry.skip_count > 0:
                 t.skip_count += entry.skip_count
                 t.set_header(0x9C, "<I", t.skip_count)

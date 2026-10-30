@@ -237,6 +237,12 @@ class SettingsTests(PlayersBase):
         self.assertFalse(os.path.exists(os.path.join(self.dir, "DockSetup.txt")))
         self.assertEqual(self.server.logins, [])                  # no sign-in to test
 
+    def test_lossless_tag_can_be_turned_off(self):
+        result = self.apply("LosslessTag=none\n")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["done"], ["No playlists sync as lossless"])
+        self.assertEqual(self.settings()["sync"]["lossless_tag"], "")
+
     def test_starred_back_on_goes_first(self):
         self.apply("SyncStarred=no\n")
         self.apply("SyncStarred=yes\n")
@@ -245,6 +251,9 @@ class SettingsTests(PlayersBase):
     def test_refused_settings_change_nothing(self):
         for text, why in (("SyncStarred=no\nPlaylistTag=none\n", "Nothing would sync"),
                           ("PlaylistTag=my car\n", "one word"),
+                          ("LosslessTag=my tag\n", "one word"),
+                          ("LosslessTag=\n", "needs a tag"),
+                          ("LosslessTag=#iPod\n", "syncs playlists"),
                           ("PlaylistTag=\n", "needs a tag"),
                           ("SyncStarred=maybe\n", "yes or no"),
                           ("PlaylistTag=#a\nPlaylistTag=#b\n", "given twice"),

@@ -700,6 +700,24 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(len(self.db().tracks), 1)
         self.assertEqual(self.rec.tracks(G)[0]["encoding"], "mp3 320k")
 
+    def test_replacing_a_file_keeps_the_ipods_counts(self):
+        a = self.song("n1", "One")
+        self.apply(self.manifest([a]))
+        db = self.db()
+        for offset, fmt, value in ((0x50, "<I", 7), (0x9C, "<I", 2), (0x1F, "<B", 80),
+                                   (0x58, "<I", 3000000000)):
+            db.tracks[0].set_header(offset, fmt, value)
+        db.save()
+        before = self.db().tracks[0]
+        self.assertEqual((before.play_count, before.skip_count), (7, 2))
+        summary = self.apply(self.manifest([dict(a, encoding="alac 16")]))
+        self.assertEqual(summary["replaced"], 1)
+        tracks = self.db().tracks
+        self.assertEqual(len(tracks), 1)
+        self.assertNotEqual(tracks[0].dbid, before.dbid)
+        self.assertEqual((tracks[0].play_count, tracks[0].skip_count, tracks[0].rating,
+                          tracks[0].time_played), (7, 2, 80, 3000000000))
+
     def test_sysinfo_restored_after_reset(self):
         self.rec.upsert_player(G, model="xB903")
         open(h.sysinfo_path(self.mount), "w").close()            # emptied by a restore

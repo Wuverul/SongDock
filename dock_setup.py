@@ -6,6 +6,7 @@ and the list of known iPods written into its MediaDock.txt.
     Forget=all others            retire every iPod except this one
     Keep=Jo's iPod (nano)        bring a forgotten iPod back
     PlaylistTag=#car             sync playlists tagged #car instead ("none" = off)
+    LosslessTag=none             no lossless songs on this dock (default #lossless)
     SyncStarred=no               don't sync starred songs (also SyncFavorites=)
     Server=https://music.example.com      a new Navidrome address (or several,
                                           comma-separated, in the order to try); needs
@@ -52,7 +53,7 @@ log = logging.getLogger("dock_setup")
 SETUP_FILE = "DockSetup.txt"
 GUIDE_FILE = "MediaDock README.txt"     # the manual (dock_guide.py)
 ACTIONS = {"forget": dock_players.forget, "keep": dock_players.keep}
-SETTINGS = {"playlisttag": "PlaylistTag", "syncstarred": "SyncStarred",
+SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "syncstarred": "SyncStarred",
             "syncfavorites": "SyncStarred", "server": "Server", "username": "Username",
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
@@ -125,6 +126,18 @@ def plan_settings(settings, cfg):
             raise SetupFileError("PlaylistTag must be one word, e.g. #car")
         changes[("sync", "playlist_tag")] = tag
         done.append(f"Playlists tagged {tag} sync" if tag else "Tagged playlists don't sync")
+    if "LosslessTag" in settings:
+        value = settings["LosslessTag"]
+        if not value:
+            raise SetupFileError('LosslessTag needs a tag, e.g. #lossless (or "none")')
+        lossless = "" if value.lower() in ("none", "off") else value
+        if any(c.isspace() for c in lossless):
+            raise SetupFileError("LosslessTag must be one word, e.g. #lossless")
+        if lossless and lossless.lower() == tag.lower():
+            raise SetupFileError("LosslessTag can't be the tag that syncs playlists")
+        changes[("sync", "lossless_tag")] = lossless
+        done.append(f"Playlists tagged {lossless} sync as lossless" if lossless
+                    else "No playlists sync as lossless")
     if "SyncStarred" in settings:
         on = yes_no("SyncStarred", settings["SyncStarred"])
         targets = ([t for t in targets if t != "starred"] if not on else

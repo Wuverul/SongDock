@@ -203,6 +203,13 @@ class Record:
                                "AND (kind IS NULL OR kind = 'stock')")
         return [dict(r) for r in rows]
 
+    def active_player_kinds(self):
+        """The kinds of player the dock still serves, e.g. {"stock", "generic"}.
+        Only kinds a finished sync recorded: a new player has none yet."""
+        rows = self.db.execute("SELECT DISTINCT kind FROM players "
+                               "WHERE forgotten_at IS NULL AND kind IS NOT NULL")
+        return {r["kind"] for r in rows}
+
     def remember_player(self, guid):
         """Undo forget_player (as docking the player again would)."""
         with self.db:

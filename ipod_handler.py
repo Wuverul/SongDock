@@ -891,9 +891,11 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     # fails, restoring the backup finds every file still there. (pygpod's
     # delete_file=True would delete before the save.) A crash after the save
     # leaves orphan files, which the next reconcile removes.
-    removed, doomed = 0, []
+    removed, doomed, replaced_tracks = 0, [], {}
     for r in removals:
         track = on_player[int(r["dbid"])]
+        if r["navidrome_id"] in changed:
+            replaced_tracks[r["navidrome_id"]] = track
         doomed.append(os.path.join(mount, ipod_path_to_rel(track.ipod_path)))
         db.remove_track(track, delete_file=False)
         pending[:] = [(p, t) for p, t in pending if p is not track]
@@ -958,6 +960,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         overrides = {"album": t["album"]} if t.get("album") else {}
         track = db.add_track(path, **overrides)
         fill_missing_names(track, t)
+        if t["id"] in replaced_tracks:
+            track.take_history(replaced_tracks[t["id"]])
         track.comment = NAVIDROME_TAG + t["id"]
         record.log_copied(guid, track.ipod_path, t["id"], t)
         pending.append((track, t))

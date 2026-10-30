@@ -12,9 +12,11 @@ Never touches the player. Steps:
   3. Download each missing track, convert it if the player needs that (in
      parallel, one worker per spare core), and move it into the cache:
        stock_ipod: MP3/AAC/ALAC kept as-is (no lossy-to-lossy re-encode);
-                   FLAC and anything else -> convert_to (default MP3 V0)
+                   FLAC and anything else -> convert_to (default MP3 V0);
+                   lossless sources in a #lossless playlist -> 16-bit ALAC
        rockbox:    everything kept as-is; with flac = false, FLAC ->
-                   convert_to (for players that can't play it)
+                   convert_to (for players that can't play it), unless the
+                   song is in a #lossless playlist
   4. Write manifest.json: the plan the sync job applies to the player -
      the tracks (with the targets each came from) and each playlist's
      song order, to recreate it on the player. --show-plan prints it.
@@ -73,32 +75,55 @@ NATIVE_FORMATS = {"stock_ipod": {"mp3", "m4a", "aac"}}   # play without conversi
 # and the Pi has no better AAC encoder. LAME measured clean and is ~4x faster
 # on the Pi Zero.
 EXTENSIONS = {"mp3": "mp3", "alac": "m4a", "aac": "m4a"}
+# Only these become lossless output: a lossy source is never "upgraded"
+# (user's rule, 2026-10-26). m4a isn't listed: it may be AAC, and an ALAC one
+# plays as it is.
+LOSSLESS_SOURCES = {"flac", "wav", "aif", "aiff", "ape", "wv"}
+# Which players make a #lossless tag count, per cache format: without one,
+# nobody gets files a cheap MP3 player may not play (user, 2026-10-30).
+LOSSLESS_PLAYERS = {"stock_ipod": {"stock"}, "rockbox_no_flac": {"rockbox"}}
 
 
-def encoding(device_cfg):
+def encoding(device_cfg, target=None):
     """Short description of the current conversion settings, e.g. "mp3 v0".
 
     Stored per track in the manifest, so changing a setting (like
-    mp3_quality) re-converts tracks made with the old one.
+    mp3_quality) re-converts tracks made with the old one. target: the
+    song's own format (song_format), else the dock's convert_to.
     """
-    target = device_cfg["convert_to"]
+    target = target or device_cfg["convert_to"]
     if target == "mp3":
         return f"mp3 {device_cfg['mp3_quality'].lower()}"
     if target == "aac":
         return f"aac {device_cfg['aac_bitrate']}"
-    return target
+    return "alac 16"          # "alac" = made before hi-res was brought down
 
 
-def audio_options(device_cfg):
-    """ffmpeg audio options for the current conversion settings."""
-    target = device_cfg["convert_to"]
+def alac_rate(track):
+    """Sample rate for a song's ALAC file: as it is up to 48 kHz, else the
+    rate it's a multiple of (96 -> 48, 88.2 -> 44.1). Unknown = 44.1."""
+    rate = int(track.get("samplingRate") or 0)
+    if not rate:
+        return 44100
+    if rate <= 48000:
+        return rate
+    return 44100 if rate % 44100 == 0 else 48000
+
+
+def audio_options(device_cfg, target=None, track=None):
+    """ffmpeg audio options for a song's format (default: convert_to)."""
+    target = target or device_cfg["convert_to"]
     if target == "mp3":
         q = device_cfg["mp3_quality"].lower()
         rate = ["-q:a", q[1:]] if q.startswith("v") else ["-b:a", q]   # VBR or CBR
         return ["-c:a", "libmp3lame", *rate,
                 "-id3v2_version", "3"]          # ID3v2.3: what old iPods read
     if target == "alac":
-        return ["-c:a", "alac"]
+        # Stock iPods are believed not to play ALAC above 16-bit / 48 kHz.
+        # Triangular dither applies only when bits are dropped: 16-bit
+        # sources stay bit-exact.
+        return ["-c:a", "alac", "-af", f"aresample={alac_rate(track or {})}:osf=s16p"
+                ":dither_method=triangular"]
     return ["-c:a", "aac", "-b:a", device_cfg["aac_bitrate"]]
 # Ogg/Opus keep their tags on the audio stream, not in the file's global
 # metadata, so ffmpeg's -map_metadata 0 drops them (2026-10-18: Leashes
@@ -182,6 +207,39 @@ def has_tag(comment, tag):
         return False
     pattern = r"(?<![\w#])" + re.escape(tag) + r"(?!\w)"
     return re.search(pattern, comment or "", re.IGNORECASE) is not None
+
+
+def lossless_songs(client, tag, targets, playlists, previous_ids=()):
+    """Songs to sync as lossless: those in playlists whose comment has `tag`.
+    Such a playlist needn't be synced itself; it only flags songs that are.
+    Returns ({song id}, [playlist ids]). Any failure raises: carrying on
+    without the flags would swap these songs back to MP3."""
+    if not tag:
+        return set(), []
+    listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
+    if not listing and previous_ids:
+        raise PrepareError(
+            f"the server listed no playlists, but {len(previous_ids)} were tagged {tag} "
+            "last time; stopping without changing any song's format.")
+    synced = {p["id"]: p for p in playlists}
+    ids, recordings, found = set(), set(), []
+    for p in listing:
+        if not has_tag(p.get("comment"), tag):
+            continue
+        found.append(p["id"])
+        if p["id"] in synced:          # song_ids already follow merged recordings
+            ids.update(synced[p["id"]]["song_ids"])
+            continue
+        try:
+            songs = client.call("getPlaylist", id=p["id"])["playlist"].get("entry", [])
+        except SubsonicError as e:
+            raise PrepareError(f"playlist {p['name']!r} (tagged {tag}) couldn't be "
+                               f"read: {e}") from None
+        ids.update(s["id"] for s in songs)
+        recordings.update(k for k in map(recording_key, songs) if k)
+    # An unsynced list may name the copy of a recording the plan didn't keep.
+    ids.update(t["id"] for t in targets if recording_key(t) in recordings)
+    return ids, found
 
 
 def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites",
@@ -412,9 +470,22 @@ def needs_conversion(suffix, device_type):
     return suffix not in NATIVE_FORMATS["stock_ipod"]
 
 
-def output_name(track, device_type, target="mp3"):
+def song_format(track, device_type, convert_to, lossless=()):
+    """What a song is converted to, or None to keep the server's file.
+    lossless: IDs of the songs in #lossless playlists."""
+    suffix = (track.get("suffix") or "").lower()
+    source_lossless = suffix in LOSSLESS_SOURCES
+    if track["id"] in lossless and source_lossless:
+        return "alac" if device_type == "stock_ipod" else None    # Rockbox plays FLAC
+    if not needs_conversion(suffix, device_type):
+        return None
+    return "mp3" if convert_to == "alac" and not source_lossless else convert_to
+
+
+def output_name(track, target):
+    """The cache file for a song; target from song_format."""
     suffix = (track.get("suffix") or "bin").lower()
-    ext = EXTENSIONS[target] if needs_conversion(suffix, device_type) else suffix
+    ext = EXTENSIONS[target] if target else suffix
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", track["id"])
     return f"{safe_id}.{ext}"
 
@@ -864,7 +935,8 @@ def batch_size(setting, count, cores):
 
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
-            on_player=None, on_batch=None, cpu_count=None, on_progress=None):
+            on_player=None, on_batch=None, cpu_count=None, on_progress=None,
+            player_kinds=None):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -873,15 +945,15 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     files make room for songs the player lacks (largest first) and aren't
     fetched again: the plan lists them under "on_player", so the sync keeps
     them. A player bigger than the cache then fills over several syncs.
+    player_kinds: Record.active_player_kinds(), None if the record can't be
+    read (then lossless stays as it was last run: no swapping either way).
     on_batch(manifest): called each time a batch of [sync] sync_batch_size
     new tracks is handed over mid-run (only with 2+ CPU cores).
     on_progress(started, total, batches, to_copy): as each track starts;
     to_copy also counts re-added songs reused from the cache.
     """
     device = format_mode(cfg["device"])
-    fmt = cfg["device"]["convert_to"]
     current = encoding(cfg["device"])
-    options = audio_options(cfg["device"])
     max_bytes = int(float(cfg["sync"]["max_cache_gb"]) * 1e9)
     tracks_dir = os.path.join(cache_dir, "tracks")
     tmp_dir = os.path.join(cache_dir, "tmp")
@@ -896,7 +968,19 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         cfg["sync"].get("favorites_playlist", "Favorites"),
         cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info)
     genres, album_types = plan_genres(client, cfg, targets, previous, album_info)
-    wanted = {output_name(t, device, fmt): t for t in targets}
+    lossless_on = (bool(previous.get("lossless_playlists")) if player_kinds is None else
+                   bool(LOSSLESS_PLAYERS.get(device, set()) & set(player_kinds)))
+    lossless, lossless_lists = lossless_songs(
+        client, cfg["sync"].get("lossless_tag", "") if lossless_on else "", targets,
+        playlists, previous.get("lossless_playlists", ()))
+
+    def format_of(t):
+        return song_format(t, device, cfg["device"]["convert_to"], lossless)
+
+    def made_as(t):
+        target = format_of(t)
+        return encoding(cfg["device"], target) if target else "original"
+    wanted = {output_name(t, format_of(t)): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
     to_remove = sorted(existing - wanted.keys())     # includes tracks kept earlier
 
@@ -907,8 +991,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     made_with = {t["id"]: t.get("encoding") for t in previous.get("tracks", [])}
     made_with.update({e["id"]: e.get("encoding") for e in kept.items.values() if "id" in e})
     stale = {name for name, t in wanted.items()
-             if name in existing and needs_conversion(t.get("suffix"), device)
-             and made_with.get(t["id"]) not in (None, current)}
+             if name in existing and format_of(t)
+             and made_with.get(t["id"]) not in (None, made_as(t))}
     missing = [(name, t) for name, t in wanted.items()
                if name not in existing or name in stale]
 
@@ -916,20 +1000,19 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # do without a cache file. Fetch songs the player lacks first (playlist
     # songs before the rest), then mirror held ones while there's room.
     on_player = on_player or {}
-
-    def made_as(t):
-        return current if needs_conversion(t.get("suffix"), device) else "original"
     held = {name for name, t in wanted.items()
             if on_player.get(t["id"]) and on_player[t["id"]] <= {None, made_as(t)}}
     missing.sort(key=lambda nt: (nt[0] in held, not any(
         s.startswith("playlist:") for s in sources.get(nt[1]["id"], []))))
 
-    log.info("Target: %d tracks; %d cached, %d to get (%d to re-convert as %s), "
-             "%d to remove", len(wanted), len(wanted) - len(missing), len(missing),
-             len(stale), current, len(newly_removed))
+    log.info("Target: %d tracks (%d as %s, %d lossless); %d cached, %d to get (%d to "
+             "re-convert), %d to remove", len(wanted),
+             sum(made_as(t) == current for t in wanted.values()), current,
+             sum(format_of(t) == "alac" for t in wanted.values()),
+             len(wanted) - len(missing), len(missing), len(stale), len(newly_removed))
     if dry_run:
         for name, t in missing:
-            how = "convert" if needs_conversion(t.get("suffix"), device) else "copy"
+            how = f"convert to {made_as(t)}" if format_of(t) else "copy"
             log.info("  would get (%s, %s): %s", t.get("suffix"), how, label(t))
         for name in newly_removed:
             log.info("  would remove: %s", name)
@@ -1057,7 +1140,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         log.info("Getting %d tracks with %d conversion worker(s)", len(missing), workers)
 
     def prepare_one(name, t, need):
-        conv = needs_conversion(t.get("suffix"), device)
+        conv = format_of(t)
         if progress["offline"]:
             # The server dropped out earlier in this run: don't try every
             # remaining track; the next check carries on.
@@ -1083,8 +1166,9 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             if conv:
                 out = os.path.join(tmp_dir, name)
                 with slots:
-                    log.info("Converting %s (%s)", label(t), current)
-                    convert_fn(src, out, options, t.get("duration"))
+                    log.info("Converting %s (%s)", label(t), made_as(t))
+                    convert_fn(src, out, audio_options(cfg["device"], conv, t),
+                               t.get("duration"))
                 os.remove(src)
             else:
                 out = src
@@ -1142,7 +1226,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "disc": t.get("discNumber"), "year": t.get("year"),
             "duration": t.get("duration"), "genre": genres.get(t["id"]),
             "source_suffix": t.get("suffix"),
-            "converted": needs_conversion(t.get("suffix"), device),
+            "converted": bool(format_of(t)),
             "encoding": made_as(t),
             "sources": sources.get(t["id"], []),
             **({"cover": covers[t["id"]], "cover_max": COVER_MAX}
@@ -1171,6 +1255,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         return {
             "targets": cfg["sync"]["targets"], "device": device,
             "playlist_tag": cfg["sync"].get("playlist_tag", ""),
+            **({"lossless_playlists": lossless_lists} if lossless_lists else {}),
             "tracks": ready, "on_player": uncached, "playlists": playlists,
             "skipped": not_ready, "kept_after_removal": len(kept.items),
             **({"album_types": album_types} if album_types else {}),
@@ -1213,7 +1298,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     with ThreadPoolExecutor(max_workers=workers + 1) as pool:
         futures = []
         for i, (name, t) in enumerate(missing):
-            conv = needs_conversion(t.get("suffix"), device)
+            conv = format_of(t)
             need = int(t.get("size") or 0) * (2 if conv else 1)
             in_flight.acquire()
             if batch and progress["added"] - handed["added"] >= batch:
@@ -1519,11 +1604,12 @@ def main(argv=None):
         record = Record()
         try:
             on_player = record.songs_on_every_player()
+            player_kinds = record.active_player_kinds()
         finally:
             record.close()
     except Exception:
         log.exception("Couldn't read what's on the players (keeping every cached track)")
-        on_player = {}
+        on_player, player_kinds = {}, None
 
     def ask_for_sync(manifest, batch=False):
         """A docked (ejected) iPod gets new music without being re-plugged by
@@ -1606,7 +1692,7 @@ def main(argv=None):
     summary = None
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run,
-                          on_player=on_player, on_progress=on_progress,
+                          on_player=on_player, on_progress=on_progress, player_kinds=player_kinds,
                           on_batch=lambda m: ask_for_sync(m, batch=True))
     except SubsonicError as e:
         if e.network:

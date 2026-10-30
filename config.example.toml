@@ -19,6 +19,11 @@ targets = ["starred"]              # what to sync: "starred" and/or "playlist:<n
 favorites_playlist = "Favorites"   # player playlist made from "starred" ("" = none)
 playlist_tag = "#ipod"             # also sync any playlist whose Navidrome comment has
                                    # this tag (any case). "" = off. Remove the tag to unsync.
+lossless_tag = "#lossless"         # songs in a playlist with this tag in its comment sync as
+                                   # ALAC (FLAC on Rockbox) if the server's copy is lossless;
+                                   # about 3x the space. "" = off, e.g. for a small iPod. Ignored
+                                   # until the dock has synced an iPod (or, on a Rockbox-only
+                                   # dock with flac = false, a Rockbox player).
 cache_dir = "~/musicdock/cache"
 max_cache_gb = 20                  # music cached on the dock (about 2 MB per minute);
                                    # up to ~35 on a 64 GB card. Also stops at 80% full.

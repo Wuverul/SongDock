@@ -20,6 +20,7 @@ def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
     kind = kind or ("rockbox" if rockbox else "stock")
     sync = cfg.get("sync", {})
     tag = sync.get("playlist_tag", "")
+    lossless = sync.get("lossless_tag", "#lossless")
     favorites = sync.get("favorites_playlist", "")
     grace = sync.get("removal_grace_days", 7)
     targets = sync.get("targets", [])
@@ -64,6 +65,14 @@ counted."""
         hands_off = """Don't add music with Finder, iTunes or the Apple Music app: they replace
 the iPod's music list, and the dock loses track of everything it added.
 Don't change the hidden iPod_Control folder."""
+    lossless_how = (f"""Songs in a playlist whose Navidrome comment has {lossless} are lossless when
+the server has a lossless copy (ALAC on stock iPods, about 3 times the
+space; FLAC on Rockbox). The song replaces its MP3, so it's never on the
+iPod twice. The playlist needn't be synced; only songs that are get
+this. This needs an iPod the dock has synced (a Rockbox player on a
+Rockbox-only dock); music players on the same dock get these files too,
+and basic ones may not play them.""" if lossless
+                    else "Songs are not made lossless by playlist on this dock.")
     return f"""SONGDOCK - HOW TO USE AND RECONFIGURE IT FROM THIS IPOD
 ==========================================================
 
@@ -86,6 +95,7 @@ WHAT ENDS UP ON THE IPOD
 Chosen in Navidrome, not on the iPod:
 {chosen}
 {tag_how}
+{lossless_how}
 When a song leaves all of those, the next sync removes it from the iPod;
 {removal}
 
@@ -137,6 +147,8 @@ Which music syncs:
   next sync. At least one of the two must stay on.
 
 Music format (stock iPods and Rockbox players):
+  LosslessTag=none       ignore {lossless or "the lossless tag"} on this dock, e.g. one serving a
+                         small iPod; LosslessTag=#hifi uses another tag
   StockCompatible=no     for a dock that only serves Rockbox players: copy
                          music as it is on the server, FLAC included
                          (lossless, about 2-3 times the space). Refused

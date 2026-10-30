@@ -108,6 +108,7 @@ class PrepareTests(unittest.TestCase):
 
     def run_prepare(self, server, cfg=None, **kw):
         kw.setdefault("disk_usage", ROOMY)
+        kw.setdefault("player_kinds", {"stock"})
         return prepare(server, cfg or config(), self.cache,
                        convert_fn=fake_convert, **kw)
 
@@ -372,6 +373,162 @@ class PrepareTests(unittest.TestCase):
     def test_alac_target(self):
         self.run_prepare(FakeServer(songs=[song("f", "flac")]), config(convert_to="alac"))
         self.assertEqual(self.files(), ["f.m4a"])
+
+    def lossless_server(self, *songs, comment="#ipod #lossless"):
+        return FakeServer(playlists={"L": ("Hi-Fi", list(songs), comment)})
+
+    def lossless_config(self, device="stock_ipod", **kw):
+        cfg = config(device, targets=[], **kw)
+        cfg["sync"].update(playlist_tag="#ipod", lossless_tag="#lossless")
+        return cfg
+
+    def test_lossless_playlist_makes_alac_of_lossless_sources_only(self):
+        songs = [song("f", "flac"), song("m", "mp3"), song("o", "opus")]
+        self.run_prepare(self.lossless_server(*songs), self.lossless_config())
+        self.assertEqual(self.files(), ["f.m4a", "m.mp3", "o.mp3"])
+        made = {t["id"]: t["encoding"] for t in self.manifest()["tracks"]}
+        self.assertEqual(made, {"f": "alac 16", "m": "original", "o": "mp3 v0"})
+
+    def test_song_in_favorites_and_lossless_has_one_alac_file(self):
+        flac = song("f", "flac")
+        server = FakeServer(songs=[flac], playlists={"L": ("Hi-Fi", [flac], "#lossless"),
+                                                     "O": ("Other", [flac], "#ipod")})
+        cfg = self.lossless_config()
+        cfg["sync"]["targets"] = ["starred"]
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.files(), ["f.m4a"])
+        self.assertEqual(len(self.manifest()["tracks"]), 1)
+
+    def test_flagging_replaces_the_mp3_and_unflagging_brings_it_back(self):
+        flac = song("f", "flac")
+        cfg = self.lossless_config()
+        self.run_prepare(self.lossless_server(flac, comment="#ipod"), cfg)
+        self.assertEqual(self.files(), ["f.mp3"])
+        self.run_prepare(self.lossless_server(flac), cfg)
+        self.assertEqual(self.files(), ["f.m4a"])
+        self.assertEqual(self.manifest()["tracks"][0]["encoding"], "alac 16")
+        self.run_prepare(self.lossless_server(flac, comment="#ipod"), cfg)
+        self.assertEqual(self.files(), ["f.mp3"])
+
+    def test_unsynced_lossless_playlist_flags_but_adds_nothing(self):
+        wanted, other = song("f", "flac"), song("x", "flac")
+        server = FakeServer(songs=[wanted], playlists={"L": ("Hi-Fi", [wanted, other], "#lossless")})
+        cfg = self.lossless_config()
+        cfg["sync"]["targets"] = ["starred"]
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.files(), ["f.m4a"])
+
+    def test_unsynced_lossless_playlist_follows_a_merged_recording(self):
+        kept = song("album", "flac", musicBrainzId="R", albumId="A")
+        single = song("single", "flac", musicBrainzId="R", albumId="S")
+        server = FakeServer(songs=[kept, single],
+                            album_meta={"A": {"releaseTypes": ["album"]},
+                                        "S": {"releaseTypes": ["single"]}},
+                            playlists={"L": ("Hi-Fi", [single], "#lossless")})
+        cfg = self.lossless_config()
+        cfg["sync"]["targets"] = ["starred"]
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.files(), ["album.m4a"])
+
+    def test_no_ipod_in_the_device_list_means_no_alac(self):
+        server, cfg = self.lossless_server(song("f", "flac")), self.lossless_config()
+        for kinds in (set(), {"generic"}, {"rockbox"}):
+            self.run_prepare(server, cfg, player_kinds=kinds)
+            self.assertEqual(self.files(), ["f.mp3"])
+        self.run_prepare(server, cfg, player_kinds={"generic", "stock"})
+        self.assertEqual(self.files(), ["f.m4a"])
+        self.run_prepare(server, cfg, player_kinds={"generic"})    # iPod forgotten
+        self.assertEqual(self.files(), ["f.mp3"])
+
+    def test_unreadable_record_keeps_last_runs_formats(self):
+        server, cfg = self.lossless_server(song("f", "flac")), self.lossless_config()
+        self.run_prepare(server, cfg, player_kinds=None)
+        self.assertEqual(self.files(), ["f.mp3"])
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.files(), ["f.m4a"])
+        self.assertEqual(self.run_prepare(server, cfg, player_kinds=None)["added"], 0)
+        self.assertEqual(self.files(), ["f.m4a"])
+
+    def test_lossless_off_means_mp3(self):
+        cfg = self.lossless_config()
+        cfg["sync"]["lossless_tag"] = ""
+        self.run_prepare(self.lossless_server(song("f", "flac")), cfg)
+        self.assertEqual(self.files(), ["f.mp3"])
+
+    def test_lossless_is_a_second_run_no_op(self):
+        server = self.lossless_server(song("f", "flac"))
+        self.run_prepare(server, self.lossless_config())
+        summary = self.run_prepare(server, self.lossless_config())
+        self.assertEqual((summary["added"], summary["removed"]), (0, 0))
+
+    def test_empty_listing_keeps_lossless_formats(self):
+        server = self.lossless_server(song("f", "flac"))
+        cfg = self.lossless_config()
+        cfg["sync"]["targets"] = ["starred"]
+        server.songs = [song("f", "flac")]
+        self.run_prepare(server, cfg)
+        cfg["sync"]["playlist_tag"] = ""        # only the lossless check sees the listing
+        server.playlists = {}
+        with self.assertRaisesRegex(dock_prepare.PrepareError, "format"):
+            self.run_prepare(server, cfg)
+        self.assertEqual(self.files(), ["f.m4a"])
+
+    def test_unreadable_lossless_playlist_stops_the_run(self):
+        server = FakeServer(songs=[song("f", "flac")], playlists={"L": ("Hi-Fi", [], "#lossless")})
+        real = server.call
+
+        def call(endpoint, **params):
+            if endpoint == "getPlaylist":
+                raise SubsonicError("getPlaylist: HTTP 500")
+            return real(endpoint, **params)
+        server.call = call
+        cfg = self.lossless_config()
+        cfg["sync"]["targets"] = ["starred"]
+        with self.assertRaisesRegex(dock_prepare.PrepareError, "Hi-Fi"):
+            self.run_prepare(server, cfg)
+
+    def test_held_mp3_is_not_held_once_flagged(self):
+        flac = song("f", "flac")
+        self.run_prepare(self.lossless_server(flac), self.lossless_config(),
+                         on_player={"f": {"mp3 v0"}})
+        self.assertEqual(self.files(), ["f.m4a"])
+
+    def test_rockbox_keeps_flac_for_lossless_songs_even_with_flac_off(self):
+        songs = [song("f", "flac"), song("g", "flac")]
+        server = FakeServer(songs=songs, playlists={"L": ("Hi-Fi", songs[:1], "#lossless")})
+        cfg = self.lossless_config("rockbox", flac=False)
+        cfg["sync"]["targets"] = ["starred"]
+        self.run_prepare(server, cfg, player_kinds={"generic"})
+        self.assertEqual(self.files(), ["f.mp3", "g.mp3"])
+        self.run_prepare(server, cfg, player_kinds={"rockbox"})
+        self.assertEqual(self.files(), ["f.flac", "g.mp3"])
+
+    def test_alac_dock_never_upgrades_lossy_sources(self):
+        songs = [song("f", "flac"), song("o", "ogg")]
+        server = FakeServer(songs=songs)
+        self.run_prepare(server, config(convert_to="alac"))
+        self.assertEqual(self.files(), ["f.m4a", "o.mp3"])
+        summary = self.run_prepare(server, config(convert_to="alac"))
+        self.assertEqual(summary["added"], 0)     # OGG isn't "stale" every run
+
+    def test_old_alac_files_are_redone_at_16_bit(self):
+        flac = song("f", "flac", samplingRate=96000)
+        server = FakeServer(songs=[flac])
+        self.run_prepare(server, config(convert_to="alac"))
+        path = os.path.join(self.cache, "manifest.json")
+        with open(path) as f:
+            manifest = json.load(f)
+        manifest["tracks"][0]["encoding"] = "alac"
+        with open(path, "w") as f:
+            json.dump(manifest, f)
+        self.assertEqual(self.run_prepare(server, config(convert_to="alac"))["added"], 1)
+        with open(os.path.join(self.cache, "tracks", "f.m4a"), "rb") as f:
+            self.assertIn(b"aresample=48000:osf=s16p", f.read())
+
+    def test_alac_sample_rates(self):
+        for rate, want in ((None, 44100), (22050, 22050), (44100, 44100), (48000, 48000),
+                           (88200, 44100), (176400, 44100), (96000, 48000), (192000, 48000)):
+            self.assertEqual(dock_prepare.alac_rate({"samplingRate": rate}), want)
 
     def test_changing_format_reconverts_old_files(self):
         # Switching from AAC to MP3: old .m4a conversions are replaced.
@@ -1090,6 +1247,15 @@ class ConfigTests(unittest.TestCase):
         self.assertIs(dock_config.load(self.write(base))["device"]["flac"], True)
         with self.assertRaisesRegex(dock_config.ConfigError, "flac"):
             dock_config.load(self.write(base + '[device]\nflac="no"\n'))
+
+    def test_lossless_tag_defaults_on_and_is_checked(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
+        self.assertEqual(dock_config.load(self.write(base))["sync"]["lossless_tag"], "#lossless")
+        self.assertEqual(dock_config.load(self.write(base + 'lossless_tag=""\n'))
+                         ["sync"]["lossless_tag"], "")
+        for bad in ('lossless_tag="two words"\n', 'lossless_tag="#IPOD"\n'):
+            with self.assertRaisesRegex(dock_config.ConfigError, "lossless_tag"):
+                dock_config.load(self.write(base + bad))
 
     def test_mp3_quality_validated(self):
         base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[device]\n'

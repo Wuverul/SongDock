@@ -963,8 +963,31 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    record backup and the cache side are built; hardware test with a cache
    smaller than the library pending. Rockbox handler built 2026-10-23
    (fake players only; see `rockbox_handler.py`).
-   **Planned: lossless for chosen songs (user, 2026-10-26; after the
-   trip).** Not built yet, in this order:
+   **Lossless for chosen songs (user, 2026-10-26): built 2026-10-30, not
+   yet deployed or played on an iPod.** `dock_prepare.song_format` picks
+   each song's format; `[sync] lossless_tag` (default `#lossless`, "" =
+   off, `LosslessTag=` in DockSetup.txt; can't equal `playlist_tag`).
+   `lossless_songs` reads the tagged playlists (needn't be synced; a
+   failed read or an empty listing stops the run, or songs would swap back
+   to MP3). ALAC = encoding `alac 16`: `aresample=<rate>:osf=s16p:
+   dither_method=triangular`, rate from `alac_rate` (<= 48 kHz kept, 96 ->
+   48, 88.2 -> 44.1, unknown -> 44.1); old `alac` files are redone. Checked
+   on the Pi with real files: a 16/44.1 FLAC decodes identical after
+   conversion; 24/96 (112 MB) -> 16/48 (36.6 MB), about 14 s for 5 min;
+   tags and cover kept; on a fake iPod an MP3 was replaced by the ALAC: one
+   file, one playlist entry, art kept. pygpod labels .m4a "AAC audio file"
+   in the iTunesDB whatever the codec. **Still to check on the Nano:** that
+   it plays these. Limits: a hi-res ALAC *source* (.m4a) is kept as it is;
+   gap (b)
+   below is open. **Only with an iPod in the record (user, 2026-10-30):**
+   `active_player_kinds` must hold `stock` (Rockbox-only dock with `flac =
+   false`: `rockbox`), so a generics-only dock gets plain MP3; only kinds
+   a finished sync recorded count, so a generic's first sync can't open
+   it. An unreadable record keeps last run's state. A mixed dock has one
+   cache: its generic player does get the ALAC. **Replacing keeps counts:**
+   plays are queued and sent before the swap; `TrackInfo.take_history`
+   carries the iPod's count, skips, rating, last played to the new track.
+   The notes below are the original plan:
    1. **Hi-res down-conversion first.** `audio_options` for `alac` is
       only `-c:a alac`, so 24-bit / 96 kHz FLAC stays hi-res: 3-4x the
       size, and stock iPod firmware is believed not to play ALAC above
