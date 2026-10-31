@@ -872,6 +872,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   recent_play_months` (default 3, 0 = ignore; `RecentPlayMonths=`) go first,
   then largest first. Last played = the later of Navidrome's `played` and the
   record's plays. Only the cache copy goes: songs stay on the players.
+- `dock_share.py` (user, 2026-10-30): `musicdock-status --share`, for bug reports and
+  friends helping out; prints only, sends nothing. A fixed list of facts (add new
+  settings to `SHARED_SETTINGS` on purpose); error lines lose library names, then
+  `scrub` removes server, sign-in, Wi-Fi, player and playlist names, IP/MAC/GUID, home
+  paths. Speeds come from new log lines (`Conversion:`, `Copied ... MB in`).
 - `dock_update.py` (user, 2026-10-30): root timer, every 15 min; GitHub at most
   daily. Higher version: `install_after` = now + 4 h in
   /var/lib/musicdock/update.json, shown on DOCK READY (`--update-note`, added by

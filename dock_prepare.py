@@ -1252,8 +1252,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 out = os.path.join(tmp_dir, name)
                 with slots:
                     log.info("Converting %s (%s)", label(t), made_as(t))
+                    began = time.monotonic()
                     convert_fn(src, out, audio_options(cfg["device"], conv, t),
                                t.get("duration"))
+                    log.info("Conversion: %.1f s for %.1f min of audio (%s)",
+                             time.monotonic() - began, (t.get("duration") or 0) / 60, made_as(t))
                 os.remove(src)
             else:
                 out = src

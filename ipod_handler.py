@@ -1051,6 +1051,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         session["dirty"] = True
     import dock_limits
     added, skipped_full, over_limit, replaced = 0, 0, 0, 0
+    copy_began, copy_bytes = time.monotonic(), 0
     for n, t in enumerate(additions):
         swap = t["id"] in changed
         if not swap and len(db.tracks) >= dock_limits.STOCK_LIMIT:
@@ -1084,6 +1085,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         # should match what the user sees in Navidrome.
         overrides = {"album": t["album"]} if t.get("album") else {}
         track = db.add_track(path, **overrides)
+        copy_bytes += size
         fill_missing_names(track, t)
         track.comment = NAVIDROME_TAG + t["id"]
         record.log_copied(guid, track.ipod_path, t["id"], t)
@@ -1106,6 +1108,9 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                      "last save)")
             commit()
     session["copied"] += added
+    if added:
+        log_info(f"Copied {added} tracks, {copy_bytes / 1e6:.1f} MB in "
+                 f"{time.monotonic() - copy_began:.1f} s")
     if over_limit:
         log_info(f"{dock_limits.STOCK_LIMIT:,} songs on the iPod: the most the dock "
                  f"adds to a stock iPod; {over_limit} track(s) not added")

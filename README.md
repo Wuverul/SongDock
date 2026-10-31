@@ -255,6 +255,22 @@ or from your computer, in one go: `ssh yourname@musicdock.local musicdock-status
 (or `./status.sh yourname@musicdock.local` from this folder on a Mac or Linux).
 It only reads; it never changes anything.
 
+### Getting help
+
+To ask for help or report a bug, run:
+
+```sh
+musicdock-status --share
+```
+
+and paste what it prints into a
+[GitHub issue](https://github.com/Wuverul/SongDock/issues) or a message to whoever
+is helping. It covers the Pi and system, player types and sizes, song counts and
+formats, settings, conversion and copy speed, and recent errors. It leaves out your
+server address, sign-in details, Wi-Fi names, IP addresses, player and playlist names,
+and song names. **It sends nothing by itself.** Read it first, in case it holds
+something else you'd rather keep private.
+
 ## Settings
 
 All settings are in `~/.config/musicdock/config.toml` on the Pi. See

@@ -406,7 +406,8 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
 
     additions = new_songs + [wanted[nid] for nid in changed]
     additions += [wanted[nid] for nid in sorted(returning)]
-    added = covers = not_added = 0
+    added = covers = not_added = copy_bytes = 0
+    copy_began = time.monotonic()
     for i, t in enumerate(additions):
         src = os.path.join(cache_dir, t["file"])
         if not os.path.exists(src):
@@ -428,6 +429,7 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
         os.makedirs(folder, exist_ok=True)
         tmp = os.path.join(folder, TMP_PREFIX + os.path.basename(rel))
         shutil.copyfile(src, tmp)
+        copy_bytes += os.path.getsize(tmp)
         write_tags(tmp, t)
         with open(tmp, "rb+") as f:
             os.fsync(f.fileno())
@@ -444,6 +446,9 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
         except Exception:
             log.exception("Couldn't make cover.jpg for %s (continuing)", rel)
 
+    if added:
+        log_info(f"Copied {added} tracks, {copy_bytes / 1e6:.1f} MB in "
+                 f"{time.monotonic() - copy_began:.1f} s")
     record.set_player_full(guid, not_added or no_room)
     playlists_changed = sync_playlists(record, guid, mount, manifest) if playlists else 0
     return {"added": added, "removed": removed, "replaced": len(changed),

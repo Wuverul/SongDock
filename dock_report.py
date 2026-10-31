@@ -424,9 +424,13 @@ def problems(facts, now=None):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="SongDock status report (read-only)")
-    p.add_argument("--since", default="24 hours ago",
-                   help='how far back to look in the logs (default "24 hours ago")')
+    p.add_argument("--since", help='how far back to look in the logs (default "24 hours '
+                                   'ago"; with --share, "7 days ago")')
+    p.add_argument("--share", action="store_true",
+                   help="print a report without private details, to paste into a bug "
+                        "report (sends nothing)")
     args = p.parse_args(argv)
+    args.since = args.since or ("7 days ago" if args.share else "24 hours ago")
 
     import dock_config
     import dock_record
@@ -448,6 +452,21 @@ def main(argv=None):
             version = f.read().strip()
     except OSError:
         version = "SongDock"
+    if args.share:
+        import __main__
+        sys.modules.setdefault("dock_report", __main__)
+        import dock_share
+        try:
+            with open(dock_status.STATE_FILE) as f:
+                screen = json.load(f).get("screen")
+        except (OSError, ValueError):
+            screen = None
+        print(dock_share.build(cfg, manifest, cache_dir, dock_record.DEFAULT_PATH, version,
+                               args.since, screen=screen), end="")
+        print("\n(Nothing has been sent. Read this before sharing: song names and sign-in "
+              "details are left out,\nbut only you can spot anything else you'd rather keep "
+              "private.)", file=sys.stderr)
+        return
     print(f"{version} - status at {time.strftime('%a %d %b %H:%M')}")
 
     facts = {}
