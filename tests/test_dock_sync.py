@@ -296,8 +296,10 @@ class OptInTests(unittest.TestCase):
 
     def test_safe_screen_says_play_counts_are_unsupported(self):
         shown = []
-        run_sync(RecordingDevice(self.root, []), lambda s, *a, force=False: shown.append((s,) + a),
-                 work=lambda d, step: {"added": 2, "plays_supported": False})
+        with mock.patch("dock_progress.running_prepare", return_value=None):
+            run_sync(RecordingDevice(self.root, []),
+                     lambda s, *a, force=False: shown.append((s,) + a),
+                     work=lambda d, step: {"added": 2, "plays_supported": False})
         self.assertEqual(shown[-1][0], "safe")
         self.assertIn("--no-plays", shown[-1])
 
