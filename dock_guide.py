@@ -190,6 +190,11 @@ like the rest. A removed song returns when there's free room.
                       If that isn't enough, the screen shows PLAYER FULL.
   MakeRoom=no         nothing is removed; new songs wait for room
 
+New versions of SongDock install by themselves. DOCK READY shows the version
+and time 4 hours ahead; it waits if a player is connected or music is being
+prepared. It never touches a player, and settings and music stay as they are.
+  AutoUpdate=no  announces new versions without installing them
+
 The Navidrome server and the account the dock signs in with:
   Server=https://music.example.com
   Username=your-name
@@ -244,6 +249,8 @@ WHAT THE SCREEN MEANS
   NOT SYNCED         The iPod has no {marker} (or isn't an iPod).
   CONNECTING         New music is ready for a docked iPod; it syncs again
                      by itself. Do not unplug.
+  UPDATING           Installing a new version of SongDock. Leave the dock's
+                     power connected.
   PLAYER FULL        Finished, safe to remove, but new songs didn't fit even
                      after removing songs older than RecentPlayMonths.
   DOCK READY         Idle. Shows what the next sync will add and remove.

@@ -21,6 +21,7 @@ mkdir -p "$OUT"
 cp README.md INSTALL.md LICENSE CHANGELOG.md config.example.toml status.sh "$OUT/"
 cp ./*.py "$OUT/"                          # every module in the top folder
 mkdir -p "$OUT/pi"
+[ -f pi/release_signers ] && cp pi/release_signers "$OUT/pi/"     # for dock_update.py
 cp pi/install.sh pi/requirements.txt pi/99-musicdock.rules pi/90-musicdock-wifi \
    pi/*.service pi/*.timer pi/*.path "$OUT/pi/"
 cp -R vendor "$OUT/vendor"
@@ -67,3 +68,16 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf "$TARBALL" -C dist "$N
 echo
 echo "Done: $TARBALL ($(du -h "$TARBALL" | cut -f1)), $(find "$OUT" -type f | wc -l | tr -d ' ') files"
 echo "Give it to them with INSTALL.md (it's also inside the package)."
+
+# Docks install a release only with a signature from this key (dock_update.py).
+KEY="${SONGDOCK_RELEASE_KEY:-$HOME/.ssh/songdock-release}"
+if [ -f "$KEY" ]; then
+  echo "== Signing $TARBALL"
+  rm -f "$TARBALL.sig"
+  ssh-keygen -q -Y sign -f "$KEY" -n songdock-release "$TARBALL"
+  ssh-keygen -q -Y verify -f pi/release_signers -I songdock-release -n songdock-release \
+    -s "$TARBALL.sig" < "$TARBALL" >/dev/null
+  echo "Upload both to the release: $TARBALL $TARBALL.sig"
+else
+  echo "Not signed (no $KEY): docks won't install this one by themselves." >&2
+fi

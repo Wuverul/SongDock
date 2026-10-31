@@ -354,6 +354,13 @@ def render(screen, args):
                (fit(plays, body_f), body_f),
                (f"Synced {now}", body_f)])
 
+    elif screen == "updating":
+        # dock_update.py installing a release. Syncs are held back meanwhile.
+        header("UPDATING", inverted=True)
+        lines([("Leave the power on", body_f),
+               (fit(args.detail or "", body_f), body_f),
+               (f"Started {now}", small_f)])
+
     elif screen == "nospace":
         # A sync that ended with new songs left off (dock_room).
         header(f"{warn}PLAYER FULL", inverted=True)
@@ -518,6 +525,10 @@ def render(screen, args):
                 rows.append((conversions_line(args), small_f))
             if args.total and (args.ready or 0) < args.total:
                 rows.append((f"{args.ready or 0}/{args.total} tracks prepared", small_f))
+            if args.update_note:
+                if len(rows) == 3:          # four rows fit: the swaps' row gives way
+                    del rows[1]
+                rows.append((fit(args.update_note, small_f), small_f))
             if args.last_sync:
                 last = datetime.fromtimestamp(args.last_sync).strftime("%-I:%M %p")
                 rows.append((fit(f"Last sync {last} \u00b7 updated {now}", small_f), small_f))
@@ -532,6 +543,8 @@ def render(screen, args):
             rows = []
         if args.pending_add is None:
             rows += [(fit(line, body_f), body_f) for line in detail]
+            if args.update_note:
+                rows.append((fit(args.update_note, small_f), small_f))
             rows.append((f"Powered on {now}" if args.boot else f"Since {now}", small_f))
         lines(rows)
         ip = args.ip if args.ip is not None else read_ip()
@@ -756,7 +769,7 @@ def build_parser():
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
                                       "failed", "starting", "offline", "notsynced", "wifi", "wififail",
                                       "setup", "setupfail", "prepsync",
-                                      "connecting", "usbstuck", "restoring", "safehours", "nospace"])
+                                      "connecting", "usbstuck", "restoring", "safehours", "nospace", "updating"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
                    help="syncing: items done within this step (fills the bar)")
@@ -792,6 +805,7 @@ def build_parser():
                    help="idle: songs the next sync swaps for another format")
     p.add_argument("--swaps-no-room", type=int, default=0,
                    help="idle: format swaps waiting for room on the player")
+    p.add_argument("--update-note", help="idle: a new version's version and time")
     p.add_argument("--not-added", type=int, default=0,
                    help="nospace: new songs that didn't fit on the player")
     p.add_argument("--last-sync", type=float, metavar="EPOCH",

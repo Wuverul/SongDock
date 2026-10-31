@@ -1535,6 +1535,13 @@ def show_genres(config_path=None):
     return 0
 
 
+def update_args():
+    """DOCK READY's line about a new version (dock_update.py)."""
+    import dock_update
+    line = dock_update.note(dock_update.load_state())
+    return ["--update-note", line] if line else []
+
+
 def pending_args(manifest):
     """DOCK READY arguments saying what the next sync will do to the most
     recently synced player (+adds, -removes), or [] if none synced yet."""
@@ -1545,7 +1552,7 @@ def pending_args(manifest):
         try:
             player = record.last_synced_player()
             if not player:
-                return []
+                return update_args()
             records = record.tracks(player["guid"])
             counted = ipod_handler.counted_ids(record, player["guid"], records)
         finally:
@@ -1555,7 +1562,7 @@ def pending_args(manifest):
             manifest, records, player.get("swaps_no_room"))
         return ["--pending-add", str(add), "--pending-remove", str(remove),
                 "--pending-lossless", str(lossless), "--pending-format", str(other),
-                "--swaps-no-room", str(held),
+                "--swaps-no-room", str(held), *update_args(),
                 "--last-sync", str(int(player["last_sync"]))]
     except Exception:
         log.exception("Couldn't work out the next sync's changes")

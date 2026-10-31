@@ -1,0 +1,16 @@
+# Install new SongDock releases (dock_update.py). Root, because the installer
+# needs it. Started by musicdock-update.timer. install.sh fills in @APP_DIR@.
+
+[Unit]
+Description=SongDock: install updates
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/lib/musicdock
+ExecStart=/usr/bin/python3 @APP_DIR@/dock_update.py
+Environment=PYTHONUNBUFFERED=1
+Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
+TimeoutStartSec=45min
+# Every 15 minutes: keep systemd's start and finish lines out of the journal.
+LogLevelMax=warning

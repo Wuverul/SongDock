@@ -872,6 +872,24 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   recent_play_months` (default 3, 0 = ignore; `RecentPlayMonths=`) go first,
   then largest first. Last played = the later of Navidrome's `played` and the
   record's plays. Only the cache copy goes: songs stay on the players.
+- `dock_update.py` (user, 2026-10-30): root timer, every 15 min; GitHub at most
+  daily. Higher version: `install_after` = now + 4 h in
+  /var/lib/musicdock/update.json, shown on DOCK READY (`--update-note`, added by
+  the prepare job; a find starts a prepare run) and musicdock-status. Then installs
+  when no USB storage or Apple device is connected and no sync or prepare is going
+  (user's rule; replaces waiting for safe hours). **Signed releases:** OpenSSH's
+  `ssh-keygen -Y` (no new software; verified Mac to Pi, tampered file refused).
+  Private key ~/.ssh/songdock-release, on the Mac, with a passphrase; public in
+  `pi/release_signers` as `songdock-release <key>`, shipped in the package, so the
+  dock's installed code decides what it trusts. `make_release.sh` signs; upload
+  `.tar.gz` and `.tar.gz.sig`. To change keys: list old and new in a release signed
+  with the old one. If the key is lost, the next release is installed by hand.
+  Install: verify, unpack to `<app>.new`, version inside must match; mask
+  `musicdock-sync@.service` (--runtime), stop the prepare timer, swap folders, run
+  install.sh with SUDO_USER = the folder's owner; failure swaps back and reruns the
+  old installer. No `release_signers`, or auto_update false: only announces. The
+  developer's Pi has auto_update false: deploy.sh runs ahead of releases. `mask
+  --runtime` on a template and a real install are not yet tried on hardware.
 - **Making room on a full player (`dock_room.py`, user, 2026-10-30):** new songs
   that don't fit push off the oldest songs, just enough, and never one dated
   within `recent_play_months` (date = latest of last play, added to the player,

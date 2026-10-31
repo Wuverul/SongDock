@@ -168,7 +168,8 @@ else
               musicdock-resync.service musicdock-resync.path \
               musicdock-settings.service musicdock-settings.path \
               musicdock-usbport.service musicdock-usbport.timer \
-              musicdock-wifiprefer.service musicdock-wifiprefer.timer; do
+              musicdock-wifiprefer.service musicdock-wifiprefer.timer \
+              musicdock-update.service musicdock-update.timer; do
     sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@HOME@|$USER_HOME|g" \
         -e "s|@USER@|$LOGIN_USER|g" \
       "$APP_DIR/pi/$unit" > "/etc/systemd/system/$unit"
@@ -202,6 +203,8 @@ EOF
   # Back to the preferred Wi-Fi once it's in range (NetworkManager stays on
   # a fallback network otherwise).
   systemctl enable --now musicdock-wifiprefer.timer
+  # New releases, signed and announced first (dock_update.py).
+  systemctl enable --now musicdock-update.timer
   # The check interval from config.toml (later changes apply by themselves).
   systemctl start musicdock-settings.service || true
   udevadm control --reload

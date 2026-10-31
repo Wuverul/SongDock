@@ -46,6 +46,9 @@ recent_play_months = 3             # 0-120: songs played, added or in a playlist
                                    # within this long are never removed to make room.
                                    # Past it, the screen says PLAYER FULL. Also decides
                                    # which cached copies go first when the cache is full.
+auto_update = true                 # install new signed releases: announced for 4 hours,
+                                   # then installed once no player is connected.
+                                   # false: only says an update is available.
 check_interval_minutes = 5         # how often the dock checks Navidrome for new music
                                    # and sends waiting plays (1-1440). A docked iPod syncs
                                    # right after a check finds something. Takes effect by

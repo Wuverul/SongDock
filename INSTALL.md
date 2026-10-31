@@ -404,7 +404,7 @@ cd ~/musicdock/songdock && sudo ./pi/install.sh
 ```sh
 sudo systemctl disable --now musicdock-prepare.timer musicdock-boot.service \
         musicdock-resync.path musicdock-settings.path musicdock-usbport.timer \
-        musicdock-wifiprefer.timer
+        musicdock-wifiprefer.timer musicdock-update.timer
 sudo rm -rf /etc/systemd/system/musicdock-*
 sudo rm /etc/udev/rules.d/99-musicdock.rules \
         /etc/systemd/journald.conf.d/50-musicdock-persistent.conf \

@@ -25,6 +25,7 @@ and the list of known iPods written into its MediaDock.txt.
                                  players that can't play it (FLAC=yes: as-is)
     SafeHours=07:00-10:00        no syncs in this daily window (local time;
                                  SafeHours=off to turn it off)
+    AutoUpdate=no                new releases are announced, not installed
     MakeRoom=no                  a full player keeps its songs; new ones wait
     RecentPlayMonths=3           how far back songs are safe from removal to
                                  make room on a full player
@@ -63,7 +64,7 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
-            "makeroom": "MakeRoom"}
+            "makeroom": "MakeRoom", "autoupdate": "AutoUpdate"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
 
@@ -231,6 +232,13 @@ def plan_settings(settings, cfg):
             done.append(f"Safe hours {value}" if window else "Safe hours off")
         else:
             done.append(f"Safe hours already {value}")
+    if "AutoUpdate" in settings:
+        on = yes_no("AutoUpdate", settings["AutoUpdate"])
+        if on != cfg["sync"].get("auto_update", True):
+            changes[("sync", "auto_update")] = on
+            done.append("Automatic updates " + ("on" if on else "off"))
+        else:
+            done.append("Automatic updates already " + ("on" if on else "off"))
     if "MakeRoom" in settings:
         on = yes_no("MakeRoom", settings["MakeRoom"])
         if on != cfg["sync"].get("make_room", True):

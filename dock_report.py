@@ -399,6 +399,8 @@ def problems(facts, now=None):
     if facts.get("throttled") not in (None, "0x0", "?"):
         out.append(f"Power or heat warning since boot (throttled={facts['throttled']}): "
                    f"check the power supply")
+    if facts.get("update_failed"):
+        out.append(facts["update_failed"])
     if facts.get("temp", 0) >= 70:
         out.append(f"Running hot: {facts['temp']:.0f} C")
     if facts.get("disk_pct", 0) >= 75:
@@ -471,6 +473,12 @@ def main(argv=None):
         facts["size_notes"] = dock_limits.player_notes(
             pl["on_player"], len(dock_restore.targets(manifest)), pl["capacity"], cfg,
             pl["kind"], dock_limits.plan_bytes(manifest), dock_limits.alac_bytes(manifest))
+    import dock_update
+    update = dock_update.load_state()
+    if update.get("version"):
+        print(f"\n{dock_update.note(update)}")
+    facts["update_failed"] = (f"Update {update['failed']} not installed: "
+                              f"{update.get('failed_why')}") if update.get("failed") else None
     print("\nProblems")
     for line in problems(facts) or ["none"]:
         print(f"  {line}")

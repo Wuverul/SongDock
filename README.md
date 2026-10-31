@@ -216,6 +216,7 @@ for a dark case):
 | Screen | Meaning |
 |---|---|
 | **STARTING UP...** | The dock is booting: waiting for Wi-Fi and the clock |
+| **UPDATING** | A new version of SongDock is installing (see Updating). Leave the power connected |
 | **PLAYER FULL** | The sync finished and it's safe to unplug, but new songs didn't fit, even after removing every song older than `recent_play_months` |
 | **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date"). "No room to convert 7" means 7 songs keep their current format until the player has space |
 | **PREPARING 3/12** | Downloading and converting new music. The iPod is safe to unplug |
@@ -284,6 +285,16 @@ waiting to be sent stay queued.
    that **Problems** says none.
 
 There's no need to reinstall Raspberry Pi OS or set anything up again.
+
+**Automatic updates** are on by default from the version after 0.7.1, whose update
+you install by hand as above. The dock checks GitHub once a day. A newer release
+shows on DOCK READY with its install time, 4 hours ahead ("Update 0.8.0 at 3:15
+PM"). At that time, or later if needed, it installs once no player is connected
+and no sync or prepare run is going. A player left docked holds the update back
+and is never written to. The dock installs only releases signed with the project's
+key, and goes back to the old version if the install fails, which
+`musicdock-status` reports. `auto_update = false` in the settings, or
+`AutoUpdate=no` in a `DockSetup.txt`, announces releases without installing them.
 
 ## Known limitations
 

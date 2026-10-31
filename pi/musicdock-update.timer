@@ -1,0 +1,13 @@
+# Looks for new SongDock releases and installs them (see dock_update.py).
+#   systemctl list-timers musicdock-update
+
+[Unit]
+Description=SongDock: check for updates
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=15min
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

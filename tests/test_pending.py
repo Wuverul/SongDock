@@ -118,6 +118,14 @@ class FullScreenTests(unittest.TestCase):
             ["nospace", "--not-added", "12", "--added", "3", "--wifi", "-50", "--ip", "10.0.0.2"])
         dock_status.render("nospace", args)
 
+    def test_update_screens_render(self):
+        parse = dock_status.build_parser().parse_args
+        dock_status.render("updating", parse(["updating", "--detail", "To version 0.8.0",
+                                              "--wifi", "-50", "--ip", "10.0.0.2"]))
+        dock_status.render("idle", parse(
+            ["idle", "--pending-add", "19", "--pending-lossless", "5", "--ready", "1", "--total",
+             "2", "--update-note", "Update 0.8.0 at 3:15 PM", "--wifi", "-50", "--ip", "1.1.1.1"]))
+
 
 if __name__ == "__main__":
     unittest.main()
