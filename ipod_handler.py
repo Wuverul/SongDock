@@ -81,6 +81,22 @@ def log_ratings(db, entries):
         log_info(f"Rated {t.rating // 20} stars: {t.artist} - {t.title}")
 
 
+def queue_favorites(db, record, guid, stars):
+    """Songs newly rated `stars` or more on the iPod get favorited on the server,
+    once each: after that a favorite removed in Navidrome stays removed, unless
+    the rating drops and rises again. Lowering a rating changes nothing there."""
+    ids = {int(r["dbid"]): r["navidrome_id"] for r in record.tracks(guid)}
+    high, low = [], []
+    for t in db.tracks:
+        nid = ids.get(t.dbid) or navidrome_id_from(t)
+        if nid:
+            (high if t.rating >= stars * 20 else low).append(nid)
+    queued = record.note_ratings(guid, high, low)
+    if queued:
+        log_info(f"Rated {stars}+ stars on the iPod: favoriting {queued} song(s)")
+    return queued
+
+
 def read_play_entries(folder):
     """Parse whichever play file exists in `folder` (pygpod's parsers)."""
     from pygpod.db.playcounts import (parse_itunesstats, parse_play_counts,
@@ -1328,6 +1344,11 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             if entries:
                 db.merge_play_counts(entries)   # files deleted once a save has these
             log_ratings(db, entries)
+            if manifest.get("favorite_rating"):
+                queue_favorites(db, record, guid, manifest["favorite_rating"])
+                if client:
+                    import dock_plays
+                    summary["favorited"] = dock_plays.upload_favorites(client, record)
             report = reconcile(db, record, guid, mount, manifest=manifest)
             if report["reset"]:
                 log_info("Player appears to have been reset: rebuilding it")

@@ -264,6 +264,12 @@ class SettingsTests(PlayersBase):
         self.apply('ArtistNames=The "Best" \\ Band, Inc.\n')
         self.assertEqual(self.settings()["sync"]["artist_names"], ['The "Best" \\ Band, Inc.'])
 
+    def test_favorite_rating_from_the_ipod(self):
+        self.assertEqual(self.apply("FavoriteRating=5\n")["done"], ["Songs rated 5+ stars get favorited"])
+        self.assertEqual(self.settings()["sync"]["favorite_rating"], 5)
+        self.assertEqual(self.apply("FavoriteRating=0\n")["done"], ["Ratings don't favorite songs"])
+        self.assertIn("0 to 5", self.apply("FavoriteRating=9\n")["reason"])
+
     def test_lossless_tag_can_be_turned_off(self):
         result = self.apply("LosslessTag=none\n")
         self.assertTrue(result["ok"])

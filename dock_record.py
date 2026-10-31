@@ -68,6 +68,13 @@ CREATE TABLE IF NOT EXISTS tracks (
     PRIMARY KEY (guid, dbid)
 );
 CREATE INDEX IF NOT EXISTS tracks_by_song ON tracks (guid, navidrome_id);
+CREATE TABLE IF NOT EXISTS rated_favorites (   -- songs a rating asked to favorite
+    guid          TEXT NOT NULL,
+    navidrome_id  TEXT NOT NULL,
+    queued_at     INTEGER NOT NULL,
+    sent_at       INTEGER,                     -- NULL = waiting for the server
+    PRIMARY KEY (guid, navidrome_id)
+);
 CREATE TABLE IF NOT EXISTS room_removed (      -- dock_room: taken off to make room
     guid          TEXT NOT NULL,
     navidrome_id  TEXT NOT NULL,
@@ -327,6 +334,30 @@ class Record:
             held = mine if held is None else {n: held[n] | e for n, e in mine.items()
                                               if n in held}
         return held or {}
+
+    def note_ratings(self, guid, high, low):
+        """Songs on this player rated at the favorite level (`high`) or below it
+        (`low`). A song newly high is queued once, and only a song that drops
+        low can be queued again. Returns how many were queued."""
+        now = int(time.time())
+        with self.db:
+            before = self.db.total_changes
+            self.db.executemany("INSERT OR IGNORE INTO rated_favorites (guid, navidrome_id, "
+                                "queued_at) VALUES (?, ?, ?)", [(guid, n, now) for n in high])
+            queued = self.db.total_changes - before
+            self.db.executemany("DELETE FROM rated_favorites WHERE guid = ? AND "
+                                "navidrome_id = ? AND sent_at IS NOT NULL",
+                                [(guid, n) for n in low])
+        return queued
+
+    def unsent_favorites(self):
+        return [r[0] for r in self.db.execute("SELECT DISTINCT navidrome_id FROM rated_favorites "
+                                              "WHERE sent_at IS NULL ORDER BY queued_at")]
+
+    def mark_favorited(self, nid):
+        with self.db:
+            self.db.execute("UPDATE rated_favorites SET sent_at = ? WHERE navidrome_id = ? "
+                            "AND sent_at IS NULL", (int(time.time()), nid))
 
     def save_room_removed(self, guid, nid, play_count=0, skip_count=0, rating=0, time_played=0):
         with self.db:

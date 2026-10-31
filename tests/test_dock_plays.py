@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import dock_plays  # noqa: E402
@@ -78,6 +79,42 @@ class UploadTests(unittest.TestCase):
         server = FakeScrobbler()
         self.assertEqual(dock_plays.upload_plays(server, self.rec), (0, 0, False))
         self.assertEqual(server.requests, [])
+
+
+class FavoriteTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.rec = Record(os.path.join(tmp.name, "dock.db"))
+        self.addCleanup(self.rec.close)
+        self.rec.note_ratings("G", ["a", "b", "c"], [])
+        self.stars = []
+
+    def client(self, fail=None):
+        def call(method, id):
+            if fail and id in fail:
+                raise fail[id]
+            self.stars.append((method, id))
+        return mock.Mock(call=call)
+
+    def test_sent_once(self):
+        self.assertEqual(dock_plays.upload_favorites(self.client(), self.rec), 3)
+        self.assertEqual(self.stars[0], ("star", "a"))
+        self.assertEqual(dock_plays.upload_favorites(self.client(), self.rec), 0)
+
+    def test_server_down_keeps_the_rest_queued(self):
+        c = self.client({"b": SubsonicError("down", network=True)})
+        self.assertEqual(dock_plays.upload_favorites(c, self.rec), 1)
+        self.assertEqual(self.rec.unsent_favorites(), ["b", "c"])
+
+    def test_song_gone_from_the_server_is_dropped_other_errors_retry(self):
+        c = self.client({"a": SubsonicError("gone", code=70), "b": SubsonicError("no", code=50)})
+        self.assertEqual(dock_plays.upload_favorites(c, self.rec), 1)
+        self.assertEqual(self.rec.unsent_favorites(), ["b"])
+
+    def test_two_players_rating_one_song_favorite_it_once(self):
+        self.rec.note_ratings("H", ["a"], [])
+        self.assertEqual(dock_plays.upload_favorites(self.client(), self.rec), 3)
 
 
 class ClientParamTests(unittest.TestCase):

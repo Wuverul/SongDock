@@ -102,6 +102,12 @@ music in the background, so syncs are quick.
   for every player on it, since it keeps one copy of each song. Forgetting
   that player puts the original formats back.
 
+- **Ratings become favorites:** rate a song 4 or 5 stars on a stock iPod and the next
+  sync favorites it in Navidrome, once, so it stays on the iPod even after leaving
+  its playlists. Lowering the rating changes nothing, and a favorite you remove stays
+  removed. `favorite_rating` (or `FavoriteRating=` in a `DockSetup.txt`) sets the
+  stars; 0 turns it off.
+
 - **Lossless for chosen songs:** add `#lossless` to a playlist's comment in
   Navidrome and its songs sync as ALAC (FLAC on a Rockbox-only dock) if the
   server's copy is lossless, replacing the MP3. ALAC takes about 3 times the

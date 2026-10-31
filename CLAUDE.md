@@ -904,7 +904,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 - **iPod ratings (checked 2026-10-31):** only byte 0x1F of each mhit (0-100, steps of
   20), arriving via `Play Counts` (entry offset 12; 0 = unchanged). `iTunesControl` is
   20 MB of zeros and `Extras.itdb` only empty Genius tables. Every sync logs
-  `Ratings: n rated songs...` (`log_ratings`). The real Nano then held none.
+  `Ratings: n rated songs...` (`log_ratings`). Verified on the Nano the same day: 5 and 4
+  stars given by hand arrived after a re-plug. **Favoriting (user):** `[sync] favorite_rating`
+  (default 4, 0 off; `FavoriteRating=`), passed in the plan. `Record.note_ratings` keeps
+  `rated_favorites`: a song at or above it is queued once; only dropping below allows
+  another. Sent with `star` by the sync and every prepare check. Stock iPods only.
 - **Making room on a full player (`dock_room.py`, user, 2026-10-30):** new songs
   that don't fit push off the oldest songs, just enough, and never one dated
   within `recent_play_months` (date = latest of last play, added to the player,

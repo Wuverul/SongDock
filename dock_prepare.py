@@ -1352,6 +1352,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "targets": cfg["sync"]["targets"], "device": device,
             "playlist_tag": cfg["sync"].get("playlist_tag", ""),
             **({"make_room_months": months} if cfg["sync"].get("make_room", False) else {}),
+            **({"favorite_rating": cfg["sync"].get("favorite_rating", 4)}
+               if cfg["sync"].get("favorite_rating", 4) else {}),
             **({"lossless_playlists": lossless_lists} if lossless_lists else {}),
             **({"unsplit_artists": sorted(unsplit_artists)} if unsplit_artists else {}),
             "tracks": ready, "on_player": uncached, "playlists": playlists,
@@ -1727,6 +1729,7 @@ def main(argv=None):
             record = Record()
             if record.unsent_count()[0]:
                 dock_plays.upload_plays(client, record)
+            dock_plays.upload_favorites(client, record)
             record.close()
         except Exception:
             log.exception("Couldn't send queued plays (they stay queued)")

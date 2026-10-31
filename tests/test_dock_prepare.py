@@ -892,6 +892,15 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(self.lossless_server(flac), cfg, player_kinds={"generic"})
         self.assertEqual(self.files(), ["f.mp3"])
 
+    def test_favorite_rating_reaches_the_plan_and_zero_turns_it_off(self):
+        server = FakeServer(songs=[song("a")])
+        self.run_prepare(server)
+        self.assertEqual(self.manifest()["favorite_rating"], 4)
+        cfg = config()
+        cfg["sync"]["favorite_rating"] = 0
+        self.run_prepare(server, cfg)
+        self.assertNotIn("favorite_rating", self.manifest())
+
     def test_making_room_on_players_is_off_unless_turned_on(self):
         server = FakeServer(songs=[song("a")])
         self.run_prepare(server)

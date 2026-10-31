@@ -26,6 +26,7 @@ and the list of known iPods written into its MediaDock.txt.
                                  players that can't play it (FLAC=yes: as-is)
     SafeHours=07:00-10:00        no syncs in this daily window (local time;
                                  SafeHours=off to turn it off)
+    FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
     AutoUpdate=no                new releases are announced, not installed
     MakeRoom=yes                 a full player loses its oldest songs for new ones
     RecentPlayMonths=3           with MakeRoom=yes, how far back songs are safe
@@ -66,7 +67,8 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
-            "makeroom": "MakeRoom", "autoupdate": "AutoUpdate"}
+            "makeroom": "MakeRoom", "autoupdate": "AutoUpdate",
+            "favoriterating": "FavoriteRating"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
 
@@ -245,6 +247,17 @@ def plan_settings(settings, cfg):
             done.append(f"Safe hours {value}" if window else "Safe hours off")
         else:
             done.append(f"Safe hours already {value}")
+    if "FavoriteRating" in settings:
+        try:
+            stars = int(settings["FavoriteRating"])
+        except ValueError:
+            stars = -1
+        if not 0 <= stars <= 5:
+            raise SetupFileError("FavoriteRating must be a whole number from 0 to 5")
+        if stars != cfg["sync"].get("favorite_rating", 4):
+            changes[("sync", "favorite_rating")] = stars
+        done.append(f"Songs rated {stars}+ stars get favorited" if stars
+                    else "Ratings don't favorite songs")
     if "AutoUpdate" in settings:
         on = yes_no("AutoUpdate", settings["AutoUpdate"])
         if on != cfg["sync"].get("auto_update", True):

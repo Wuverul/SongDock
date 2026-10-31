@@ -197,6 +197,10 @@ FULL. Nothing is removed unless you turn this on:
                       rest. A removed song returns when there's free room.
   RecentPlayMonths=3  (the default) songs newer than this are never removed
 
+A song you rate 4 or 5 stars on a stock iPod gets favorited in Navidrome, once.
+Lowering the rating or removing the favorite afterwards is left as you set it.
+  FavoriteRating=5  only 5 stars (FavoriteRating=0: ratings never favorite)
+
 New versions of SongDock install by themselves. DOCK READY shows the version
 and time 4 hours ahead; it waits if a player is connected or music is being
 prepared. It never touches a player, and settings and music stay as they are.

@@ -25,7 +25,7 @@ MAX_ERRORS = 10
 SHARED_SETTINGS = {
     "device": ("type", "convert_to", "mp3_quality", "flac", "write", "auto_resync"),
     "sync": ("max_cache_gb", "workers", "sync_batch_size", "check_interval_minutes",
-             "removal_grace_days", "recent_play_months", "make_room", "auto_update",
+             "removal_grace_days", "recent_play_months", "make_room", "favorite_rating", "auto_update",
              "safe_hours", "primary_artist"),
     "display": ("model", "theme", "invert"),
 }

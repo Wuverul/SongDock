@@ -69,3 +69,26 @@ def _scrobble(client, plays):
     client.call("scrobble", id=[p["navidrome_id"] for p in plays],
                 time=[int(p["played_at"]) * 1000 for p in plays],   # milliseconds
                 submission="true")
+
+
+def upload_favorites(client, record):
+    """Favorite the songs ratings queued (Record.note_ratings). Returns how many
+    went out. The server being down keeps them queued; a song it no longer has
+    is dropped, since asking again can't help."""
+    sent = 0
+    for nid in record.unsent_favorites():
+        try:
+            client.call("star", id=nid)
+        except SubsonicError as e:
+            if e.network:
+                log.warning("Server unreachable; rated songs stay queued to favorite: %s", e)
+                break
+            log.warning("Couldn't favorite song %s: %s", nid, e)
+            if e.code != 70:
+                continue
+        else:
+            sent += 1
+        record.mark_favorited(nid)
+    if sent:
+        log.info("Favorited %d song(s) rated on a player", sent)
+    return sent

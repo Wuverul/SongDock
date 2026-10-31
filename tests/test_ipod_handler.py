@@ -889,6 +889,45 @@ class HandlerTests(unittest.TestCase):
         h.checked_save(db, G)
         self.assertEqual(self.db().tracks[0].rating, 100)
 
+    # Ratings become favorites.
+    def rate(self, stars):
+        db = self.db()
+        db.tracks[0].rating = stars * 20
+        return db
+
+    def favorites_after(self, db, stars=4):
+        h.queue_favorites(db, self.rec, G, stars)
+        return self.rec.unsent_favorites()
+
+    def test_four_or_five_stars_queue_a_favorite_lower_doesnt(self):
+        self.apply(self.manifest([self.song("n1", "One")]))
+        self.assertEqual(self.favorites_after(self.rate(3)), [])
+        self.assertEqual(self.favorites_after(self.rate(4)), ["n1"])
+
+    def test_favorited_once_even_if_it_rises_or_the_favorite_is_removed(self):
+        self.apply(self.manifest([self.song("n1", "One")]))
+        self.favorites_after(self.rate(4))
+        self.rec.mark_favorited("n1")
+        self.assertEqual(self.favorites_after(self.rate(4)), [])
+        self.assertEqual(self.favorites_after(self.rate(5)), [])
+
+    def test_dropping_and_rising_again_counts_as_new(self):
+        self.apply(self.manifest([self.song("n1", "One")]))
+        self.favorites_after(self.rate(5))
+        self.rec.mark_favorited("n1")
+        self.assertEqual(self.favorites_after(self.rate(2)), [])
+        self.assertEqual(self.favorites_after(self.rate(5)), ["n1"])
+
+    def test_threshold_can_be_five(self):
+        self.apply(self.manifest([self.song("n1", "One")]))
+        self.assertEqual(self.favorites_after(self.rate(4), stars=5), [])
+        self.assertEqual(self.favorites_after(self.rate(5), stars=5), ["n1"])
+
+    def test_rating_lowered_before_it_was_sent_still_goes(self):
+        self.apply(self.manifest([self.song("n1", "One")]))
+        self.favorites_after(self.rate(5))
+        self.assertEqual(self.favorites_after(self.rate(1)), ["n1"])
+
     def counted_swap(self):
         """A song with iPod counts, plus a playlist, and a plan to swap it."""
         a = self.song("n1", "One")
