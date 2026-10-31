@@ -25,6 +25,8 @@ and the list of known iPods written into its MediaDock.txt.
                                  players that can't play it (FLAC=yes: as-is)
     SafeHours=07:00-10:00        no syncs in this daily window (local time;
                                  SafeHours=off to turn it off)
+    RecentPlayMonths=3           cache full: songs not played this long lose
+                                 their cached copy first (0 = ignore plays)
 
 (see dock_players.py for what forgetting does). Several lines are fine.
 Rules, as for wifi.txt:
@@ -59,7 +61,7 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
             "syncfavorites": "SyncStarred", "server": "Server", "username": "Username",
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
-            "safehours": "SafeHours"}
+            "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
 
@@ -227,6 +229,18 @@ def plan_settings(settings, cfg):
             done.append(f"Safe hours {value}" if window else "Safe hours off")
         else:
             done.append(f"Safe hours already {value}")
+    if "RecentPlayMonths" in settings:
+        try:
+            months = int(settings["RecentPlayMonths"])
+        except ValueError:
+            months = -1
+        if not 0 <= months <= 120:
+            raise SetupFileError("RecentPlayMonths must be a whole number from 0 to 120")
+        if months != cfg["sync"].get("recent_play_months", 3):
+            changes[("sync", "recent_play_months")] = months
+            done.append(f"Recent plays: {months} months")
+        else:
+            done.append(f"Recent plays already {months} months")
     return changes, done, login, new_library
 
 

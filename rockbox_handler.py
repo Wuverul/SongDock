@@ -416,6 +416,7 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
         except Exception:
             log.exception("Couldn't make cover.jpg for %s (continuing)", rel)
 
+    record.set_player_full(guid, not_added or no_room)
     playlists_changed = sync_playlists(record, guid, mount, manifest) if playlists else 0
     return {"added": added, "removed": removed, "replaced": len(changed),
             "renamed": renamed, "swaps_no_room": len(no_room), "art_added": covers,

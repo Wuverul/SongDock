@@ -182,6 +182,11 @@ A daily window with no syncs, e.g. to grab the iPod for a morning commute:
   An iPod docked then just charges; a sync running when the window opens
   finishes early. Either way it syncs afterwards if it's still docked.
 
+When the dock's cache is full, songs already on your players lose their
+cached copy to make room (they stay on the players). Songs not played lately
+go first:
+  RecentPlayMonths=3  (the default; RecentPlayMonths=0 ignores plays)
+
 The Navidrome server and the account the dock signs in with:
   Server=https://music.example.com
   Username=your-name

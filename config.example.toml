@@ -40,6 +40,9 @@ workers = "auto"                   # parallel conversions: "auto" = CPU cores - 
 removal_grace_days = 7             # 0-30: keep tracks that left every list cached this
                                    # long (re-adding is instant); deleted oldest-first
                                    # sooner if the SD card drops below 25% free
+recent_play_months = 3             # 0-120: when the cache is full, songs not played this
+                                   # long lose their cached copy first (0 = ignore plays;
+                                   # they stay on your players either way)
 check_interval_minutes = 5         # how often the dock checks Navidrome for new music
                                    # and sends waiting plays (1-1440). A docked iPod syncs
                                    # right after a check finds something. Takes effect by

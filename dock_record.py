@@ -129,6 +129,7 @@ class Record:
         self._add_column("players", "kind TEXT")                 # stock / rockbox (2026-10-23)
         self._add_column("players", "capacity INTEGER")          # dock_limits (2026-10-26)
         self._add_column("players", "swaps_no_room INTEGER")     # format swaps held back (2026-10-30)
+        self._add_column("players", "full INTEGER")              # last sync ran out of room (2026-10-30)
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
             # login user) so the prepare job can write it too.
@@ -200,6 +201,12 @@ class Record:
         """Format swaps the last sync held back because the player had no room."""
         with self.db:
             self.db.execute("UPDATE players SET swaps_no_room = ? WHERE guid = ?", (count, guid))
+
+    def set_player_full(self, guid, full):
+        """Whether the last sync left songs out for lack of room. A later sync
+        with nothing left out clears it, and the player counts again."""
+        with self.db:
+            self.db.execute("UPDATE players SET full = ? WHERE guid = ?", (int(bool(full)), guid))
 
     def active_stock_players(self):
         """Players that aren't forgotten and may run Apple's firmware: kind
@@ -290,10 +297,14 @@ class Record:
         dock knows (players table or any track row) and hasn't forgotten, so
         the prepare job can drop their cache files when space is short. A
         player with no tracks (e.g. just reset) holds nothing, so nothing is.
+        A full player can't take more, so it doesn't hold back songs it lacks,
+        or formats it can't swap to, while another player still has room.
         {} with no players."""
         guids = [r[0] for r in self.db.execute(
             "SELECT guid FROM players WHERE forgotten_at IS NULL UNION "
             "SELECT DISTINCT guid FROM tracks WHERE guid NOT IN (SELECT guid FROM players)")]
+        full = {r[0] for r in self.db.execute("SELECT guid FROM players WHERE full = 1")}
+        guids = [g for g in guids if g not in full] or guids
         held = None
         for guid in guids:
             mine = {}
@@ -304,6 +315,11 @@ class Record:
             held = mine if held is None else {n: held[n] | e for n, e in mine.items()
                                               if n in held}
         return held or {}
+
+    def last_played(self):
+        """{navidrome_id: time of the latest play the dock has read}."""
+        return dict(self.db.execute("SELECT navidrome_id, MAX(played_at) FROM pending_plays "
+                                    "WHERE navidrome_id IS NOT NULL GROUP BY navidrome_id"))
 
     def track(self, guid, dbid):
         row = self.db.execute("SELECT * FROM tracks WHERE guid = ? AND dbid = ?",

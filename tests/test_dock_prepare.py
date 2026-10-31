@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from unittest import mock
 from collections import namedtuple
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import dock_config  # noqa: E402
@@ -785,6 +786,42 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(summary["evicted"], 0)
         self.assertEqual([s["id"] for s in summary["skipped"]], ["e"])
         self.assertNotIn("e", server.downloads[1:])
+
+    def test_full_cache_drops_songs_not_played_lately_before_larger_ones(self):
+        now = 1_800_000_000
+        self.cached("a.mp3", 6000)                      # largest, but played last week
+        self.cached("b.mp3", 5000)                      # not played in 4 months
+        server = FakeServer(songs=[song("a"), song("b"), song("c", size=1500)])
+        held = {"a": {"mp3 v0"}, "b": {"mp3 v0"}}
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL), on_player=held,
+                                   clock=lambda: now,
+                                   plays={"a": now - 7 * 86400, "b": now - 120 * 86400})
+        self.assertEqual(summary["evicted"], 1)
+        self.assertEqual(self.files(), ["a.mp3", "c.mp3"])
+
+    def test_navidromes_play_date_counts_and_never_played_goes_first(self):
+        now = datetime(2026, 10, 30, tzinfo=timezone.utc).timestamp()
+        self.cached("a.mp3", 6000)
+        self.cached("b.mp3", 5000)
+        server = FakeServer(songs=[song("a", played="2026-10-01T10:00:00Z"), song("b"),
+                                   song("c", size=1500)])
+        self.run_prepare(server, cfg=config(max_gb=self.SMALL), clock=lambda: now,
+                         on_player={"a": {"mp3 v0"}, "b": {"mp3 v0"}})
+        self.assertEqual(self.files(), ["a.mp3", "c.mp3"])
+
+    def test_recent_play_months_zero_goes_by_size_alone(self):
+        now = 1_800_000_000
+        self.cached("a.mp3", 6000)
+        self.cached("b.mp3", 5000)
+        cfg = config(max_gb=self.SMALL)
+        cfg["sync"]["recent_play_months"] = 0
+        self.run_prepare(FakeServer(songs=[song("a"), song("b"), song("c", size=1500)]), cfg,
+                         on_player={"a": {"mp3 v0"}, "b": {"mp3 v0"}}, clock=lambda: now,
+                         plays={"a": now})
+        self.assertEqual(self.files(), ["b.mp3", "c.mp3"])
+
+    def test_bad_play_date_is_ignored(self):
+        self.assertEqual(dock_prepare.last_played_at(song("a", played="bad"), {"a": 5}), 5)
 
     def test_held_tracks_dont_push_each_other_out(self):
         # The player has both; only b fits. No churn: a stays uncached.

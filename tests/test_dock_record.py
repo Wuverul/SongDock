@@ -39,6 +39,31 @@ class RecordTests(unittest.TestCase):
         self.rec.add_track(other, 9, navidrome_id="n2", encoding="original")
         self.assertEqual(self.rec.songs_on_every_player(), {"n2": {"mp3 v0", "original"}})
 
+    def test_full_player_doesnt_hold_back_songs_it_lacks(self):
+        nano, classic = GUID, "000A270000000003"
+        self.rec.upsert_player(nano)
+        self.rec.upsert_player(classic)
+        self.rec.add_track(nano, 1, navidrome_id="n1", encoding="mp3 v0")
+        self.rec.add_track(classic, 2, navidrome_id="n1", encoding="alac 16")
+        self.rec.add_track(classic, 3, navidrome_id="n2", encoding="mp3 v0")
+        self.assertEqual(self.rec.songs_on_every_player(), {"n1": {"mp3 v0", "alac 16"}})
+        self.rec.set_player_full(nano, True)
+        self.assertEqual(self.rec.songs_on_every_player(),
+                         {"n1": {"alac 16"}, "n2": {"mp3 v0"}})
+        self.rec.set_player_full(classic, True)              # all full: as before
+        self.assertEqual(self.rec.songs_on_every_player(), {"n1": {"mp3 v0", "alac 16"}})
+        self.rec.set_player_full(nano, False)                # room again: it counts
+        self.rec.set_player_full(classic, False)
+        self.assertEqual(set(self.rec.songs_on_every_player()), {"n1"})
+
+    def test_last_played(self):
+        self.assertEqual(self.rec.last_played(), {})
+        self.rec.queue_plays(GUID, [
+            {"dbid": 1, "seq": 0, "played_at": 100, "navidrome_id": "n1"},
+            {"dbid": 1, "seq": 1, "played_at": 300, "navidrome_id": "n1"},
+            {"dbid": 2, "seq": 0, "played_at": 200}])
+        self.assertEqual(self.rec.last_played(), {"n1": 300})
+
     def test_forgotten_player_holds_nothing_back_until_it_docks(self):
         nano, classic = GUID, "000A270000000003"
         for guid in (nano, classic):

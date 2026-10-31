@@ -835,6 +835,17 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(self.rec.tracks(G)[0]["encoding"], "mp3 v0")
         self.assertEqual(self.rec.player(G)["swaps_no_room"], 1)
 
+    def test_a_full_sync_marks_the_player_and_a_later_one_clears_it(self):
+        self.rec.upsert_player(G, model="xB903")
+        a = self.song("n1", "One")
+        usage = shutil.disk_usage(self.tmp)
+        with mock.patch("shutil.disk_usage", return_value=usage._replace(free=1000)):
+            summary = self.apply(self.manifest([a]))
+        self.assertEqual(summary["not_added_full"], 1)
+        self.assertEqual(self.rec.player(G)["full"], 1)
+        self.apply(self.manifest([a]))
+        self.assertEqual(self.rec.player(G)["full"], 0)
+
     def test_swap_with_room_happens_and_clears_the_count(self):
         self.rec.upsert_player(G, model="xB903")
         self.rec.set_swaps_no_room(G, 5)

@@ -988,10 +988,21 @@ def batch_size(setting, count, cores):
     return int(setting or 0)
 
 
+def last_played_at(track, plays):
+    """When a song was last played (epoch; 0 = never): Navidrome's date or
+    the dock's own record of plays, whichever is later."""
+    played = plays.get(track["id"]) or 0
+    try:
+        when = datetime.fromisoformat((track.get("played") or "").replace("Z", "+00:00"))
+        return max(played, when.timestamp())
+    except ValueError:
+        return played
+
+
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
             on_player=None, on_batch=None, cpu_count=None, on_progress=None,
-            player_kinds=None):
+            player_kinds=None, plays=None):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -1000,6 +1011,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     files make room for songs the player lacks (largest first) and aren't
     fetched again: the plan lists them under "on_player", so the sync keeps
     them. A player bigger than the cache then fills over several syncs.
+    plays: Record.last_played(), {song id: epoch}. Songs not played in
+    [sync] recent_play_months are dropped before songs that were.
     player_kinds: Record.active_player_kinds(), None if the record can't be
     read (then lossless stays as it was last run: no swapping either way).
     on_batch(manifest): called each time a batch of [sync] sync_batch_size
@@ -1359,10 +1372,17 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         if on_batch:
             on_batch(manifest)
 
-    # Cache files of held songs, largest first: dropped only to make room for
-    # a song the player lacks, never for another held one (no churn).
+    # Cache files of held songs: dropped only to make room for a song the
+    # player lacks, never for another held one (no churn). Songs not played
+    # lately go first, largest first within each group.
+    months = int(cfg["sync"].get("recent_play_months", 3))
+    recent_since = clock() - months * 30 * DAY
+
+    def played_lately(t):
+        return bool(months) and last_played_at(t, plays or {}) >= recent_since
     evictable = sorted((n for n in held if n in existing and n not in missing_names),
-                       key=lambda n: -os.path.getsize(os.path.join(tracks_dir, n)))
+                       key=lambda n: (played_lately(wanted[n]),
+                                      -os.path.getsize(os.path.join(tracks_dir, n))))
     evicted = 0
 
     def run_one(name, t, need):
@@ -1688,11 +1708,12 @@ def main(argv=None):
         try:
             on_player = record.songs_on_every_player()
             player_kinds = record.active_player_kinds()
+            plays = record.last_played()
         finally:
             record.close()
     except Exception:
         log.exception("Couldn't read what's on the players (keeping every cached track)")
-        on_player, player_kinds = {}, None
+        on_player, player_kinds, plays = {}, None, {}
 
     def ask_for_sync(manifest, batch=False):
         """A docked (ejected) iPod gets new music without being re-plugged by
@@ -1775,7 +1796,7 @@ def main(argv=None):
     summary = None
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run,
-                          on_player=on_player, on_progress=on_progress, player_kinds=player_kinds,
+                          on_player=on_player, on_progress=on_progress, player_kinds=player_kinds, plays=plays,
                           on_batch=lambda m: ask_for_sync(m, batch=True))
     except SubsonicError as e:
         if e.network:

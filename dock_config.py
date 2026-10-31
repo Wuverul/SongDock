@@ -22,6 +22,7 @@ DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
              "playlist_tag": "#ipod", "lossless_tag": "#lossless",
              "primary_artist": True, "artist_names": [], "compilation_albums": [], "workers": "auto", "removal_grace_days": 7,
+             "recent_play_months": 3,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -166,6 +167,9 @@ def load(path=None):
     g = cfg["sync"]["removal_grace_days"]
     if not (isinstance(g, int) and not isinstance(g, bool) and 0 <= g <= 30):
         raise ConfigError(f"{path}: removal_grace_days must be a whole number from 0 to 30")
+    m = cfg["sync"]["recent_play_months"]
+    if not (isinstance(m, int) and not isinstance(m, bool) and 0 <= m <= 120):
+        raise ConfigError(f"{path}: recent_play_months must be a whole number from 0 to 120")
     w = cfg["sync"]["workers"]
     if not (w == "auto" or (isinstance(w, int) and not isinstance(w, bool) and w >= 1)):
         raise ConfigError(f'{path}: workers must be "auto" or a whole number >= 1')

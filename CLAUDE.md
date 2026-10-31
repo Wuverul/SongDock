@@ -863,9 +863,15 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   rebuilt. An unreadable record = nothing held (the cache just stops
   filling). Eviction is about efficiency, not safety: Navidrome has every
   song, so ignoring a player only costs re-downloads if it docks again.
-  A player still in use that is *full* (e.g. a 16 GB Nano next to a big
-  Classic) never gets the rest, so it blocks eviction too; forget it with
-  `DockSetup.txt` or `musicdock-players forget` (not automatic yet).
+  **A full player no longer blocks eviction (user, 2026-10-30):** a final
+  sync that left songs or swaps out for lack of room (or hit the 47k limit)
+  sets `players.full`; `songs_on_every_player` ignores such a player while
+  another has room. The next sync with nothing left out clears it, and
+  prepare fetches again what it lacks.
+  **Eviction order (user, 2026-10-30):** songs not played in `[sync]
+  recent_play_months` (default 3, 0 = ignore; `RecentPlayMonths=`) go first,
+  then largest first. Last played = the later of Navidrome's `played` and the
+  record's plays. Only the cache copy goes: songs stay on the players.
 - **Songs too big for the cache (2026-10-26, user: "people do some crazy
   things"):** a run stops at the first song that doesn't fit, so one that
   can't fit even in an emptied cache would block everything after it

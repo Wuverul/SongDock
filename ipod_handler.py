@@ -1073,6 +1073,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     playlists_changed = 0
     if final:
         record.set_swaps_no_room(guid, len(no_room))
+        record.set_player_full(guid, skipped_full or over_limit or no_room)
         playlists_changed = sync_playlists(db, record, guid, manifest, pending)
         if pending or playlists_changed or session["dirty"]:
             commit()
