@@ -81,6 +81,33 @@ class PendingScreenTests(unittest.TestCase):
         dock_status.render("idle", args)
 
 
+class SafeHoursScreenTests(unittest.TestCase):
+    def args(self, connected, screen, hour):
+        from datetime import datetime
+        import dock_prepare
+        import dock_safehours
+        window = dock_safehours.parse("07:00-10:00")
+        now = datetime(2026, 10, 31, hour, 30)
+        return dock_prepare.safe_hours_args(window, connected, screen, now)
+
+    def test_docked_in_the_window_shows_it_with_the_resume_time(self):
+        self.assertEqual(self.args(True, "idle", 8),
+                         ["safehours", "--detail", "Syncs resume at 10:00 AM"])
+        self.assertEqual(self.args(True, "preparing", 8)[0], "safehours")
+
+    def test_nothing_docked_or_outside_the_window_leaves_dock_ready(self):
+        self.assertIsNone(self.args(False, "idle", 8))
+        self.assertIsNone(self.args(True, "idle", 12))
+
+    def test_dock_ready_comes_back_when_it_ends_or_the_player_leaves(self):
+        self.assertEqual(self.args(True, "safehours", 12), ["idle"])
+        self.assertEqual(self.args(False, "safehours", 8), ["idle"])
+
+    def test_never_covers_a_result_or_a_sync(self):
+        for screen in ("syncing", "safe", "failed", "nospace", "safehours"):
+            self.assertIsNone(self.args(True, screen, 8), screen)
+
+
 class RoomDatesTests(unittest.TestCase):
     def dates(self, previous, playlists, now=5000):
         import dock_room

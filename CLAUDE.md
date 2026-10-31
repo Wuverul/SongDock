@@ -724,6 +724,12 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   hardware yet. A reboot inside the window drops the transient timer; a
   docked iPod then syncs at boot only after the window (the boot-time
   sync is blocked and reschedules).
+- **SAFE HOURS with a player docked (user, 2026-10-31):** the window opening used to
+  change nothing on screen unless a sync tried to start, so an iPod docked overnight
+  showed DOCK READY. A finished prepare run now draws SAFE HOURS
+  (`safe_hours_args`) if a player is connected, and DOCK READY once the window closes
+  or the player leaves, so within one check interval. A run that fails early (server
+  down) doesn't draw.
 - `dock_restore.py` (2026-10-26, user request; **not tested on hardware:
   needs a new/wiped iPod**): a player missing >= `RESTORE_MIN` (500) songs
   of its plan starts a restore (restore.json next to the record: start

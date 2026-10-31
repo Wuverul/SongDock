@@ -1572,6 +1572,21 @@ def pending_args(manifest):
         return []
 
 
+def safe_hours_args(window, connected, screen, now=None):
+    """What a finished run should draw for safe hours, or None for nothing
+    special. A docked player shows SAFE HOURS while the window is open (user,
+    2026-10-31: DOCK READY left people guessing); once it's closed or the player
+    is gone, DOCK READY comes back. A SAFE HOURS already up stays, since a sync
+    may have left its own detail there."""
+    import dock_safehours
+    if not (connected and dock_safehours.active(window, now)):
+        return ["idle"] if screen == "safehours" else None
+    if screen not in (None, "idle", "preparing", "restoring"):
+        return None
+    end = dock_safehours.clock_text(dock_safehours.window_end(window, now))
+    return ["safehours", "--detail", f"Syncs resume at {end}"]
+
+
 def has_pending(idle_args):
     """True if DOCK READY's arguments say the next sync changes something."""
     a = dict(zip(idle_args[1::2], idle_args[2::2]))
@@ -1848,9 +1863,21 @@ def main(argv=None):
     elif not args.dry_run:
         # Redraw only when what DOCK READY would say differs from what's up
         # (dock_status checks --only-over under the panel lock).
+        import dock_safehours
         import dock_status
+        import dock_update
         state = dock_status.load_state()
-        if state.get("screen") in (None, "idle", "preparing", "restoring") and \
+        rest = None
+        try:
+            rest = safe_hours_args(dock_safehours.from_config(cfg), dock_update.player_connected(),
+                                   state.get("screen"))
+        except Exception:
+            log.exception("Couldn't check safe hours (continuing)")
+        if rest and rest[0] == "safehours":
+            screen.show(*rest, "--only-over", DRAW_OVER)
+        elif rest:
+            screen.show(*idle, "--only-over", "safehours")
+        elif state.get("screen") in (None, "idle", "preparing", "restoring") and \
                 state.get("argv") != idle:
             show(*idle)
     log.info("Done: %d/%d ready (%d added, %d removed, %d skipped)",
