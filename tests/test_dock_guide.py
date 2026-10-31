@@ -30,7 +30,7 @@ class GuideTests(unittest.TestCase):
                        "NewLibrary=yes", "StockCompatible=no", "StockCompatible=yes", "FLAC=no",
                        "comment contains #car", "the playlist \"Road Trip\"",
                        "\"Favorites\"", "deleted right away", "SAFE TO REMOVE",
-                       "SafeHours=07:00-10:00", "RecentPlayMonths=3", "MakeRoom=no", "AutoUpdate=no", "UPDATING", "PLAYER FULL", "RESTORING", "SAFE HOURS"):
+                       "SafeHours=07:00-10:00", "RecentPlayMonths=3", "MakeRoom=yes", "AutoUpdate=no", "UPDATING", "PLAYER FULL", "RESTORING", "SAFE HOURS"):
             self.assertIn(needle, text)
         self.assertLessEqual(max(len(line) for line in text.splitlines()), 80)
 

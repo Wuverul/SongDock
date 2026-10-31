@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.7.2
+
+Full players can make room for new songs if you choose, SongDock updates itself, and lossless swaps are safer.
+
+**To update:** install this one by hand, as in the README ("Updating"); after that, updates install themselves. Your settings, cache and the record of what's on your players are kept.
+- **Updates now install by themselves.** To only be told about them, set `auto_update = false`, or `AutoUpdate=no` in `DockSetup.txt`.
+- **A new PLAYER FULL screen** appears when new songs don't fit. Nothing is removed unless you turn on `make_room`.
+
+**Making room on a full player (off unless you turn it on)**
+- Set `make_room = true` in `[sync]`, or `MakeRoom=yes` in `DockSetup.txt`. When new songs don't fit, the oldest songs go, and only as many as it takes. A song's date is the newest of its last play, when it reached the player, and when a playlist holding it changed. Favorites go by plays like everything else.
+- `recent_play_months` (default 3, `RecentPlayMonths=`) sets how far back songs are safe. If that doesn't free enough room, the screen shows PLAYER FULL.
+- A removed song stays in your playlists on the server. It returns when there's free room, or as a new song if its date becomes recent, with the iPod's counts restored.
+
+**The dock's cache**
+- When the cache is full, songs not played within `recent_play_months` lose their cached copy first. Only that copy goes; they stay on the player. This is on for everyone.
+- A full player no longer stops the cache making room for another player's songs.
+
+**Automatic updates**
+- The dock checks GitHub once a day. A newer release shows on DOCK READY for 4 hours with its install time, then installs once no player is connected and no sync or prepare run is going. A player left docked holds it back and is never written to.
+- Only releases signed with the project's key install. If an install fails, the old version goes back and `musicdock-status` reports it.
+
+**Lossless**
+- A format swap can't lose the iPod's counts if a sync is interrupted or safe hours begin. The old song stays until a single save replaces it with the new one and its counts.
+- A swap that doesn't fit keeps the old format instead of losing the song, and DOCK READY shows "No room to convert 7". Swaps never push other songs off.
+- Hi-res ALAC files on the server become 16-bit on a stock iPod dock, tagged or not.
+- Size notes count lossless songs at their real size, and warn when the plan is more than the player holds.
+
+**Other**
+- `musicdock-status --share` prints a report for bug reports and for friends helping out, without your server, sign-in, Wi-Fi, player, playlist or song names. It sends nothing.
+- A basic music player on a Rockbox-only dock now gets MP3 instead of Ogg, Opus or FLAC, and so does every other player on that dock.
+- The README has an Updating section.
+
+**Known limits**
+- A basic player's first sync on a Rockbox-only dock can still get Ogg or FLAC; the next sync replaces them.
+- On Rockbox and basic players, an interrupted swap can leave a song missing until the next sync.
+- Verified on an iPod nano 4G: playback and counts after lossless swaps, the artist rules and Chillhop-style compilations. Not yet tried on hardware: automatic updates, `make_room` and PLAYER FULL, a swap interrupted by unplugging or safe hours, a real full cache, and a basic player sharing a dock with a Rockbox player.
+
 ## 0.7.1
 
 Lossless songs by playlist, and one artist listing per artist.

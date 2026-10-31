@@ -217,7 +217,7 @@ for a dark case):
 |---|---|
 | **STARTING UP...** | The dock is booting: waiting for Wi-Fi and the clock |
 | **UPDATING** | A new version of SongDock is installing (see Updating). Leave the power connected |
-| **PLAYER FULL** | The sync finished and it's safe to unplug, but new songs didn't fit, even after removing every song older than `recent_play_months` |
+| **PLAYER FULL** | The sync finished and it's safe to unplug, but new songs didn't fit. `make_room = true` lets old songs make way for them |
 | **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date"). "No room to convert 7" means 7 songs keep their current format until the player has space |
 | **PREPARING 3/12** | Downloading and converting new music. The iPod is safe to unplug |
 | **SYNCING** | **Don't unplug.** Says what it's doing (reading plays, copying music); the bar shows progress, e.g. songs copied. The icon in the corner shows the kind of player (below) |
@@ -288,10 +288,10 @@ waiting to be sent stay queued.
 2. Find the newest version on the
    [releases page](https://github.com/Wuverul/SongDock/releases). Read its notes
    in `CHANGELOG.md`: they say if the next sync will change anything on your iPod.
-3. On the Pi, download and install it, putting that version in place of `0.7.1`:
+3. On the Pi, download and install it, putting that version in place of `0.7.2`:
 
    ```sh
-   VERSION=0.7.1
+   VERSION=0.7.2
    curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
    tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
    cd ~/musicdock/songdock && sudo ./pi/install.sh
@@ -302,8 +302,8 @@ waiting to be sent stay queued.
 
 There's no need to reinstall Raspberry Pi OS or set anything up again.
 
-**Automatic updates** are on by default from the version after 0.7.1, whose update
-you install by hand as above. The dock checks GitHub once a day. A newer release
+**Automatic updates** are on by default from 0.7.2, which you install by hand as
+above if you're on an older version. The dock checks GitHub once a day. A newer release
 shows on DOCK READY with its install time, 4 hours ahead ("Update 0.8.0 at 3:15
 PM"). At that time, or later if needed, it installs once no player is connected
 and no sync or prepare run is going. A player left docked holds the update back

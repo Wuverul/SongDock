@@ -892,6 +892,15 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(self.lossless_server(flac), cfg, player_kinds={"generic"})
         self.assertEqual(self.files(), ["f.mp3"])
 
+    def test_making_room_on_players_is_off_unless_turned_on(self):
+        server = FakeServer(songs=[song("a")])
+        self.run_prepare(server)
+        self.assertNotIn("make_room_months", self.manifest())
+        cfg = config()
+        cfg["sync"]["make_room"] = True
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.manifest()["make_room_months"], 3)
+
     # Lossless songs and a full cache.
     def test_dropped_alac_keeps_its_size_and_isnt_fetched_again(self):
         server = FakeServer(songs=[song("c", size=1500), song("d")],

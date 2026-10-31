@@ -1351,7 +1351,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         return {
             "targets": cfg["sync"]["targets"], "device": device,
             "playlist_tag": cfg["sync"].get("playlist_tag", ""),
-            **({"make_room_months": months} if cfg["sync"].get("make_room", True) else {}),
+            **({"make_room_months": months} if cfg["sync"].get("make_room", False) else {}),
             **({"lossless_playlists": lossless_lists} if lossless_lists else {}),
             **({"unsplit_artists": sorted(unsplit_artists)} if unsplit_artists else {}),
             "tracks": ready, "on_player": uncached, "playlists": playlists,

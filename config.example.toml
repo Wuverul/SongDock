@@ -40,12 +40,13 @@ workers = "auto"                   # parallel conversions: "auto" = CPU cores - 
 removal_grace_days = 7             # 0-30: keep tracks that left every list cached this
                                    # long (re-adding is instant); deleted oldest-first
                                    # sooner if the SD card drops below 25% free
-make_room = true                   # a full player loses its oldest songs, only as many as
-                                   # new songs need. false: new songs just wait for room.
-recent_play_months = 3             # 0-120: songs played, added or in a playlist updated
-                                   # within this long are never removed to make room.
-                                   # Past it, the screen says PLAYER FULL. Also decides
-                                   # which cached copies go first when the cache is full.
+make_room = false                  # true: when new songs don't fit, a player loses its
+                                   # oldest songs, only as many as needed. false: nothing
+                                   # is removed; new songs wait and the screen says PLAYER FULL.
+recent_play_months = 3             # 0-120: with make_room, songs played, added or in a
+                                   # playlist updated within this long are never removed.
+                                   # Also decides which cached copies go first when the
+                                   # dock's cache is full (those songs stay on players).
 auto_update = true                 # install new signed releases: announced for 4 hours,
                                    # then installed once no player is connected.
                                    # false: only says an update is available.

@@ -26,9 +26,9 @@ and the list of known iPods written into its MediaDock.txt.
     SafeHours=07:00-10:00        no syncs in this daily window (local time;
                                  SafeHours=off to turn it off)
     AutoUpdate=no                new releases are announced, not installed
-    MakeRoom=no                  a full player keeps its songs; new ones wait
-    RecentPlayMonths=3           how far back songs are safe from removal to
-                                 make room on a full player
+    MakeRoom=yes                 a full player loses its oldest songs for new ones
+    RecentPlayMonths=3           with MakeRoom=yes, how far back songs are safe
+                                 from removal (also orders the dock's cache)
 
 (see dock_players.py for what forgetting does). Several lines are fine.
 Rules, as for wifi.txt:
@@ -241,7 +241,7 @@ def plan_settings(settings, cfg):
             done.append("Automatic updates already " + ("on" if on else "off"))
     if "MakeRoom" in settings:
         on = yes_no("MakeRoom", settings["MakeRoom"])
-        if on != cfg["sync"].get("make_room", True):
+        if on != cfg["sync"].get("make_room", False):
             changes[("sync", "make_room")] = on
             done.append("Make room on full players " + ("on" if on else "off"))
         else:

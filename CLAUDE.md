@@ -899,7 +899,7 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   that don't fit push off the oldest songs, just enough, and never one dated
   within `recent_play_months` (date = latest of last play, added to the player,
   a playlist holding it changing; favorites have no date of their own). Not
-  enough = PLAYER FULL (`nospace`). `make_room` (default on; `MakeRoom=`). Removed
+  enough = PLAYER FULL (`nospace`). `make_room` (default **off**, user's call before 0.7.2: removing music should be a choice; `MakeRoom=`). Removed
   songs stay in the plan, listed in `room_removed` with their iPod counts: they
   count as held, return only into free room (counts restored) or as new songs
   once their date is recent. Format swaps never push songs off. Dates live in
@@ -1132,7 +1132,7 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 6. 3D-printed dock enclosure
 7. Documentation, setup guide, and packaging for friends. **v0.5.0 released
    2026-10-24** (tag `v0.5.0`, GitHub release with `songdock-0.5.0.tar.gz`,
-   MIT; VERSION file drives `make_release.sh`; CHANGELOG.md). **0.5.1 (2026-10-25)** = 0.5.0 + the timer fix only, built from branch `release-0.5` (cherry-pick), so untested features on main (generic players, `flac`) wait for 0.6.0. **0.6.0 (2026-10-25)** from main: generic players, Rockbox on hardware (flash drive), `flac`, USB NOT WORKING, "player" wording. **0.7.1 (2026-10-30)**: `#lossless` playlists (ALAC), one artist listing per artist, compilation_albums. **0.7.0 (2026-10-26)**: streaming iPod database (ipod_db), hourly/end saves + copy log, one sync per prepare run, auto batch size, safe hours (default 7-10 AM), RESTORING, Wi-Fi switch-back, size notes + 47k cutoff, oversized song/cover skips, player icons. Released before plays through the new code were tried on hardware (user's call: no outside users yet). The first build attempt would have shipped without ipod_db.py: make_release.sh now copies every top-level module and checks against git. **Built
+   MIT; VERSION file drives `make_release.sh`; CHANGELOG.md). **0.5.1 (2026-10-25)** = 0.5.0 + the timer fix only, built from branch `release-0.5` (cherry-pick), so untested features on main (generic players, `flac`) wait for 0.6.0. **0.6.0 (2026-10-25)** from main: generic players, Rockbox on hardware (flash drive), `flac`, USB NOT WORKING, "player" wording. **0.7.1 (2026-10-30)**: `#lossless` playlists (ALAC), one artist listing per artist, compilation_albums. **0.7.2 (2026-10-30)**: making room on full players (opt-in), automatic signed updates, swaps that can't lose counts, `--share`. First signed release: `make_release.sh` signs (needs the passphrase at a real terminal), upload `.tar.gz` and `.tar.gz.sig`. **0.7.0 (2026-10-26)**: streaming iPod database (ipod_db), hourly/end saves + copy log, one sync per prepare run, auto batch size, safe hours (default 7-10 AM), RESTORING, Wi-Fi switch-back, size notes + 47k cutoff, oversized song/cover skips, player icons. Released before plays through the new code were tried on hardware (user's call: no outside users yet). The first build attempt would have shipped without ipod_db.py: make_release.sh now copies every top-level module and checks against git. **Built
    2026-10-16:** README.md, INSTALL.md, `make_release.sh` (builds
    `dist/music-dock/` + `dist/music-dock-<date>.tar.gz`: only Pi code, pi/,
    vendor/, docs; refuses to build on failing tests or personal data; no macOS

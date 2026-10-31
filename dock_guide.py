@@ -182,13 +182,14 @@ A daily window with no syncs, e.g. to grab the iPod for a morning commute:
   An iPod docked then just charges; a sync running when the window opens
   finishes early. Either way it syncs afterwards if it's still docked.
 
-When new songs don't fit on a player, it loses its oldest songs, only as many
-as it takes. A song's date is its last play, when it reached the player, or
-when a playlist holding it changed, whichever is newest. Favorites go by plays
-like the rest. A removed song returns when there's free room.
-  RecentPlayMonths=3  (the default) songs newer than this are never removed.
-                      If that isn't enough, the screen shows PLAYER FULL.
-  MakeRoom=no         nothing is removed; new songs wait for room
+When new songs don't fit on a player, they wait and the screen shows PLAYER
+FULL. Nothing is removed unless you turn this on:
+  MakeRoom=yes        the player loses its oldest songs, only as many as it
+                      takes. A song's date is its last play, when it reached
+                      the player, or when a playlist holding it changed,
+                      whichever is newest. Favorites go by plays like the
+                      rest. A removed song returns when there's free room.
+  RecentPlayMonths=3  (the default) songs newer than this are never removed
 
 New versions of SongDock install by themselves. DOCK READY shows the version
 and time 4 hours ahead; it waits if a player is connected or music is being
@@ -251,8 +252,7 @@ WHAT THE SCREEN MEANS
                      by itself. Do not unplug.
   UPDATING           Installing a new version of SongDock. Leave the dock's
                      power connected.
-  PLAYER FULL        Finished, safe to remove, but new songs didn't fit even
-                     after removing songs older than RecentPlayMonths.
+  PLAYER FULL        Finished, safe to remove, but new songs didn't fit.
   DOCK READY         Idle. Shows what the next sync will add and remove.
                      "No room to convert 7": 7 songs keep their format
                      until the player has space.

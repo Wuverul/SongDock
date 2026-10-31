@@ -22,7 +22,7 @@ DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
              "playlist_tag": "#ipod", "lossless_tag": "#lossless",
              "primary_artist": True, "artist_names": [], "compilation_albums": [], "workers": "auto", "removal_grace_days": 7,
-             "recent_play_months": 3, "make_room": True, "auto_update": True,
+             "recent_play_months": 3, "make_room": False, "auto_update": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
