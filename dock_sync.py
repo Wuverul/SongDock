@@ -525,7 +525,8 @@ def size_notes(record, guid, root, manifest, cfg, kind):
         on_player = len({r["navidrome_id"] for r in record.tracks(guid)})
         planned = len(dock_restore.targets(manifest or {}))
         notes = dock_limits.player_notes(on_player, planned, capacity, cfg, kind,
-                                         dock_limits.plan_bytes(manifest or {}))
+                                         dock_limits.plan_bytes(manifest or {}),
+                                         dock_limits.alac_bytes(manifest or {}))
         for note in notes:
             log.warning("%s", note)
         import dock_artists
@@ -768,11 +769,13 @@ def ask_for_followup(cfg, applied, guid):
         record = Record()
         try:
             records = record.tracks(guid)
+            no_room = (record.player(guid) or {}).get("swaps_no_room")
         finally:
             record.close()
         add, remove = ipod_handler.pending_changes(
             newest, {r["navidrome_id"] for r in records})
-        if not (add or remove or any(ipod_handler.pending_conversions(newest, records))):
+        if not (add or remove
+                or any(ipod_handler.conversions_ready(newest, records, no_room)[:2])):
             return False
         dock_resync.request()
     except Exception:

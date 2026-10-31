@@ -277,10 +277,12 @@ def ipod_section(record_path, manifest, now=None):
              f"{when(p['last_sync'])} ({ago(p['last_sync'], now)}), {len(set(present))} tracks"]
     if manifest:
         add, remove = ipod_handler.pending_changes(manifest, present)
-        lossless, other = ipod_handler.pending_conversions(manifest, records)
+        lossless, other, held = ipod_handler.conversions_ready(
+            manifest, records, p["swaps_no_room"] if "swaps_no_room" in p.keys() else 0)
         changes = [f"+{add} -{remove} tracks"] if add or remove else []
         changes += [f"{lossless} to lossless"] if lossless else []
         changes += [f"{other} to another format"] if other else []
+        changes += [f"{held} format changes waiting for room on the player"] if held else []
         lines.append("Next sync: " + (", ".join(changes) or "nothing to change"))
     plays = f"Plays: {sent or 0} sent so far, {waiting or 0} waiting to send"
     if unmatched:
@@ -462,7 +464,7 @@ def main(argv=None):
         pl = facts["player"]
         facts["size_notes"] = dock_limits.player_notes(
             pl["on_player"], len(dock_restore.targets(manifest)), pl["capacity"], cfg,
-            pl["kind"], dock_limits.plan_bytes(manifest))
+            pl["kind"], dock_limits.plan_bytes(manifest), dock_limits.alac_bytes(manifest))
     print("\nProblems")
     for line in problems(facts) or ["none"]:
         print(f"  {line}")

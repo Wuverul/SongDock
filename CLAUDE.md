@@ -1022,6 +1022,20 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    pending: 109 songs" / "Format changes: n songs" instead of "up to
    date" (a small extra row beside +/- counts); `pending_conversions`.
    They also count for the auto re-sync, so a docked iPod swaps by itself.
+   **Space (user, 2026-10-30):** a swap deletes the old file first, so
+   `swaps_without_room` starts only those whose new file is cached and
+   fits (songs the player lacks first, then the smallest increases). The
+   rest keep their format and names still follow the plan;
+   `players.swaps_no_room` holds the count, which `conversions_ready` takes
+   off the pending swaps: DOCK READY "No room to convert n", no re-syncs.
+   **Sizes in the plan:** eviction drops the largest files first, so the
+   average of what's cached undercounted dropped ALACs. `on_player` entries
+   keep their real `size`; those never measured, and `skipped` entries,
+   carry `estimate` (`estimated_size`). `plan_bytes` totals them,
+   `fit_note` warns when the plan exceeds the player, `alac_bytes` grows
+   only MP3s from lossless sources. **Open:** safe hours cutting a sync
+   short after swap removals: those songs are gone until the next sync
+   and lose their iPod counts.
    The notes below are the original plan:
    1. **Hi-res down-conversion first.** `audio_options` for `alac` is
       only `-c:a alac`, so 24-bit / 96 kHz FLAC stays hi-res: 3-4x the

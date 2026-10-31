@@ -112,6 +112,29 @@ def alac_rate(track):
     return 44100 if rate % 44100 == 0 else 48000
 
 
+# LAME's published average bitrates for -V0 to -V9.
+MP3_VBR_KBPS = (245, 225, 190, 175, 165, 130, 115, 100, 85, 65)
+
+
+def estimated_size(track, target, device_cfg):
+    """About how big a song's prepared file will be, before it's made. ALAC
+    is about a FLAC's size at the same quality (a real 24/96 FLAC: 112 MB to
+    36.6 MB, this says 37.3)."""
+    size = int(track.get("size") or 0)
+    if not target:
+        return size
+    if target == "alac":
+        depth = int(track.get("bitDepth") or 0) or 16
+        rate = int(track.get("samplingRate") or 0)
+        return int(size * min(1, 16 / depth) * (alac_rate(track) / rate if rate else 1))
+    quality = device_cfg["mp3_quality"].lower() if target == "mp3" else device_cfg["aac_bitrate"].lower()
+    if quality.startswith("v"):
+        kbps = MP3_VBR_KBPS[int(quality[1:])]
+    else:
+        kbps = int(quality.rstrip("k"))
+    return int(track.get("duration") or 0) * kbps * 125
+
+
 def audio_options(device_cfg, target=None, track=None):
     """ffmpeg audio options for a song's format (default: convert_to)."""
     target = target or device_cfg["convert_to"]
@@ -1003,6 +1026,14 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
     to_remove = sorted(existing - wanted.keys())     # includes tracks kept earlier
 
+    # A dropped file's real size stays in the plan, so the plan's total stays
+    # right when the largest (usually lossless) files leave the cache.
+    by_id = {t["id"]: t for t in targets}
+    known_sizes = {t["id"]: t["size"]
+                   for t in previous.get("tracks", []) + previous.get("on_player", [])
+                   if t.get("size") and t["id"] in by_id
+                   and t.get("encoding") == made_as(by_id[t["id"]])}
+
     # Cached conversions made with different settings get re-done. Entries
     # from before encodings were recorded are assumed current.
     kept = KeptTracks(cache_dir, tracks_dir, clock)
@@ -1252,6 +1283,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                if covers.get(t["id"], "unchecked") != "unchecked" else {}),
         }
 
+    def size_of_uncached(t):
+        if t["id"] in known_sizes:
+            return {"size": known_sizes[t["id"]]}
+        return {"estimate": estimated_size(t, format_of(t), cfg["device"])}
+
     def build_manifest(waiting=False):
         """The plan from what's cached now. waiting=True (a batch handed over
         mid-run): songs not prepared yet are listed as skipped ("waiting to
@@ -1264,13 +1300,16 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 ready.append({"file": f"tracks/{name}", "size": os.path.getsize(path),
                               **entry(t)})
             elif name in held:
-                uncached.append(entry(t))         # on the player; no file needed
+                uncached.append({**entry(t), **size_of_uncached(t)})  # no file needed
         held_ids = {t["id"] for t in uncached}
         not_ready = [s for s in skipped if s["id"] not in held_ids]
         if waiting:
             listed = held_ids | {t["id"] for t in ready} | {s["id"] for s in not_ready}
             not_ready += [{"id": t["id"], "title": label(t), "reason": "waiting to be prepared",
                            "error": False} for t in wanted.values() if t["id"] not in listed]
+        not_ready = [{**s, "encoding": made_as(by_id[s["id"]]),
+                      "source_suffix": by_id[s["id"]].get("suffix"),
+                      **size_of_uncached(by_id[s["id"]])} for s in not_ready]
         return {
             "targets": cfg["sync"]["targets"], "device": device,
             "playlist_tag": cfg["sync"].get("playlist_tag", ""),
@@ -1338,6 +1377,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                                      disk_usage)
                 while reason and evictable and name not in held:
                     gone = evictable.pop(0)
+                    known_sizes[wanted[gone]["id"]] = os.path.getsize(os.path.join(tracks_dir, gone))
                     os.remove(os.path.join(tracks_dir, gone))
                     evicted += 1
                     log.info("Cache full: dropped %s from the cache (it's on the player)",
@@ -1468,9 +1508,11 @@ def pending_args(manifest):
             record.close()
         add, remove = ipod_handler.pending_changes(
             manifest, {r["navidrome_id"] for r in records})
-        lossless, other = ipod_handler.pending_conversions(manifest, records)
+        lossless, other, held = ipod_handler.conversions_ready(
+            manifest, records, player.get("swaps_no_room"))
         return ["--pending-add", str(add), "--pending-remove", str(remove),
                 "--pending-lossless", str(lossless), "--pending-format", str(other),
+                "--swaps-no-room", str(held),
                 "--last-sync", str(int(player["last_sync"]))]
     except Exception:
         log.exception("Couldn't work out the next sync's changes")

@@ -809,6 +809,47 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(self.files(), ["a.mp3", "c.mp3"])            # b went, not a
         self.assertEqual(summary["evicted"], 1)
 
+    # Lossless songs and a full cache.
+    def test_dropped_alac_keeps_its_size_and_isnt_fetched_again(self):
+        server = FakeServer(songs=[song("c", size=1500), song("d")],
+                            playlists={"L": ("Hi-Fi", [song("a", size=5000)], "#ipod #lossless")})
+        cfg = self.lossless_config(max_gb=self.SMALL)
+        cfg["sync"]["targets"] = ["starred"]
+        self.cached("a.m4a", 6000)
+        self.cached("d.mp3", 5000)
+        held = {"a": {"alac 16"}}
+        self.run_prepare(server, cfg, on_player=held)
+        self.assertEqual(self.files(), ["c.mp3", "d.mp3"])
+        entries = [(t["id"], t["size"], t["encoding"]) for t in self.manifest()["on_player"]]
+        self.assertEqual(entries, [("a", 6000, "alac 16")])
+        before = list(server.downloads)
+        self.run_prepare(server, cfg, on_player=held)
+        self.assertEqual(server.downloads, before)
+        self.assertEqual(self.manifest()["on_player"][0]["size"], 6000)
+
+    def test_song_dropped_as_mp3_then_tagged_lossless_stays_until_its_alac_is_ready(self):
+        server = FakeServer(songs=[song("x")],
+                            playlists={"L": ("Hi-Fi", [song("a", size=5000)], "#ipod #lossless")})
+        cfg = self.lossless_config(max_gb=self.SMALL)
+        cfg["sync"]["targets"] = ["starred"]
+        self.cached("x.mp3", 11000)                   # the player lacks it: can't be dropped
+        self.run_prepare(server, cfg, on_player={"a": {"mp3 v0"}})
+        m = self.manifest()
+        self.assertEqual(m["on_player"], [])
+        self.assertEqual([(s["id"], s["encoding"]) for s in m["skipped"]], [("a", "alac 16")])
+        self.assertGreater(m["skipped"][0]["estimate"], 0)
+
+    def test_estimated_sizes(self):
+        device = config()["device"]
+        cd = song("a", size=30_000_000)
+        hires = dict(cd, size=112_000_000, bitDepth=24, samplingRate=96000)
+        self.assertEqual(dock_prepare.estimated_size(cd, None, device), 30_000_000)
+        self.assertEqual(dock_prepare.estimated_size(cd, "alac", device), 30_000_000)
+        self.assertAlmostEqual(dock_prepare.estimated_size(hires, "alac", device) / 1e6, 37.3, 0)
+        self.assertEqual(dock_prepare.estimated_size(cd, "mp3", device), 200 * 245 * 125)
+        self.assertEqual(dock_prepare.estimated_size(cd, "mp3", dict(device, mp3_quality="320k")),
+                         200 * 320 * 125)
+
     # Concurrent batches: the plan is handed over mid-run.
     def batch_run(self, batch, cores, n=4):
         cfg = config()

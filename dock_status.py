@@ -198,6 +198,8 @@ def conversions_line(args):
         return f"Lossless pending: {args.pending_lossless} songs"
     if args.pending_format:
         return f"Format changes: {args.pending_format} songs"
+    if args.swaps_no_room:
+        return f"No room to convert {args.swaps_no_room}"
     return None
 
 
@@ -780,6 +782,8 @@ def build_parser():
                    help="idle: songs the next sync swaps for lossless files")
     p.add_argument("--pending-format", type=int, default=0,
                    help="idle: songs the next sync swaps for another format")
+    p.add_argument("--swaps-no-room", type=int, default=0,
+                   help="idle: format swaps waiting for room on the player")
     p.add_argument("--last-sync", type=float, metavar="EPOCH",
                    help="idle: when the iPod was last synced")
     p.add_argument("--queued", type=int, default=0,

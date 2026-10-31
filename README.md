@@ -213,7 +213,7 @@ for a dark case):
 | Screen | Meaning |
 |---|---|
 | **STARTING UP...** | The dock is booting: waiting for Wi-Fi and the clock |
-| **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date") |
+| **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date"). "No room to convert 7" means 7 songs keep their current format until the player has space |
 | **PREPARING 3/12** | Downloading and converting new music. The iPod is safe to unplug |
 | **SYNCING** | **Don't unplug.** Says what it's doing (reading plays, copying music); the bar shows progress, e.g. songs copied. The icon in the corner shows the kind of player (below) |
 | **PREPARE & SYNC** | **Don't unplug.** New music is still converting while the first batches copy to the iPod (Pi Zero 2 W). Shows both counts; the bar covers both |

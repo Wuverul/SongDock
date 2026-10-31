@@ -237,6 +237,8 @@ WHAT THE SCREEN MEANS
   CONNECTING         New music is ready for a docked iPod; it syncs again
                      by itself. Do not unplug.
   DOCK READY         Idle. Shows what the next sync will add and remove.
+                     "No room to convert 7": 7 songs keep their format
+                     until the player has space.
   WI-FI CHANGED / WI-FI UNCHANGED, DOCK UPDATED / SETUP NOT USED
                      Results of {wifi} and {setup} (see above).
   USB NOT WORKING    A plug-in failed and the dock stopped noticing

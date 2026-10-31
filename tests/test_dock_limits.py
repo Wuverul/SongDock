@@ -33,21 +33,42 @@ class LimitTests(unittest.TestCase):
     def test_alac_suggested_only_for_big_stock_ipods_on_mp3_when_it_fits(self):
         big, small, music = 512e9, 16e9, 12e9            # 12 GB of MP3 -> ~40 GB of ALAC
         notes = lambda *a, **kw: lim.player_notes(1_455, 1_455, *a, **kw)   # noqa: E731
-        self.assertIn("ALAC", notes(big, MP3, music_bytes=music)[0])
-        self.assertEqual(notes(small, MP3, music_bytes=music), [])
+        self.assertIn("ALAC", notes(big, MP3, alac_size=music)[0])
+        self.assertEqual(notes(small, MP3, alac_size=music), [])
         alac = {"device": {"type": "stock_ipod", "convert_to": "alac"}}
-        self.assertEqual(notes(big, alac, music_bytes=music), [])
-        self.assertEqual(notes(big, MP3, kind="rockbox", music_bytes=music), [])
-        self.assertEqual(notes(None, MP3, music_bytes=music), [])          # not known yet
+        self.assertEqual(notes(big, alac, alac_size=music), [])
+        self.assertEqual(notes(big, MP3, kind="rockbox", alac_size=music), [])
+        self.assertEqual(notes(None, MP3, alac_size=music), [])          # not known yet
         self.assertEqual(notes(big, MP3), [])                               # size unknown
-        # 300 GB of MP3 would be ~1 TB of ALAC: no suggestion.
-        self.assertEqual(notes(big, MP3, music_bytes=300e9), [])
+        # ~1 TB of ALAC: no suggestion.
+        self.assertEqual(notes(big, MP3, alac_size=990e9), [])
 
     def test_plan_size_counts_uncached_songs_at_the_average(self):
         plan = {"tracks": [{"id": "a", "size": 8e6}, {"id": "b", "size": 12e6}],
                 "on_player": [{"id": "c"}], "skipped": [{"id": "d"}]}
         self.assertEqual(lim.plan_bytes(plan), 40e6)
         self.assertIsNone(lim.plan_bytes({"tracks": []}))
+
+    def test_dropped_lossless_files_still_count_at_their_size(self):
+        # Eviction takes the largest first: the average of what's left would
+        # count a 30 MB ALAC as a 8 MB MP3.
+        plan = {"tracks": [{"id": "a", "size": 8e6}],
+                "on_player": [{"id": "b", "size": 30e6, "encoding": "alac 16"}],
+                "skipped": [{"id": "c", "estimate": 25e6}]}
+        self.assertEqual(lim.plan_bytes(plan), 63e6)
+
+    def test_only_lossless_sources_on_mp3_grow_as_alac(self):
+        plan = {"tracks": [
+            {"id": "a", "size": 10e6, "encoding": "mp3 v0", "source_suffix": "flac"},
+            {"id": "b", "size": 10e6, "encoding": "mp3 v0", "source_suffix": "ogg"},
+            {"id": "c", "size": 10e6, "encoding": "original", "source_suffix": "mp3"},
+            {"id": "d", "size": 30e6, "encoding": "alac 16", "source_suffix": "flac"}]}
+        self.assertEqual(lim.alac_bytes(plan), 83e6)
+
+    def test_warns_when_the_plan_is_more_than_the_player_holds(self):
+        self.assertIn("won't fit", lim.fit_note(16e9, 18e9))
+        self.assertIsNone(lim.fit_note(16e9, 12e9))
+        self.assertIsNone(lim.fit_note(None, 18e9))
 
     def test_written_into_mediadock_txt(self):
         import dock_setup

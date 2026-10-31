@@ -734,6 +734,63 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((tracks[0].play_count, tracks[0].skip_count, tracks[0].rating,
                           tracks[0].time_played), (7, 2, 80, 3000000000))
 
+    def swap_with_free(self, free):
+        """An MP3 on the player, then the plan asks for a 40 MB lossless file."""
+        a = self.song("n1", "One")
+        self.apply(self.manifest([a]))
+        with open(os.path.join(self.cache, "tracks", "n1.m4a"), "wb") as f:
+            f.truncate(40_000_000)
+        before = self.db().tracks[0].dbid
+        usage = shutil.disk_usage(self.tmp)
+        with mock.patch("shutil.disk_usage", return_value=usage._replace(free=free)):
+            summary = self.apply(self.manifest(
+                [dict(a, file="tracks/n1.m4a", encoding="alac 16", title="Renamed")]))
+        return before, summary
+
+    def test_swap_without_room_keeps_the_song_as_it_is(self):
+        self.rec.upsert_player(G, model="xB903")
+        before, summary = self.swap_with_free(h.FREE_SPACE_MARGIN + 1_000_000)
+        self.assertEqual((summary["replaced"], summary["removed"], summary["swaps_no_room"]),
+                         (0, 0, 1))
+        track = self.db().tracks[0]
+        self.assertEqual((track.dbid, track.title), (before, "Renamed"))    # names still follow
+        self.assertEqual(self.rec.tracks(G)[0]["encoding"], "mp3 v0")
+        self.assertEqual(self.rec.player(G)["swaps_no_room"], 1)
+
+    def test_swap_with_room_happens_and_clears_the_count(self):
+        self.rec.upsert_player(G, model="xB903")
+        self.rec.set_swaps_no_room(G, 5)
+        before, summary = self.swap_with_free(h.FREE_SPACE_MARGIN + 100_000_000)
+        self.assertEqual((summary["replaced"], summary["swaps_no_room"]), (1, 0))
+        self.assertNotEqual(self.db().tracks[0].dbid, before)
+        self.assertEqual(self.rec.tracks(G)[0]["encoding"], "alac 16")
+        self.assertEqual(self.rec.player(G)["swaps_no_room"], 0)
+
+    def test_swap_whose_new_file_is_gone_keeps_the_song(self):
+        a = self.song("n1", "One")
+        self.apply(self.manifest([a]))
+        before = self.db().tracks[0].dbid
+        summary = self.apply(self.manifest([dict(a, file="tracks/gone.m4a", encoding="alac 16")]))
+        self.assertEqual((summary["removed"], summary["swaps_no_room"]), (0, 0))
+        self.assertEqual(self.db().tracks[0].dbid, before)
+
+    def test_room_goes_to_missing_songs_then_the_smallest_swaps(self):
+        margin = h.FREE_SPACE_MARGIN
+        swaps = {"big": (100, 10), "small": (30, 10), "shrinks": (10, 50)}
+        self.assertEqual(h.swaps_without_room(margin + 30, swaps), {"big"})
+        self.assertEqual(h.swaps_without_room(margin + 130, swaps, new_bytes=100),
+                         {"big"})
+        self.assertEqual(h.swaps_without_room(margin + 30, swaps, new_bytes=100),
+                         {"big", "small"})
+        self.assertEqual(h.swaps_without_room(margin, swaps, freed=500), set())
+
+    def test_held_back_swaps_arent_counted_as_pending(self):
+        plan = {"tracks": [{"id": "a", "encoding": "alac 16"}, {"id": "b", "encoding": "alac 16"}]}
+        records = [{"navidrome_id": n, "encoding": "mp3 v0"} for n in ("a", "b")]
+        self.assertEqual(h.conversions_ready(plan, records), (2, 0, 0))
+        self.assertEqual(h.conversions_ready(plan, records, 1), (1, 0, 1))
+        self.assertEqual(h.conversions_ready(plan, records, 9), (0, 0, 2))
+
     def test_sysinfo_restored_after_reset(self):
         self.rec.upsert_player(G, model="xB903")
         open(h.sysinfo_path(self.mount), "w").close()            # emptied by a restore

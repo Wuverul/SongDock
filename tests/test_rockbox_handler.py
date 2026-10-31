@@ -5,9 +5,11 @@ Needs mutagen + Pillow (the Pi venv). Run: python3 -m unittest discover -s tests
 import io
 import logging
 import os
+import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
@@ -71,6 +73,19 @@ class RockboxTests(unittest.TestCase):
         f = rb._easy(os.path.join(self.mount, rel))
         return {k: (f.get(k) or [None])[0] for k in ("title", "album", "genre",
                                                      rb.ID_TAG.lower())}
+
+    def test_swap_without_room_keeps_the_file(self):
+        a = self.song("n1", "One")
+        self.sync(self.manifest([a]))
+        before = self.files()
+        with open(os.path.join(self.cache, "tracks", "n1.flac"), "wb") as f:
+            f.truncate(40_000_000)
+        usage = shutil.disk_usage(self.tmp)
+        with mock.patch("shutil.disk_usage",
+                        return_value=usage._replace(free=rb.FREE_SPACE_MARGIN + 1_000_000)):
+            self.sync(self.manifest([dict(a, file="tracks/n1.flac", encoding="original")]))
+        self.assertEqual(self.files(), before)
+        self.assertEqual(self.rec.player(G)["swaps_no_room"], 1)
 
     def write_log(self, lines, tz="UTC"):
         with open(os.path.join(self.mount, rb.SCROBBLER_LOG), "w") as f:

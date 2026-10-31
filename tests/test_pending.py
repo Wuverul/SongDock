@@ -66,6 +66,8 @@ class PendingScreenTests(unittest.TestCase):
                          "Lossless pending: 109 songs")
         self.assertEqual(self.line("--pending-add", "0", "--pending-format", "4"),
                          "Format changes: 4 songs")
+        self.assertEqual(self.line("--pending-add", "0", "--swaps-no-room", "7"),
+                         "No room to convert 7")
         self.assertEqual(self.line("--pending-add", "2", "--pending-lossless", "109"),
                          "Next sync: +2  −0 tracks")
 

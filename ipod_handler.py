@@ -782,6 +782,39 @@ def pending_conversions(manifest, records):
     return lossless, other
 
 
+def conversions_ready(manifest, records, no_room=0):
+    """(to lossless, other, held back): pending_conversions without the
+    `no_room` swaps the last sync couldn't fit (players.swaps_no_room), which
+    wait for space rather than for a sync."""
+    lossless, other = pending_conversions(manifest, records)
+    held = min(no_room or 0, lossless + other)
+    from_lossless = min(held, lossless)
+    return lossless - from_lossless, other - (held - from_lossless), held
+
+
+def swaps_without_room(free, swaps, new_bytes=0, freed=0):
+    """Which format swaps can't happen: a swap deletes the old file before
+    the new one is copied, so one that doesn't fit would lose the song.
+    swaps: {song id: (new size, old size)}. Songs the player lacks (new_bytes)
+    come first, then the smallest increases, so the most songs get swapped."""
+    room = free - FREE_SPACE_MARGIN + freed - new_bytes
+    held = set()
+    for nid in sorted(swaps, key=lambda n: (swaps[n][0] - swaps[n][1], n)):
+        grows = swaps[nid][0] - swaps[nid][1]
+        if grows > 0 and grows > room:
+            held.add(nid)
+        else:
+            room -= grows
+    return held
+
+
+def file_size(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
+
+
 def fill_missing_names(track, t):
     """Names follow the plan, not the file's tags, on new tracks and those
     already on the player (no re-copy): Navidrome's album, the main artist
@@ -881,6 +914,23 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                if nid in wanted and r.get("encoding")
                and wanted[nid].get("encoding") and r["encoding"] != wanted[nid]["encoding"]}
     keep = targeted_ids(manifest)        # a song not cached right now stays put
+
+    # A swap deletes the old file first: only start one whose new file is here
+    # and fits. The rest keep the format they have.
+    def size_on_player(r):
+        return file_size(os.path.join(mount, ipod_path_to_rel(on_player[int(r["dbid"])].ipod_path)))
+
+    def cached(t):
+        return os.path.join(cache_dir, t["file"])
+    changed = {nid for nid in changed if os.path.exists(cached(wanted[nid]))}
+    no_room = swaps_without_room(
+        shutil.disk_usage(mount).free,
+        {nid: (file_size(cached(wanted[nid])), size_on_player(present[nid])) for nid in changed},
+        sum(file_size(cached(t)) for nid, t in wanted.items() if nid not in present),
+        sum(size_on_player(r) for nid, r in present.items() if nid not in keep))
+    changed -= no_room
+    if no_room:
+        log_info(f"Player is full: {len(no_room)} song(s) keep their current format")
     removals = [r for nid, r in present.items() if nid not in keep or nid in changed]
 
     # Tracks already on the player that were added without tags, or whose
@@ -991,11 +1041,12 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
 
     playlists_changed = 0
     if final:
+        record.set_swaps_no_room(guid, len(no_room))
         playlists_changed = sync_playlists(db, record, guid, manifest, pending)
         if pending or playlists_changed or session["dirty"]:
             commit()
     return {"added": added, "removed": removed, "replaced": len(changed), "renamed": renamed,
-            "art_added": art_added, "not_added_full": skipped_full,
+            "swaps_no_room": len(no_room), "art_added": art_added, "not_added_full": skipped_full,
             "not_added_limit": over_limit, "playlists_changed": playlists_changed}
 
 

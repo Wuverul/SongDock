@@ -334,6 +334,25 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
                and r["encoding"] != wanted[nid]["encoding"]}
     keep = ipod_handler.targeted_ids(manifest)
 
+    # A swap deletes the old file first: only start one whose new file is here
+    # and fits. The rest keep the format they have.
+    def on_disk(r):
+        return ipod_handler.file_size(os.path.join(mount, r["dbid"]))
+
+    def cached(t):
+        return os.path.join(cache_dir, t["file"])
+    changed = {nid for nid in changed if os.path.exists(cached(wanted[nid]))}
+    no_room = ipod_handler.swaps_without_room(
+        shutil.disk_usage(mount).free,
+        {nid: (ipod_handler.file_size(cached(wanted[nid])), on_disk(present[nid]))
+         for nid in changed},
+        sum(ipod_handler.file_size(cached(t)) for nid, t in wanted.items() if nid not in present),
+        sum(on_disk(r) for nid, r in present.items() if nid not in keep))
+    changed -= no_room
+    record.set_swaps_no_room(guid, len(no_room))
+    if no_room:
+        log_info(f"Player is full: {len(no_room)} song(s) keep their current format")
+
     removed = 0
     for nid, r in present.items():
         if nid in keep and nid not in changed:
@@ -399,7 +418,8 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
 
     playlists_changed = sync_playlists(record, guid, mount, manifest) if playlists else 0
     return {"added": added, "removed": removed, "replaced": len(changed),
-            "renamed": renamed, "art_added": covers, "not_added_full": not_added,
+            "renamed": renamed, "swaps_no_room": len(no_room), "art_added": covers,
+            "not_added_full": not_added,
             "playlists_changed": playlists_changed}
 
 

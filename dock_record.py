@@ -128,6 +128,7 @@ class Record:
         self._add_column("tracks", "genre TEXT")                 # Rockbox re-tags (2026-10-23)
         self._add_column("players", "kind TEXT")                 # stock / rockbox (2026-10-23)
         self._add_column("players", "capacity INTEGER")          # dock_limits (2026-10-26)
+        self._add_column("players", "swaps_no_room INTEGER")     # format swaps held back (2026-10-30)
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
             # login user) so the prepare job can write it too.
@@ -194,6 +195,11 @@ class Record:
         """Bytes of storage on the player (dock_limits' ALAC suggestion)."""
         with self.db:
             self.db.execute("UPDATE players SET capacity = ? WHERE guid = ?", (capacity, guid))
+
+    def set_swaps_no_room(self, guid, count):
+        """Format swaps the last sync held back because the player had no room."""
+        with self.db:
+            self.db.execute("UPDATE players SET swaps_no_room = ? WHERE guid = ?", (count, guid))
 
     def active_stock_players(self):
         """Players that aren't forgotten and may run Apple's firmware: kind
