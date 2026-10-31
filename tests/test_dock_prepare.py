@@ -100,6 +100,10 @@ def config(device="stock_ipod", max_gb=20, convert_to="mp3", mp3_quality="v0",
                                   {"name": "Hip-Hop", "match": ["hip hop"]}]}}
 
 
+def serves(mode, kinds, previous=None):
+    return dock_prepare.serves_basic_player(mode, kinds, previous or {})
+
+
 class PrepareTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -808,6 +812,48 @@ class PrepareTests(unittest.TestCase):
                                    on_player={"a": {"mp3 v2"}, "b": {"mp3 v0", None}})
         self.assertEqual(self.files(), ["a.mp3", "c.mp3"])            # b went, not a
         self.assertEqual(summary["evicted"], 1)
+
+    # A Rockbox-only dock that also serves a basic music player.
+    def rockbox_formats(self, kinds, device="rockbox"):
+        songs = [song("o", "ogg"), song("f", "flac"), song("m", "mp3"), song("a", "m4a")]
+        self.run_prepare(FakeServer(songs=songs), config(device), player_kinds=kinds)
+        return self.files()
+
+    def test_rockbox_dock_keeps_server_formats_with_only_rockbox_players(self):
+        self.assertEqual(self.rockbox_formats({"rockbox"}), ["a.m4a", "f.flac", "m.mp3", "o.ogg"])
+
+    def test_rockbox_dock_keeps_server_formats_before_any_player_synced(self):
+        self.assertEqual(self.rockbox_formats(set()), ["a.m4a", "f.flac", "m.mp3", "o.ogg"])
+
+    def test_basic_player_on_a_rockbox_dock_gets_files_it_can_play(self):
+        self.assertEqual(self.rockbox_formats({"rockbox", "generic"}),
+                         ["a.m4a", "f.mp3", "m.mp3", "o.mp3"])
+        self.assertEqual({t["id"]: t["encoding"] for t in self.manifest()["tracks"]},
+                         {"o": "mp3 v0", "f": "mp3 v0", "m": "original", "a": "original"})
+
+    def test_formats_follow_the_player_list_both_ways(self):
+        self.rockbox_formats({"rockbox"})
+        self.assertEqual(self.rockbox_formats({"rockbox", "generic"}),
+                         ["a.m4a", "f.mp3", "m.mp3", "o.mp3"])
+        self.assertEqual(self.rockbox_formats({"rockbox"}), ["a.m4a", "f.flac", "m.mp3", "o.ogg"])
+
+    def test_unreadable_record_keeps_last_runs_formats(self):
+        self.rockbox_formats({"generic"})
+        self.assertEqual(self.rockbox_formats(None), ["a.m4a", "f.mp3", "m.mp3", "o.mp3"])
+
+    def test_stock_dock_is_unaffected_by_a_basic_player(self):
+        self.assertEqual(serves("stock_ipod", {"stock", "generic"}), "stock_ipod")
+
+    def test_alac_setting_still_gives_a_basic_player_mp3(self):
+        self.assertEqual(dock_prepare.song_format(song("f"), "rockbox_basic", "alac"), "mp3")
+
+    def test_lossless_tag_on_a_mixed_rockbox_dock_keeps_flac_for_rockbox_only(self):
+        flac = song("f", "flac")
+        cfg = self.lossless_config("rockbox", flac=False)
+        self.run_prepare(self.lossless_server(flac), cfg, player_kinds={"rockbox", "generic"})
+        self.assertEqual(self.files(), ["f.flac"])
+        self.run_prepare(self.lossless_server(flac), cfg, player_kinds={"generic"})
+        self.assertEqual(self.files(), ["f.mp3"])
 
     # Lossless songs and a full cache.
     def test_dropped_alac_keeps_its_size_and_isnt_fetched_again(self):

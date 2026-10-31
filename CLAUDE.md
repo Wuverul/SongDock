@@ -1077,9 +1077,14 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    song with *its* format, not the dock's (or OGG songs re-convert every
    run). (b) A Rockbox-only dock (`type = "rockbox"`) copies OGG as-is,
    which Rockbox plays but a basic player docked there may not: one cache
-   holds one format per song, so serving OGG to Rockbox and MP3 to a basic
-   player needs either per-kind formats or "lossy non-MP3 -> MP3 on any
-   dock that also serves basic players".
+   holds one format per song. **Closed 2026-10-30 (user's option, over a
+   second cached copy per kind):** `serves_basic_player`: with a `generic`
+   player in the record, a Rockbox-only dock's mode becomes `rockbox_basic`:
+   anything but MP3/M4A -> `convert_to` (MP3 if that's alac), FLAC too, for
+   every player on the dock. Forgetting the generic swaps back. Before a
+   first sync finishes the dock keeps the server's formats, so a generic's
+   first sync can get OGG, replaced by the next. Songs in #lossless stay
+   FLAC while a Rockbox player is listed (a mixed dock's generic gets them too).
    3. **Space:** dock_limits' notes and the ALAC suggestion should count
       lossless songs at their real size (`plan_bytes` uses cached sizes,
       so mostly right once they're cached). ~25-30 MB per CD-quality ALAC

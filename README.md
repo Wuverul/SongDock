@@ -76,7 +76,7 @@ music in the background, so syncs are quick.
   | Where music goes | the iPod's own music database | files in a `MediaDock` folder (artist/album), with `cover.jpg` art; your other files are left alone | the same as Rockbox |
   | Playlists | in the iPod's database | `.m3u8` files in `Playlists` | none (their songs go in the library) |
   | Plays sent to Navidrome | a play count and the last play's time (earlier plays get estimated times) | every play with its exact time; skips don't count (turn on Rockbox's Last.fm log) | none |
-  | Music formats | MP3 (default), ALAC or AAC | the same by default; FLAC, Ogg and Opus as-is on a Rockbox-only dock (below) | the same as Rockbox; `flac = false` if the player can't play FLAC |
+  | Music formats | MP3 (default), ALAC or AAC | the same by default; FLAC, Ogg and Opus as-is on a Rockbox-only dock (below) | MP3 on a Rockbox-only dock: while one of these is in the dock's player list, everything but MP3 and M4A is converted (for every player there, Rockbox too) |
   | Browsing by artist/album | built in | turn on Rockbox's database auto-update | up to the player (most read the tags) |
   | Formatting | FAT32 ("Windows format") | FAT32 as well | FAT32 or exFAT, as the player came |
 
@@ -97,7 +97,10 @@ music in the background, so syncs are quick.
   Some players can't play FLAC (many cheap MP3 players). With stock
   compatibility off, `flac = false` in the settings (or `FLAC=no` in a
   `DockSetup.txt`) still converts FLAC, to the same format as for stock
-  iPods, while other formats are copied as they are.
+  iPods, while other formats are copied as they are. Once a basic music
+  player has synced, the dock also converts Ogg, Opus and FLAC by itself,
+  for every player on it, since it keeps one copy of each song. Forgetting
+  that player puts the original formats back.
 
 - **Lossless for chosen songs:** add `#lossless` to a playlist's comment in
   Navidrome and its songs sync as ALAC (FLAC on a Rockbox-only dock) if the

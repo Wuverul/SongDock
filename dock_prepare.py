@@ -83,7 +83,8 @@ LOSSLESS_SOURCES = {"flac", "wav", "aif", "aiff", "ape", "wv"}
 HIRES_MIN_KBPS = 800
 # Which players make a #lossless tag count, per cache format: without one,
 # nobody gets files a cheap MP3 player may not play (user, 2026-10-30).
-LOSSLESS_PLAYERS = {"stock_ipod": {"stock"}, "rockbox_no_flac": {"rockbox"}}
+LOSSLESS_PLAYERS = {"stock_ipod": {"stock"}, "rockbox_no_flac": {"rockbox"},
+                    "rockbox_basic": {"rockbox"}}
 
 
 def encoding(device_cfg, target=None):
@@ -476,6 +477,19 @@ def plan_genres(client, cfg, songs, previous, album_info=None):
     return genres, album_types
 
 
+def serves_basic_player(mode, player_kinds, previous):
+    """The format mode once the dock's players are known: one cache holds one
+    format per song, so a Rockbox-only dock keeps the server's formats (OGG,
+    FLAC) only while no basic music player is in the list (user, 2026-10-30).
+    A new player counts once its first sync finishes. player_kinds None (the
+    record can't be read): as last run, so nothing swaps either way."""
+    if mode not in ("rockbox", "rockbox_no_flac"):
+        return mode
+    basic = (previous.get("device") == "rockbox_basic" if player_kinds is None
+             else "generic" in player_kinds)
+    return "rockbox_basic" if basic else mode
+
+
 def format_mode(device):
     """How the cache holds music, from config [device]: "stock_ipod",
     "rockbox" (as on the server) or "rockbox_no_flac" (FLAC converted,
@@ -492,6 +506,7 @@ def needs_conversion(suffix, device_type):
         return False
     if device_type == "rockbox_no_flac":
         return suffix == "flac"
+    # A stock iPod, or a basic player sharing a Rockbox dock.
     return suffix not in NATIVE_FORMATS["stock_ipod"]
 
 
@@ -517,7 +532,9 @@ def song_format(track, device_type, convert_to, lossless=()):
         return "alac" if device_type == "stock_ipod" else None    # Rockbox plays FLAC
     if not needs_conversion(suffix, device_type):
         return None
-    return "mp3" if convert_to == "alac" and not source_lossless else convert_to
+    if convert_to == "alac" and (not source_lossless or device_type == "rockbox_basic"):
+        return "mp3"
+    return convert_to
 
 
 def output_name(track, target):
@@ -990,13 +1007,13 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     on_progress(started, total, batches, to_copy): as each track starts;
     to_copy also counts re-added songs reused from the cache.
     """
-    device = format_mode(cfg["device"])
     current = encoding(cfg["device"])
     max_bytes = int(float(cfg["sync"]["max_cache_gb"]) * 1e9)
     tracks_dir = os.path.join(cache_dir, "tracks")
     tmp_dir = os.path.join(cache_dir, "tmp")
 
     previous = read_manifest(cache_dir)
+    device = serves_basic_player(format_mode(cfg["device"]), player_kinds, previous)
     known = {p["target"]: p["id"] for p in previous.get("playlists", []) if p.get("id")}
     previously_tagged = [p["id"] for p in previous.get("playlists", [])
                          if p.get("via") == "tag"]
