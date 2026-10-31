@@ -901,6 +901,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   old installer. No `release_signers`, or auto_update false: only announces. The
   developer's Pi has auto_update false: deploy.sh runs ahead of releases. `mask
   --runtime` on a template and a real install are not yet tried on hardware.
+- **iPod ratings (checked 2026-10-31):** only byte 0x1F of each mhit (0-100, steps of
+  20), arriving via `Play Counts` (entry offset 12; 0 = unchanged). `iTunesControl` is
+  20 MB of zeros and `Extras.itdb` only empty Genius tables. Every sync logs
+  `Ratings: n rated songs...` (`log_ratings`). The real Nano then held none.
 - **Making room on a full player (`dock_room.py`, user, 2026-10-30):** new songs
   that don't fit push off the oldest songs, just enough, and never one dated
   within `recent_play_months` (date = latest of last play, added to the player,

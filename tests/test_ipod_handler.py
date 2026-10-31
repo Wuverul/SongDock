@@ -880,6 +880,15 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((summary["removed"], summary["swaps_no_room"]), (0, 1))
         self.assertEqual(self.on_player_ids(), ["n0", "n1"])
 
+    def test_a_rating_from_the_play_file_reaches_the_saved_database(self):
+        from types import SimpleNamespace as Entry
+        self.apply(self.manifest([self.song("n1", "One")]))
+        db = self.db()
+        db.merge_play_counts([Entry(play_count=1, time_played=0, rating=100, skip_count=0,
+                                    time_skipped=0, bookmark_time=0)])
+        h.checked_save(db, G)
+        self.assertEqual(self.db().tracks[0].rating, 100)
+
     def counted_swap(self):
         """A song with iPod counts, plus a playlist, and a plan to swap it."""
         a = self.song("n1", "One")

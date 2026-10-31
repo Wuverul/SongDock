@@ -72,6 +72,15 @@ def snapshot_play_data(mount, workdir):
     return copied
 
 
+def log_ratings(db, entries):
+    """Say which songs the iPod has rated, and how many ratings just arrived."""
+    new = sum(1 for e in entries if e.rating > 0)
+    rated = [t for t in db.tracks if t.rating]
+    log_info(f"Ratings: {len(rated)} rated songs on the iPod, {new} new in its play file")
+    for t in rated[:50]:
+        log_info(f"Rated {t.rating // 20} stars: {t.artist} - {t.title}")
+
+
 def read_play_entries(folder):
     """Parse whichever play file exists in `folder` (pygpod's parsers)."""
     from pygpod.db.playcounts import (parse_itunesstats, parse_play_counts,
@@ -1318,6 +1327,7 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             entries = read_play_entries(work_dir)
             if entries:
                 db.merge_play_counts(entries)   # files deleted once a save has these
+            log_ratings(db, entries)
             report = reconcile(db, record, guid, mount, manifest=manifest)
             if report["reset"]:
                 log_info("Player appears to have been reset: rebuilding it")
