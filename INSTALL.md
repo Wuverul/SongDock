@@ -36,7 +36,6 @@ exactly what to type.
 - A **Navidrome** server and an account on it, reachable from the dock's Wi-Fi
   - Use either `http://` on your local network, or `https://` with a properly
     signed certificate. A self-signed certificate will be refused.
-- The SongDock package: `songdock-<version>.tar.gz`
 
 ## 1. Prepare the iPod
 
@@ -51,8 +50,13 @@ exactly what to type.
    **`MediaDock.txt`**. Without it the dock won't touch the iPod.
 3. Eject it.
 
-> The dock adds music from *your* Navidrome account to this iPod and logs its
-> plays to *your* account. Delete `MediaDock.txt` to stop.
+> **Whose music and plays:** the dock fills this iPod from the Navidrome account in
+> its settings, and sends the iPod's plays to that account. Only add `MediaDock.txt`
+> to an iPod if that's what its owner wants. After you add the file, keep the iPod
+> away from Finder and iTunes syncing: they replace its whole music database.
+>
+> **Once an iPod has synced, deleting `MediaDock.txt` doesn't stop it:** the dock
+> remembers the iPod and makes the file again. To stop, don't dock it.
 
 ## 2. Put Raspberry Pi OS on the SD card
 
@@ -64,7 +68,7 @@ exactly what to type.
      **32-bit** on a Pi Zero W (the only kind it can run); **64-bit** on a
      Pi Zero 2 W (what the dock is tested with there). Pick 32-bit on a
      Zero 2 W only if you may move the card to a Zero W later (see "Which
-     Raspberry Pi" in README.md).
+     Raspberry Pi" in README.md). It must be Bookworm or newer; the installer checks.
    - **Storage:** your SD card
 3. When asked, **edit the settings**:
    - **Hostname:** e.g. `musicdock`
@@ -82,23 +86,25 @@ exactly what to type.
 2. Put the SD card in the Pi and connect power to the **PWR** port.
 3. Wait about 5 minutes for the first boot.
 
-## 4. Copy the package to the Pi
+## 4. Download SongDock onto the Pi
 
-On your computer, open a terminal (Mac: Terminal; Windows: PowerShell) in the
-folder holding `songdock-<version>.tar.gz` and run (use your username, and your
-hostname if you picked a different one):
+On your computer, open a terminal (Mac: Terminal; Windows: PowerShell) and log
+into the Pi, using your username, and your hostname if you picked a different one:
 
 ```sh
-scp songdock-*.tar.gz yourname@musicdock.local:
 ssh yourname@musicdock.local
 ```
 
-The second command logs you into the Pi (type `yes` the first time, then your
-Pi password). Everything below is typed **on the Pi**:
+Type `yes` the first time, then your Pi password. Everything below is typed
+**on the Pi**. Find the newest version on the
+[releases page](https://github.com/Wuverul/SongDock/releases) and put it in place
+of `0.7.3`:
 
 ```sh
+VERSION=0.7.3
+curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
 mkdir -p ~/musicdock
-tar -xzf songdock-*.tar.gz -C ~/musicdock
+tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
 cd ~/musicdock/songdock
 ```
 
@@ -110,9 +116,9 @@ sudo ./pi/install.sh
 
 This installs what the dock needs (ffmpeg, Python packages, the display
 driver), turns on the display interface, creates your settings file, sets up
-the dock's background services, and keeps the logs across restarts (up to
-50 MB) so problems can be traced afterwards. It takes a while on a Pi Zero. If it says
-a reboot is needed:
+the dock's background services, including automatic updates (see "Updating"), and
+keeps the logs across restarts (up to 50 MB) so problems can be traced afterwards. It
+takes a while on a Pi Zero. If it says a reboot is needed:
 
 ```sh
 sudo reboot
@@ -147,6 +153,9 @@ In Navidrome:
 - **Playlists:** open a playlist, click the edit (pencil) button, and put
   **`#ipod`** in its **Comment** field (the field is easy to miss). Remove the
   tag to stop syncing that playlist.
+- **Lossless (optional):** put **`#lossless`** in a playlist's comment too, and its songs
+  sync as ALAC if the server's copy is lossless. It takes about 3 times the space, so
+  leave this for later on a small iPod.
 
 At its next check (every 5 minutes unless you change
 `check_interval_minutes`) the dock notices, then downloads and converts the music
@@ -166,8 +175,8 @@ but doesn't change the iPod. To watch what it's doing:
 journalctl -u 'musicdock-*' -f
 ```
 
-(Ctrl-C to stop watching.) You should see a line like
-`Player ... read-only (plays only; config write = false)`.
+(Ctrl-C to stop watching.) It should show the iPod's plays being read and no music
+being copied.
 
 ## 9. Turn on syncing
 
@@ -176,9 +185,9 @@ nano ~/.config/musicdock/config.toml
 ```
 
 Change `write = false` to `write = true` in the `[device]` section, save, and
-dock the iPod again. This time it copies your music and playlists. Expect
-**about 10 seconds per song** over USB, so a first sync of 500 songs takes about
-an hour and a half. Later syncs only copy what changed.
+dock the iPod again. This time it copies your music and playlists. Expect about
+**3 seconds per song on a Pi Zero 2 W** (500 songs in about 25 minutes) or **11 seconds
+on a Pi Zero W** (about an hour and a half). Later syncs only copy what changed.
 
 When it shows **SAFE TO REMOVE**, unplug it and check the music, playlists
 and album art.
@@ -193,6 +202,12 @@ and album art.
 - An iPod left on the dock syncs again by itself when new music has been
   prepared (it briefly reconnects; playback stops until the sync is done).
   To turn that off: `auto_resync = false` in the `[device]` settings.
+- From 7 to 10 AM the dock doesn't sync (see "Safe hours" below). It shows **SAFE
+  HOURS** while a player is connected, and the iPod is free to take.
+- Rate a song 4 or 5 stars on the iPod and the next sync favorites it in Navidrome, once.
+  It never removes a favorite. To change the stars, set `favorite_rating`; 0 turns it off.
+- If the iPod fills up, new songs wait and the screen shows **PLAYER FULL**. Nothing is
+  removed unless you turn on `make_room` (below).
 - Songs removed from your lists stay cached on the dock for 7 days, so
   re-adding one is instant (`removal_grace_days` in the settings).
 
@@ -214,6 +229,8 @@ check_interval_minutes = 15
 ```
 
 It takes effect a few seconds after you save the file (no restart needed).
+Checking more often means new music reaches a docked iPod sooner; each check
+that finds nothing new takes a few seconds and changes nothing.
 
 **Copying while converting** (Pi Zero 2 W and other multi-core Pis): during
 a big batch of new music, finished songs are handed to a docked iPod in
@@ -226,8 +243,6 @@ copy only once everything is converted:
 [sync]
 sync_batch_size = "auto"
 ```
-Checking more often means new music reaches a docked iPod sooner; each check
-that finds nothing new takes a few seconds and changes nothing.
 
 **Safe hours** (no syncs in a daily window, so a sync doesn't hold the iPod
 on the dock when you leave in the morning). On by default, 7 to 10 AM local
@@ -242,7 +257,30 @@ Or put `SafeHours=06:30-08:00` (or `SafeHours=off`) in `DockSetup.txt` on the
 iPod. An iPod docked
 in the window just charges and stays usable; a sync already running when it
 opens stops copying and finishes (SAFE HOURS on screen). Either way, a
-still-docked iPod syncs when the window ends.
+still-docked iPod syncs when the window ends. Other players stop too, but need
+plugging in again to get the rest.
+
+**Making room on a full player** (off by default): with this on, new songs that don't
+fit push off the oldest songs, only as many as needed. Songs played, added or in an
+updated playlist within `recent_play_months` are safe, and removed songs come back when
+there's room:
+
+```toml
+[sync]
+make_room = true
+recent_play_months = 3
+```
+
+**Names on the player:** a song lists under its album's artist, with guests moved to the
+title. These only change the player, not Navidrome:
+
+```toml
+[sync]
+primary_artist = true                 # false: keep the credits as they are
+artist_names = ["Now, Now"]           # names with a comma, & or / to keep whole
+compilation_albums = ["Monthly Mix = My Mixes"]   # list these as one artist
+singles_album_min = 4                 # one-track albums before "<Artist> Singles"; 0 = off
+```
 
 **Moving the dock to another Wi-Fi network:** put a file named **`wifi.txt`**
 in the iPod's top folder (next to `MediaDock.txt`):
@@ -273,7 +311,9 @@ by its `.rockbox` folder and then:
   Playback Settings > Last.fm Log**. Skipped songs don't count. The log is
   emptied once its plays are saved on the dock;
 - for browsing by artist/album, turn on **Settings > General Settings >
-  Database > Auto Update** (or use **Update Now** after a sync).
+  Database > Auto Update** (or use **Update Now** after a sync);
+- to favorite songs in Navidrome, add them to the **`Keep`** playlist the dock makes in
+  `Playlists`. The next sync favorites each one, once.
 
 **Music format:** by default Rockbox gets the same files as stock iPods (MP3,
 or ALAC with `convert_to = "alac"`), so one dock serves both. To send FLAC
@@ -331,8 +371,9 @@ to sync new music. On a dock with stock-iPod compatibility off, set
 | What you see | What to do |
 |---|---|
 | Screen stays blank after install | Reboot (`sudo reboot`); check the HAT is pressed fully onto the pins |
-| **NOT SYNCED · No MediaDock.txt** | Add `MediaDock.txt` to the iPod's top folder (step 1) |
-| **NOT SYNCED · Not an iPod** | Only iPods are synced |
+| **NOT SYNCED · No MediaDock.txt** | Add `MediaDock.txt` to the player's top folder (step 1) |
+| **PLAYER FULL** | New songs didn't fit. Remove lossless tags or some music from your lists, or turn on `make_room`. The sync itself finished, so it's safe to unplug |
+| **UPDATING** | A new version is installing. Leave the power connected. It shouldn't take long, and the previous version comes back if it fails |
 | **SYNC FAILED · Unknown iPod model** | Look up the model on the iPod (Settings > About > Model, e.g. `MB029`). On the iPod (disk mode on your computer), open `iPod_Control/Device/SysInfo` in a text editor and add a line `ModelNumStr: xB029` (an `x` plus the model without its first letter). Dock again |
 | **SYNC FAILED · iPod ... isn't supported** | That iPod's music database can't be written by the dock (see "Which iPods work" in the README). Nothing on it was changed |
 | **SYNC FAILED · Mac-formatted iPod** | The iPod is formatted for Mac (HFS+), which the dock can only read. Its plays were still sent (or queued). Restore it once with iTunes on a Windows PC to make it FAT32 (this erases it), add `MediaDock.txt` again, and dock it |
@@ -347,14 +388,18 @@ to sync new music. On a dock with stock-iPod compatibility off, set
 `ssh yourname@musicdock.local musicdock-status` from your computer) sums up
 what the dock is doing and lists anything that needs attention.
 
+**Asking for help:** `musicdock-status --share` prints a report to paste into a
+[GitHub issue](https://github.com/Wuverul/SongDock/issues) or a message. It leaves out
+your server, sign-in, Wi-Fi, player, playlist and song names, and sends nothing by itself.
+
 **On the iPod itself:** after each sync, `MediaDock README.txt` in the
 iPod's top folder explains every file you can add there (`wifi.txt`,
 `DockSetup.txt`, `MediaDock.txt`) and what the screens mean.
 
-**Changing what syncs, or the server, from the iPod:** a `DockSetup.txt`
-can also hold `PlaylistTag=#car`, `SyncStarred=no` (playlists only),
-or `Server=` with `Username=` and `Password=`. `MediaDock README.txt` on
-the iPod lists every option.
+**Changing settings from the iPod:** a `DockSetup.txt` can also hold, for example,
+`PlaylistTag=#car`, `SyncStarred=no` (playlists only), `MakeRoom=yes`, `ArtistNames=`,
+`AutoUpdate=no`, or `Server=` with `Username=` and `Password=`. `MediaDock README.txt`
+on the iPod lists every option.
 
 **Switching to a new iPod:** the dock keeps songs cached until every iPod
 it syncs has them, so an old, smaller iPod can stop a bigger new one from
@@ -391,11 +436,19 @@ journalctl -u 'musicdock-sync@*' -e              # docking sessions
 
 ## Updating
 
-Copy a newer package over and run the installer again. Your settings, cache
-and the record of what's on your iPod are kept:
+From 0.7.2 on, the dock updates itself: DOCK READY shows the new version and its install
+time, 4 hours ahead, and it installs once no player is connected and nothing is running.
+Only releases signed by the project install. To only be told about them, set
+`auto_update = false` in the `[sync]` settings. Your settings, cache and the record of
+what's on your iPod are kept. Automatic updates are new and haven't yet run for real, so
+check `musicdock-status` after one.
+
+To update by hand, unplug the iPod and run this on the Pi, with the newest version:
 
 ```sh
-tar -xzf songdock-*.tar.gz -C ~/musicdock
+VERSION=0.7.3
+curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
+tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
 cd ~/musicdock/songdock && sudo ./pi/install.sh
 ```
 
