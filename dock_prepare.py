@@ -78,8 +78,9 @@ NATIVE_FORMATS = {"stock_ipod": {"mp3", "m4a", "aac"}}   # play without conversi
 EXTENSIONS = {"mp3": "mp3", "alac": "m4a", "aac": "m4a"}
 # Only these become lossless output: a lossy source is never "upgraded"
 # (user's rule, 2026-10-26). m4a isn't listed: it may be AAC, and an ALAC one
-# plays as it is.
+# plays as it is, unless it's hi-res (hires_alac).
 LOSSLESS_SOURCES = {"flac", "wav", "aif", "aiff", "ape", "wv"}
+HIRES_MIN_KBPS = 800
 # Which players make a #lossless tag count, per cache format: without one,
 # nobody gets files a cheap MP3 player may not play (user, 2026-10-30).
 LOSSLESS_PLAYERS = {"stock_ipod": {"stock"}, "rockbox_no_flac": {"rockbox"}}
@@ -471,10 +472,23 @@ def needs_conversion(suffix, device_type):
     return suffix not in NATIVE_FORMATS["stock_ipod"]
 
 
+def hires_alac(track):
+    """An .m4a stock iPods are believed not to play: ALAC over 16-bit / 48 kHz.
+    Navidrome reports AAC as 16-bit, so over 48 kHz it's the bitrate that
+    tells them apart: AAC never gets near HIRES_MIN_KBPS."""
+    if (track.get("suffix") or "").lower() != "m4a":
+        return False
+    return (int(track.get("bitDepth") or 0) > 16
+            or (int(track.get("samplingRate") or 0) > 48000
+                and int(track.get("bitRate") or 0) >= HIRES_MIN_KBPS))
+
+
 def song_format(track, device_type, convert_to, lossless=()):
     """What a song is converted to, or None to keep the server's file.
     lossless: IDs of the songs in #lossless playlists."""
     suffix = (track.get("suffix") or "").lower()
+    if device_type == "stock_ipod" and hires_alac(track):
+        return "alac"
     source_lossless = suffix in LOSSLESS_SOURCES
     if track["id"] in lossless and source_lossless:
         return "alac" if device_type == "stock_ipod" else None    # Rockbox plays FLAC

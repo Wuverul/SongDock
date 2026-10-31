@@ -1007,8 +1007,9 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    tags and cover kept; on a fake iPod an MP3 was replaced by the ALAC: one
    file, one playlist entry, art kept. pygpod labels .m4a "AAC audio file"
    in the iTunesDB whatever the codec. **Still to check on the Nano:** that
-   it plays these. Limits: a hi-res ALAC *source* (.m4a) is kept as it is;
-   gap (b)
+   it plays these. A hi-res ALAC *source* (.m4a, stock dock, tagged or not)
+   is converted the same way (`hires_alac`: over 16-bit, or over 48 kHz at
+   800+ kbps, since Navidrome reports AAC as 16-bit). Limit: gap (b)
    below is open. **Only with an iPod in the record (user, 2026-10-30):**
    `active_player_kinds` must hold `stock` (Rockbox-only dock with `flac =
    false`: `rockbox`), so a generics-only dock gets plain MP3; only kinds

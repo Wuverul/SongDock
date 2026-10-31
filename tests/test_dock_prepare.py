@@ -536,6 +536,35 @@ class PrepareTests(unittest.TestCase):
         with open(os.path.join(self.cache, "tracks", "f.m4a"), "rb") as f:
             self.assertIn(b"aresample=48000:osf=s16p", f.read())
 
+    def test_hires_alac_source_is_brought_down_and_aac_is_left_alone(self):
+        hires = [song("d", "m4a", bitDepth=24, samplingRate=44100),
+                 song("r", "m4a", bitDepth=16, samplingRate=96000, bitRate=1800)]
+        keep = [song("c", "m4a", bitDepth=16, samplingRate=44100, bitRate=900),
+                song("a", "m4a", bitDepth=16, samplingRate=96000, bitRate=256),
+                song("n", "m4a")]
+        server = FakeServer(songs=hires + keep)
+        self.run_prepare(server)
+        made = {t["id"]: t["encoding"] for t in self.manifest()["tracks"]}
+        self.assertEqual(made, {"d": "alac 16", "r": "alac 16", "c": "original",
+                                "a": "original", "n": "original"})
+        self.assertEqual(self.run_prepare(server)["added"], 0)
+
+    def test_hires_alac_already_cached_is_redone(self):
+        hires = song("d", "m4a", bitDepth=24, samplingRate=96000)
+        path = os.path.join(self.cache, "manifest.json")
+        self.run_prepare(FakeServer(songs=[hires]))
+        with open(path) as f:
+            manifest = json.load(f)
+        manifest["tracks"][0]["encoding"] = "original"       # as an older dock copied it
+        with open(path, "w") as f:
+            json.dump(manifest, f)
+        self.assertEqual(self.run_prepare(FakeServer(songs=[hires]))["added"], 1)
+        self.assertEqual(self.manifest()["tracks"][0]["encoding"], "alac 16")
+
+    def test_rockbox_keeps_hires_alac(self):
+        self.run_prepare(FakeServer(songs=[song("d", "m4a", bitDepth=24)]), config("rockbox"))
+        self.assertEqual(self.manifest()["tracks"][0]["encoding"], "original")
+
     def test_alac_sample_rates(self):
         for rate, want in ((None, 44100), (22050, 22050), (44100, 44100), (48000, 48000),
                            (88200, 44100), (176400, 44100), (96000, 48000), (192000, 48000)):
