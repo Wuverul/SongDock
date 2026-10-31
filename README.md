@@ -11,7 +11,8 @@ the dock:
    you tag with `#ipod`, converted for the iPod (MP3), with album art.
 3. **Removes music** that has left those lists.
 4. **Keeps your playlists** on the iPod (Favorites plus each tagged playlist).
-5. **Charges the iPod**, and shows on its e-ink screen when it's safe to unplug.
+5. **Favorites songs you rate** 4 or 5 stars on the iPod.
+6. **Charges the iPod**, and shows on its e-ink screen when it's safe to unplug.
 
 Between docks it quietly checks Navidrome every 5 minutes (adjustable) and prepares new
 music in the background, so syncs are quick.
@@ -77,6 +78,7 @@ music in the background, so syncs are quick.
   | Playlists | in the iPod's database | `.m3u8` files in `Playlists` | none (their songs go in the library) |
   | Plays sent to Navidrome | a play count and the last play's time (earlier plays get estimated times) | every play with its exact time; skips don't count (turn on Rockbox's Last.fm log) | none |
   | Music formats | MP3 (default), ALAC or AAC | the same by default; FLAC, Ogg and Opus as-is on a Rockbox-only dock (below) | MP3 on a Rockbox-only dock: while one of these is in the dock's player list, everything but MP3 and M4A is converted (for every player there, Rockbox too) |
+  | Favoriting songs from the player | rate 4 or 5 stars | add to the `Keep` playlist | not available |
   | Browsing by artist/album | built in | turn on Rockbox's database auto-update | up to the player (most read the tags) |
   | Formatting | FAT32 ("Windows format") | FAT32 as well | FAT32 or exFAT, as the player came |
 
@@ -102,31 +104,6 @@ music in the background, so syncs are quick.
   for every player on it, since it keeps one copy of each song. Forgetting
   that player puts the original formats back.
 
-- **Singles in one place:** an artist with 4 or more one-track albums gets them as one
-  album on the player, "<Artist> Singles", each song keeping its own art. Songs kept from
-  a longer album don't count. Only the player's names change. `singles_album_min` (or
-  `SinglesAlbum=` in a `DockSetup.txt`) sets how many; 0 turns it off.
-
-- **Ratings become favorites:** rate a song 4 or 5 stars on a stock iPod and the next
-  sync favorites it in Navidrome, once, so it stays on the iPod even after leaving
-  its playlists. Lowering the rating changes nothing, and a favorite you remove stays
-  removed. `favorite_rating` (or `FavoriteRating=` in a `DockSetup.txt`) sets the
-  stars; 0 turns it off.
-  On Rockbox, add songs to the `Keep` playlist the dock makes in `Playlists`; the same
-  rules apply.
-
-- **Lossless for chosen songs:** add `#lossless` to a playlist's comment in
-  Navidrome and its songs sync as ALAC (FLAC on a Rockbox-only dock) if the
-  server's copy is lossless, replacing the MP3. ALAC takes about 3 times the
-  space. Lossy files are never "upgraded".
-
-- **One listing per artist:** a song lists under its album's artist, or on a
-  Various Artists album the first name in its credit, with anyone else moved to
-  the title as "(feat. X)". Only the player's names change. A name split by mistake can be kept whole with
-  `artist_names`, or `ArtistNames=` in `DockSetup.txt`. `compilation_albums`
-  lists chosen compilations as one artist; `primary_artist = false` turns this
-  off.
-
 - **The iPod must be formatted FAT32 ("Windows format").** An iPod restored
   with Finder/iTunes on a **Mac** is usually formatted for Mac (HFS+), which the
   dock can't write to. Restore it once with iTunes on a **Windows** PC. See
@@ -144,10 +121,46 @@ music in the background, so syncs are quick.
 - **The dock keeps a copy of the songs it syncs** (about 2 MB per minute of
   music); a 64 GB card holds roughly 35-40 GB. A bigger iPod fills over
   several syncs: once the card is full, the dock drops its copies of songs
-  already on the iPod to make room for the rest. (Built and tested in
+  already on the iPod to make room for the rest, those not played lately first.
+  They stay on the iPod. (Built and tested in
   software; not yet tried with a real iPod bigger than the card.) A single
   song bigger than half the room the dock has for music (on a very small
   card, or a long mix in FLAC) is skipped rather than holding up the rest.
+
+## What else it does
+
+Everything here changes only what's on the player, unless it says otherwise.
+
+- **Lossless for chosen songs:** add `#lossless` to a playlist's comment in
+  Navidrome and its songs sync as ALAC (FLAC on a Rockbox-only dock) if the
+  server's copy is lossless, replacing the MP3. ALAC takes about 3 times the
+  space. Lossy files are never "upgraded", and hi-res files become 16-bit for stock
+  iPods. If a song's new format doesn't fit, it keeps the old one, and an interrupted
+  swap can't lose the iPod's play count or rating.
+- **One listing per artist:** a song lists under its album's artist, or on a
+  Various Artists album the first name in its credit, with anyone else moved to
+  the title as "(feat. X)". A name split by mistake can be kept whole with
+  `artist_names`, or `ArtistNames=` in a `DockSetup.txt`. `compilation_albums`
+  lists chosen compilations as one artist. `primary_artist = false` turns this off.
+- **Singles in one place:** an artist with 4 or more one-track albums gets them as
+  one album, "<Artist> Singles", each song keeping its own art. Songs kept from a
+  longer album don't count. `singles_album_min` (or `SinglesAlbum=` in a
+  `DockSetup.txt`) sets how many; 0 turns it off.
+- **Ratings become favorites (this one does change Navidrome):** rate a song 4 or 5
+  stars on a stock iPod and the next sync favorites it, once, so it stays on the iPod
+  after leaving its playlists. It only ever adds a favorite: lowering a rating changes
+  nothing, and a favorite you remove stays removed. `favorite_rating` (or
+  `FavoriteRating=` in a `DockSetup.txt`) sets the stars; 0 turns it off. On Rockbox,
+  add songs to the `Keep` playlist the dock makes in `Playlists` instead.
+- **Safe hours:** no syncs from 7 to 10 AM by default, so the iPod is free for a morning
+  commute. A sync running when the window opens stops early, leaving nothing missing,
+  and a docked iPod syncs afterwards. Other players need plugging in again. Set
+  `safe_hours`, or `"off"`.
+- **When a player fills up:** new songs wait, and the screen shows PLAYER FULL. Nothing
+  is removed unless you set `make_room = true` (off by default). Then the oldest songs
+  make way, only as many as needed, oldest by last play, arrival on the player, or a
+  change to a playlist holding them. Nothing newer than `recent_play_months` (default 3)
+  goes. Removed songs come back, with their iPod counts, when there's room.
 
 ## Which Raspberry Pi
 
@@ -165,7 +178,7 @@ operating system it was tested with:
 | Time to convert music | a little under 1 minute per minute of music | **3.7 seconds per minute of music** (16 minutes of music per minute) |
 | Preparing a first batch of ~900 songs (~2,600 minutes of music) | about 1.5-2 days | **about 3 hours** |
 | A weekly handful of new songs (~30) | about 1.5 hours | 5-10 minutes |
-| Copying to an iPod nano 4G | ~11 s per song (~1.3-1.5 MB/s; about half of it is the Pi updating the iPod's database and album art) | **~2.8 s per song, ~2.2 MB/s** (902 songs, 5.4 GB, in 41 minutes) |
+| Copying to an iPod nano 4G | ~11 s per song (~1.3-1.5 MB/s; about half of it is the Pi updating the iPod's database and album art) | **~2.5-2.8 s per song, ~2.2-3 MB/s** (e.g. 902 songs, 5.4 GB, in 41 minutes) |
 | When copying happens | **after** all the music is converted, so it adds its own time (one core can't do both) | **during** conversion, in batches of finished songs (`sync_batch_size`, 25-500 a batch), so it isn't extra time: in a 73-song test the iPod was complete 1¼ minutes after the last song converted* |
 | Temperature while converting | no throttling seen | ~50 °C with a small heatsink, never throttled |
 
@@ -244,7 +257,7 @@ for a dark case):
 | **NO WI-FI / CLOCK NOT SET** | The dock can't reach the network after starting up |
 | **USB NOT WORKING** | A plug-in failed (e.g. a loose connector) and the dock's USB port stopped responding. Unplug the dock's power briefly to restart it; until then, players aren't noticed |
 | **RESTORING** | Filling a new or wiped iPod, which takes several syncs: songs on the iPod so far out of all of them, and the time left. Safe to unplug between syncs (not yet tried on a real new iPod) |
-| **SAFE HOURS** | Inside the `safe_hours` window with a player connected: no syncs. Shows when syncing resumes; safe to unplug |
+| **SAFE HOURS** | Inside the `safe_hours` window with a player connected: no syncs. Shows when syncing resumes, or "replug after 10:00 AM" for a player the dock can't reconnect itself; safe to unplug |
 
 The icon in the corner of SYNCING and PREPARE & SYNC shows what kind of player
 is syncing: a stock iPod, a Rockbox player, or another music player.
@@ -316,8 +329,8 @@ waiting to be sent stay queued.
 
 There's no need to reinstall Raspberry Pi OS or set anything up again.
 
-**Automatic updates** are on by default from 0.7.2, which you install by hand as
-above if you're on an older version. The dock checks GitHub once a day. A newer release
+**Automatic updates** are on by default from 0.7.2; on anything older, install by hand
+as above once. A real automatic update hasn't been tried yet (see "Known limitations"). The dock checks GitHub once a day. A newer release
 shows on DOCK READY with its install time, 4 hours ahead ("Update 0.8.0 at 3:15
 PM"). At that time, or later if needed, it installs once no player is connected
 and no sync or prepare run is going. A player left docked holds the update back
@@ -398,8 +411,9 @@ untested on hardware or not built.
 - **Hardware is specific:** the Waveshare 2.13" e-Paper HAT (V4 tested;
   V3 and V2 supported but untested on real screens),
   2.4 GHz Wi-Fi only (both Pi Zero models), and FAT32-formatted iPods.
-- **Not built yet:** marking songs to keep from the iPod (a "keep" list),
-  and a progress screen for a multi-day rebuild of a very large iPod.
+- **Written but not yet tried on real hardware:** an automatic update; `make_room` and
+  PLAYER FULL on a full player; a sync cut off by unplugging or by safe hours; the
+  RESTORING screen on a new or wiped iPod; `Keep.m3u8` on a real Rockbox player.
 - **Cosmetic:** on the iPod nano, album art can replace the icons of the
   built-in games.
 - **Restart the iPod once after its album art is converted.** The dock
