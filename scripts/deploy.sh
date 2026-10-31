@@ -2,8 +2,8 @@
 # Copy the project from the Mac to the Pi over SSH.
 #
 # Usage:
-#   ./deploy.sh user@pi-address             # copy files only
-#   ./deploy.sh --install user@pi-address   # copy, then install udev rule + service
+#   scripts/deploy.sh user@pi-address             # copy files only
+#   scripts/deploy.sh --install user@pi-address   # copy, then install udev rule + service
 #
 # Set MUSICDOCK_PI=user@pi-address (e.g. in ~/.zshrc) to skip typing it.
 #
@@ -24,7 +24,7 @@ if [ -z "$PI" ]; then
 fi
 
 REMOTE_DIR="musicdock/app"   # relative to the Pi user's home
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 echo "== Checking for private keys"
 if keys=$(grep -rlI --exclude-dir=.git -e "-----BEGIN [A-Z ]*PRIVATE KEY-----" . ); then

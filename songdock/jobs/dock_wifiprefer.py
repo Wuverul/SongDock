@@ -19,6 +19,12 @@ RETRY_AFTER. It only uses saved profiles: no password is read or logged.
 Uses the standard library only (runs under the system python3).
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import json
 import logging
 import os

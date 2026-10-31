@@ -8,7 +8,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=/var/lib/musicdock
-ExecStart=/usr/bin/python3 @APP_DIR@/dock_update.py
+ExecStart=/usr/bin/python3 @APP_DIR@/songdock/jobs/dock_update.py
 Environment=PYTHONUNBUFFERED=1
 Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml
 TimeoutStartSec=45min

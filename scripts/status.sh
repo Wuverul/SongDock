@@ -2,7 +2,7 @@
 # Show the dock's status from the Mac (runs musicdock-status on the Pi over SSH).
 #
 # Usage:
-#   ./status.sh [user@pi-address] [--since "3 days ago"]
+#   scripts/status.sh [user@pi-address] [--since "3 days ago"]
 #
 # Set MUSICDOCK_PI=user@pi-address (e.g. in ~/.zshrc) to skip typing it.
 set -euo pipefail

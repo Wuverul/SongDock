@@ -10,7 +10,7 @@ After=NetworkManager.service
 [Service]
 Type=oneshot
 WorkingDirectory=/var/lib/musicdock
-ExecStart=/usr/bin/python3 @APP_DIR@/dock_wifiprefer.py
+ExecStart=/usr/bin/python3 @APP_DIR@/songdock/jobs/dock_wifiprefer.py
 Environment=PYTHONUNBUFFERED=1
 # Every 5 minutes: keep systemd's "Starting/Finished" lines out of the
 # journal; only a switch (logged as a warning) shows.

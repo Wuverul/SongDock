@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Build the package to give to someone setting up their own dock:
-#   ./make_release.sh   ->  dist/songdock/  and  dist/songdock-<version>.tar.gz
+#   scripts/make_release.sh   ->  dist/songdock/  and  dist/songdock-<version>.tar.gz
 # The version comes from the VERSION file (e.g. 0.5.0); tag it as v<version>.
 # Contains only what runs on the Pi plus the docs; refuses to build if the
 # tests fail or anything personal (servers, hosts, IDs, emails) slipped in.
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 NAME="songdock"
 VERSION="$(tr -d '[:space:]' < VERSION)"
@@ -18,8 +18,9 @@ python3 -m unittest discover -s tests -q
 echo "== Assembling $OUT"
 rm -rf "$OUT" "$TARBALL"
 mkdir -p "$OUT"
-cp README.md INSTALL.md LICENSE CHANGELOG.md config.example.toml status.sh "$OUT/"
-cp ./*.py "$OUT/"                          # every module in the top folder
+cp README.md INSTALL.md LICENSE CHANGELOG.md config.example.toml "$OUT/"
+mkdir -p "$OUT/scripts" && cp scripts/status.sh "$OUT/scripts/"
+cp -R songdock "$OUT/songdock"            # all the code
 mkdir -p "$OUT/pi"
 [ -f pi/release_signers ] && cp pi/release_signers "$OUT/pi/"     # for dock_update.py
 cp pi/install.sh pi/requirements.txt pi/99-musicdock.rules pi/90-musicdock-wifi \
@@ -34,9 +35,9 @@ printf 'SongDock %s (%s, %s)\n' "$VERSION" "$(git rev-parse --short HEAD 2>/dev/
 
 echo "== Checking every module is in the package"
 # A hand-kept list once left out ipod_db.py (caught before the 0.7.0 build
-# shipped): every Python file git tracks in the top folder must be here.
+# shipped): every Python file git tracks under songdock/ must be here.
 if git rev-parse --git-dir >/dev/null 2>&1; then
-  missing="$(git ls-files '*.py' | grep -v / | while read -r f; do
+  missing="$(git ls-files 'songdock/*.py' | while read -r f; do
                [ -f "$OUT/$f" ] || echo "$f"; done)"
   if [ -n "$missing" ]; then
     echo "Refusing to build: missing from the package: $missing" >&2

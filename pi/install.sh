@@ -183,14 +183,14 @@ else
 #!/bin/sh
 # SongDock status report (read-only). Installed by $APP_DIR/pi/install.sh.
 MUSICDOCK_CONFIG="\${MUSICDOCK_CONFIG:-$USER_HOME/.config/musicdock/config.toml}" \\
-  exec "$VENV/bin/python" "$APP_DIR/dock_report.py" "\$@"
+  exec "$VENV/bin/python" "$APP_DIR/songdock/report/dock_report.py" "\$@"
 EOF
   chmod 755 /usr/local/bin/musicdock-status
   # List the iPods the dock knows; forget one you've stopped using.
   cat > /usr/local/bin/musicdock-players <<EOF
 #!/bin/sh
 # SongDock players (list / forget). Installed by $APP_DIR/pi/install.sh.
-exec "$VENV/bin/python" "$APP_DIR/dock_players.py" "\$@"
+exec "$VENV/bin/python" "$APP_DIR/songdock/players/dock_players.py" "\$@"
 EOF
   chmod 755 /usr/local/bin/musicdock-players
   systemctl daemon-reload

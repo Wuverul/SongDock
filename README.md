@@ -261,7 +261,7 @@ musicdock-status --since "3 days ago"
 ```
 
 or from your computer, in one go: `ssh yourname@musicdock.local musicdock-status`
-(or `./status.sh yourname@musicdock.local` from this folder on a Mac or Linux).
+(or `scripts/status.sh yourname@musicdock.local` from this folder on a Mac or Linux).
 It only reads; it never changes anything.
 
 ### Getting help
@@ -320,6 +320,21 @@ and is never written to. The dock installs only releases signed with the project
 key, and goes back to the old version if the install fails, which
 `musicdock-status` reports. `auto_update = false` in the settings, or
 `AutoUpdate=no` in a `DockSetup.txt`, announces releases without installing them.
+
+## What's in this repository
+
+| Folder | What's there |
+|---|---|
+| `songdock/jobs` | What runs on the dock: the sync, the prepare job, boot, updates and small helpers |
+| `songdock/players` | iPod and Rockbox syncing, and working out what fits |
+| `songdock/music` | Tidying artist names and genres |
+| `songdock/screen` | The e-ink screens |
+| `songdock/setup` | `DockSetup.txt`, `wifi.txt` and the guide written to each player |
+| `songdock/report` | `musicdock-status` and `--share` |
+| `songdock/core` | Settings, the dock's record, safe hours and the Navidrome client |
+| `pi` | The installer and system services |
+| `scripts` | Tools for developing and releasing |
+| `tests`, `docs`, `vendor` | Tests, README images and the bundled display driver |
 
 ## Known limitations
 

@@ -12,7 +12,8 @@ import time
 import unittest
 from unittest import mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 import dock_sync  # noqa: E402
 from dock_sync import FakeDevice, SyncError, run_sync  # noqa: E402
 

@@ -386,7 +386,7 @@ journalctl -u 'musicdock-*' --since today        # everything today
 journalctl -b -1 -e                              # the end of the previous run (before the last restart)
 journalctl -u musicdock-prepare -e               # downloads and conversions
 journalctl -u 'musicdock-sync@*' -e              # docking sessions
-~/musicdock/venv/bin/python ~/musicdock/songdock/dock_prepare.py --show-plan
+~/musicdock/venv/bin/python ~/musicdock/songdock/songdock/jobs/dock_prepare.py --show-plan
 ```
 
 ## Updating

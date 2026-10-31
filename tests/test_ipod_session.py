@@ -12,7 +12,8 @@ import unittest
 from datetime import datetime
 from unittest import mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 sys.path.insert(0, os.path.dirname(__file__))
 import ipod_fixtures as fx  # noqa: E402
 import ipod_handler as h  # noqa: E402

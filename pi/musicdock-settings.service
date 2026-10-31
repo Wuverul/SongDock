@@ -9,6 +9,6 @@ Description=SongDock: apply the check interval from config.toml
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 @APP_DIR@/dock_timer.py
+ExecStart=/usr/bin/python3 @APP_DIR@/songdock/jobs/dock_timer.py
 Environment=PYTHONUNBUFFERED=1
 Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml

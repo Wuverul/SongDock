@@ -21,6 +21,12 @@ making room and a bigger one never fills. A forgotten player:
 Nothing on any iPod changes.
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import argparse
 import re
 import sys

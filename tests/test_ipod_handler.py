@@ -11,7 +11,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 sys.path.insert(0, os.path.dirname(__file__))
 import dock_room  # noqa: E402
 import ipod_fixtures as fx  # noqa: E402
@@ -937,8 +938,8 @@ class HandlerTests(unittest.TestCase):
             h.queue_favorites(self.rate(stars), self.rec, G, 4)
             dock_plays.upload_favorites(client, self.rec)
         self.assertEqual(set(calls), {"star"})
-        root = os.path.join(os.path.dirname(__file__), "..")
-        for path in glob.glob(os.path.join(root, "*.py")):
+        root = os.path.join(os.path.dirname(__file__), "..", "songdock")
+        for path in glob.glob(os.path.join(root, "*", "*.py")):
             with open(path) as f:
                 self.assertNotIn("unstar", f.read().lower(), path)
 

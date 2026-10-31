@@ -15,7 +15,7 @@ Type=oneshot
 # directory. The default, /, isn't writable by the login user.
 WorkingDirectory=/var/lib/musicdock
 # The venv adds pygpod (the iPod database) to the system packages.
-ExecStart=@HOME@/musicdock/venv/bin/python @APP_DIR@/dock_sync.py --device /dev/%I
+ExecStart=@HOME@/musicdock/venv/bin/python @APP_DIR@/songdock/jobs/dock_sync.py --device /dev/%I
 # Runs as root (mounting), so point at the login user's config explicitly;
 # "~" in it (cache_dir) is expanded from the config file owner's home.
 Environment=MUSICDOCK_CONFIG=@HOME@/.config/musicdock/config.toml

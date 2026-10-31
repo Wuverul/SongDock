@@ -10,6 +10,12 @@ Read-only: it looks at the record, the staged plan, the screen state, the
 journal and the system, and changes nothing (the record is opened read-only).
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import argparse
 import json
 import os
@@ -448,7 +454,7 @@ def main(argv=None):
         manifest = {}
 
     try:
-        with open(os.path.join(HERE, "VERSION")) as f:
+        with open(os.path.join(dock_paths.ROOT, "VERSION")) as f:
             version = f.read().strip()
     except OSError:
         version = "SongDock"

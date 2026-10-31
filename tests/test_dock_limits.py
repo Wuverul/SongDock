@@ -9,7 +9,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 import dock_limits as lim  # noqa: E402
 
 MP3 = {"device": {"type": "stock_ipod", "convert_to": "mp3"}}

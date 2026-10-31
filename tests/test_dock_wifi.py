@@ -11,7 +11,8 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 import dock_wifi  # noqa: E402
 from dock_wifi import WifiFileError, parse_wifi_file  # noqa: E402
 

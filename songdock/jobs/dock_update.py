@@ -22,6 +22,12 @@ units go back. A power cut during the installer is picked up by the next run.
 Standard library only: this runs under the system python3.
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import argparse
 import json
 import logging
@@ -35,7 +41,7 @@ import time
 import tomllib
 import urllib.request
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = dock_paths.ROOT                   # the installed folder, swapped whole
 log = logging.getLogger("dock_update")
 
 LATEST = "https://api.github.com/repos/Wuverul/SongDock/releases/latest"
@@ -212,7 +218,7 @@ def blocker():
 def draw(*args):
     """Screens are best effort: a broken panel mustn't stop an update."""
     try:
-        subprocess.run([sys.executable, os.path.join(HERE, "dock_status.py"), *args],
+        subprocess.run([sys.executable, dock_paths.script("dock_status.py"), *args],
                        capture_output=True, timeout=120)
     except Exception:
         log.exception("Couldn't update the screen")
@@ -394,7 +400,7 @@ def run(now=None, path=None, app=HERE, fetch=fetch_latest, get=download, check=s
 def after_update():
     """The screen, and a player docked while syncs were held back."""
     draw("idle", "--force")
-    subprocess.run([sys.executable, os.path.join(HERE, "dock_resync.py"), "--after-safe-hours"],
+    subprocess.run([sys.executable, dock_paths.script("dock_resync.py"), "--after-safe-hours"],
                    capture_output=True)
 
 

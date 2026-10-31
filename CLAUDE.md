@@ -198,6 +198,14 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 
 ## Files
 
+**Layout (user, 2026-10-31):** code is in `songdock/<core|jobs|players|music|screen|report|setup>/`,
+tools in `scripts/` (`scripts/deploy.sh`, `scripts/make_release.sh`, `scripts/check_personal.sh`,
+`scripts/status.sh`). Modules keep flat names and import each other by name: `songdock/dock_paths.py`
+puts every folder on the path, and each file that runs directly imports it first (`ROOT` =
+VERSION, vendor/, pi/; `script(name)` to run another module). `tests/test_layout.py` checks every
+service and script. Paths below without a folder are in one of these. Docks move with the release
+(its installer rewrites the services); the developer's Pi needs `scripts/deploy.sh --install`.
+
 - `dock_status.py`: e-ink status screens (`idle`, `preparing`, `syncing`,
   `safe`, `failed`), with a Wi-Fi indicator and IP address. `--preview out.png`
   renders without hardware; `--wifi -56|off` and `--ip` fake readings for
@@ -228,7 +236,7 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   the previous boot.
 - **2026-10-17 "freeze" was a Wi-Fi problem, not a crash:** the Pi roamed to an access point that associated it but passed no traffic (DHCP never completed; NetworkManager gave up after 45 s and retried the same one).
   A Pi Zero's green LED is solid when idle, so it isn't a hang sign.
-- `deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
+- `scripts/deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
   on the Pi (cache stays in `~/musicdock/cache`).
 - `dock_players.py`: `musicdock-players` (installed like musicdock-status)
   lists the players in the record; `forget` / `keep <name>` set/clear

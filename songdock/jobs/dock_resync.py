@@ -17,6 +17,12 @@ ends during concurrent batches). Whether it
 opted in (MediaDock.txt) is checked by the sync itself, as always.
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import glob
 import json
 import logging
@@ -36,7 +42,7 @@ SHARED_DIR = "/var/lib/musicdock"
 REQUEST = os.path.join(SHARED_DIR, "resync.request")
 SYNC_END_WAIT = 120      # seconds: a sync asking for a follow-up is about to end
 STATE_FILE = os.path.join(SHARED_DIR, "dock_status.json")
-DOCK_STATUS = os.path.join(HERE, "dock_status.py")
+DOCK_STATUS = dock_paths.script("dock_status.py")
 RECORD = os.path.join(SHARED_DIR, "dock.db")
 USB_DEVICES = "/sys/bus/usb/devices"
 BLOCK = "/sys/class/block"

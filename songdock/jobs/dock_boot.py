@@ -31,6 +31,12 @@ Usage:
   dock_boot.py --preview-dir previews  # anywhere: save each frame as a PNG
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import argparse
 import json
 import logging

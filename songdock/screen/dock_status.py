@@ -42,6 +42,12 @@ Safety rules baked in:
     panel; changes between screens always draw immediately.
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import argparse
 import contextlib
 import fcntl
@@ -58,7 +64,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # ---------------------------------------------------------------- config ----
 WIDTH, HEIGHT = 250, 122            # landscape
-_BUNDLED_EPD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
+_BUNDLED_EPD = os.path.join(dock_paths.ROOT, "vendor")
 EPD_LIB = os.environ.get("EPD_LIB") or (
     _BUNDLED_EPD if os.path.isdir(os.path.join(_BUNDLED_EPD, "waveshare_epd"))
     else os.path.expanduser("~/e-Paper/RaspberryPi_JetsonNano/python/lib"))

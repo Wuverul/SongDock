@@ -14,6 +14,12 @@ a half-finished config elsewhere doesn't stop it; a missing or invalid value
 means the default, 5 minutes.
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import logging
 import os
 import subprocess

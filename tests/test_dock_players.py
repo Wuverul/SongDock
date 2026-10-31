@@ -11,7 +11,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 import dock_players  # noqa: E402
 import dock_setup  # noqa: E402
 from dock_record import Record  # noqa: E402

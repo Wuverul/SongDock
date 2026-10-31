@@ -3,21 +3,22 @@
 # publishing. The patterns live in .personal-patterns (one extended regex per
 # line, any case; git-ignored, so the list itself stays private).
 #
-#   ./check_personal.sh                 tracked files as they are now
-#   ./check_personal.sh --history       every version of every file, commit
+#   scripts/check_personal.sh                 tracked files as they are now
+#   scripts/check_personal.sh --history       every version of every file, commit
 #                                       messages and authors (before a push)
-#   ./check_personal.sh --install-hook  run --history before every git push
+#   scripts/check_personal.sh --install-hook  run --history before every git push
 #
 # Each file is checked with its line breaks and indentation collapsed to
 # single spaces, so a detail wrapped across two lines ("Home" / "WiFi")
 # is still found - a line-by-line search missed exactly that once.
 set -euo pipefail
-cd "$(dirname "$0")"
+SELF="$(cd "$(dirname "$0")" && pwd)/check_personal.sh"
+cd "$(dirname "$0")/.."
 
 if [ "${1:-}" = "--install-hook" ]; then
   hook="$(git rev-parse --git-path hooks)/pre-push"
   printf '#!/bin/sh\n# Installed by check_personal.sh: never push personal details.\nexec "%s" --history\n' \
-    "$PWD/check_personal.sh" > "$hook"
+    "$SELF" > "$hook"
   chmod +x "$hook"
   echo "Installed $hook"
   exit 0

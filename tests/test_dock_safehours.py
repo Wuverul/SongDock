@@ -9,7 +9,8 @@ import unittest
 from datetime import datetime
 from types import SimpleNamespace
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 import dock_safehours as sh  # noqa: E402
 
 MORNING = (7 * 60, 10 * 60)

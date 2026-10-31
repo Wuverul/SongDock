@@ -8,7 +8,7 @@ After=musicdock-boot.service
 [Service]
 Type=oneshot
 WorkingDirectory=/var/lib/musicdock
-ExecStart=/usr/bin/python3 @APP_DIR@/dock_resync.py
+ExecStart=/usr/bin/python3 @APP_DIR@/songdock/jobs/dock_resync.py
 Environment=PYTHONUNBUFFERED=1
 # For the CONNECTING screen: the bundled display driver and the login
 # user's config ([display] invert).

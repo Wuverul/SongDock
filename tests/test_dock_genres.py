@@ -8,7 +8,8 @@ import sys
 import tomllib
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 import dock_genres as g  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))

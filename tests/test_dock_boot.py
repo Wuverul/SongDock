@@ -4,7 +4,8 @@ import os
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
+import dock_paths  # noqa: E402,F401
 from dock_boot import (boot_screen, problem, ready, starting_phase,  # noqa: E402
                        wait_for_network)
 

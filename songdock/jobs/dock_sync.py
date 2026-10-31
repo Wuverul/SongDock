@@ -34,6 +34,12 @@ Safety rules (from CLAUDE.md):
     unmount is confirmed. If unmount fails, SYNCING stays up with a warning.
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import argparse
 import fcntl
 import glob
@@ -319,8 +325,8 @@ def list_contents(root, limit=LIST_LIMIT):
 
 
 # ---------------------------------------------------------------- screen ----
-DOCK_STATUS = os.path.join(HERE, "dock_status.py")
-DOCK_RESYNC = os.path.join(HERE, "dock_resync.py")
+DOCK_STATUS = dock_paths.script("dock_status.py")
+DOCK_RESYNC = dock_paths.script("dock_resync.py")
 # This sync's restore (dock_restore: songs on the player when it started,
 # and in all) for the copy screens; empty when it isn't one.
 RESTORE = {}
@@ -943,7 +949,7 @@ def main(argv=None):
         if args.panel:
             preview_dir = None
         else:
-            preview_dir = args.preview_dir or os.path.join(HERE, "previews")
+            preview_dir = args.preview_dir or os.path.join(dock_paths.ROOT, "previews")
     else:
         if os.geteuid() != 0:
             p.error("mounting needs root: run with sudo, or use --fake-device")

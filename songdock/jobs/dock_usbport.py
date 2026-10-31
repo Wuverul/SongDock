@@ -22,6 +22,12 @@ dereference in dwc_otg_driver_remove, Raspberry Pi OS 6.18, 2026-10-25).
 Uses the standard library only (runs under the system python3).
 """
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import dock_paths  # noqa: E402
+
 import json
 import logging
 import os
@@ -33,7 +39,7 @@ import time
 log = logging.getLogger("dock_usbport")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DOCK_STATUS = os.path.join(HERE, "dock_status.py")
+DOCK_STATUS = dock_paths.script("dock_status.py")
 STATE = "/run/musicdock/usbport.json"
 STUCK_AFTER = 60                 # seconds of silence after the kernel gave up
 # Resting screens only: never over a sync, the boot screens or CONNECTING
