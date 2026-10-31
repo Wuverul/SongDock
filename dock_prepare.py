@@ -65,6 +65,7 @@ sys.path.insert(0, HERE)
 import dock_artists  # noqa: E402
 import dock_config  # noqa: E402
 import dock_genres  # noqa: E402
+import dock_room  # noqa: E402
 from subsonic import Client, SubsonicError  # noqa: E402
 
 log = logging.getLogger("dock_prepare")
@@ -1100,6 +1101,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 "added": 0, "removed": 0, "skipped": []}
 
     os.makedirs(tracks_dir, exist_ok=True)
+    dates = dock_room.new_dates(dock_room.read_dates(cache_dir), targets, playlists,
+                                lambda t: last_played_at(t, {}), int(clock()))
+    if dates != dock_room.read_dates(cache_dir):
+        write_json_atomic(os.path.join(cache_dir, dock_room.DATES_FILE), dates)
     shutil.rmtree(tmp_dir, ignore_errors=True)    # leftovers from a cut-off run
     os.makedirs(tmp_dir)
 
@@ -1343,6 +1348,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         return {
             "targets": cfg["sync"]["targets"], "device": device,
             "playlist_tag": cfg["sync"].get("playlist_tag", ""),
+            **({"make_room_months": months} if cfg["sync"].get("make_room", True) else {}),
             **({"lossless_playlists": lossless_lists} if lossless_lists else {}),
             **({"unsplit_artists": sorted(unsplit_artists)} if unsplit_artists else {}),
             "tracks": ready, "on_player": uncached, "playlists": playlists,
@@ -1541,10 +1547,10 @@ def pending_args(manifest):
             if not player:
                 return []
             records = record.tracks(player["guid"])
+            counted = ipod_handler.counted_ids(record, player["guid"], records)
         finally:
             record.close()
-        add, remove = ipod_handler.pending_changes(
-            manifest, {r["navidrome_id"] for r in records})
+        add, remove = ipod_handler.pending_changes(manifest, counted)
         lossless, other, held = ipod_handler.conversions_ready(
             manifest, records, player.get("swaps_no_room"))
         return ["--pending-add", str(add), "--pending-remove", str(remove),

@@ -68,6 +68,16 @@ CREATE TABLE IF NOT EXISTS tracks (
     PRIMARY KEY (guid, dbid)
 );
 CREATE INDEX IF NOT EXISTS tracks_by_song ON tracks (guid, navidrome_id);
+CREATE TABLE IF NOT EXISTS room_removed (      -- dock_room: taken off to make room
+    guid          TEXT NOT NULL,
+    navidrome_id  TEXT NOT NULL,
+    removed_at    INTEGER NOT NULL,
+    play_count    INTEGER NOT NULL DEFAULT 0,  -- the iPod's own, for its return
+    skip_count    INTEGER NOT NULL DEFAULT 0,
+    rating        INTEGER NOT NULL DEFAULT 0,
+    time_played   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guid, navidrome_id)
+);
 CREATE TABLE IF NOT EXISTS pending_plays (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     guid          TEXT NOT NULL,
@@ -312,9 +322,33 @@ class Record:
                     "SELECT navidrome_id, encoding FROM tracks "
                     "WHERE guid = ? AND state = 'present'", (guid,)):
                 mine.setdefault(nid, set()).add(enc)
+            for nid in self.room_removed(guid):    # taken off on purpose: not missing
+                mine.setdefault(nid, set()).add(None)
             held = mine if held is None else {n: held[n] | e for n, e in mine.items()
                                               if n in held}
         return held or {}
+
+    def save_room_removed(self, guid, nid, play_count=0, skip_count=0, rating=0, time_played=0):
+        with self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO room_removed VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (guid, nid, int(time.time()), play_count, skip_count, rating, time_played))
+
+    def room_removed(self, guid):
+        """{song id: row} for songs taken off this player to make room."""
+        rows = self.db.execute("SELECT * FROM room_removed WHERE guid = ?", (guid,))
+        return {r["navidrome_id"]: dict(r) for r in rows}
+
+    def clear_room_removed(self, guid, song_ids):
+        with self.db:
+            self.db.executemany("DELETE FROM room_removed WHERE guid = ? AND navidrome_id = ?",
+                                [(guid, nid) for nid in song_ids])
+
+    def set_added_at(self, guid, dbid, added_at):
+        """A format swap is the same song: it keeps its original date."""
+        with self.db:
+            self.db.execute("UPDATE tracks SET added_at = ? WHERE guid = ? AND dbid = ?",
+                            (added_at, guid, str(dbid)))
 
     def last_played(self):
         """{navidrome_id: time of the latest play the dock has read}."""

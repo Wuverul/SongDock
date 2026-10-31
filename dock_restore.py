@@ -93,6 +93,7 @@ def for_last_player(manifest, now=None, path=None):
             if not player:
                 return None
             present = {r["navidrome_id"] for r in record.tracks(player["guid"])}
+            present |= set(record.room_removed(player["guid"]))
         finally:
             record.close()
     except Exception:

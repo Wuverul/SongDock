@@ -25,8 +25,9 @@ and the list of known iPods written into its MediaDock.txt.
                                  players that can't play it (FLAC=yes: as-is)
     SafeHours=07:00-10:00        no syncs in this daily window (local time;
                                  SafeHours=off to turn it off)
-    RecentPlayMonths=3           cache full: songs not played this long lose
-                                 their cached copy first (0 = ignore plays)
+    MakeRoom=no                  a full player keeps its songs; new ones wait
+    RecentPlayMonths=3           how far back songs are safe from removal to
+                                 make room on a full player
 
 (see dock_players.py for what forgetting does). Several lines are fine.
 Rules, as for wifi.txt:
@@ -61,7 +62,8 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
             "syncfavorites": "SyncStarred", "server": "Server", "username": "Username",
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
-            "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths"}
+            "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
+            "makeroom": "MakeRoom"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
 
@@ -229,6 +231,13 @@ def plan_settings(settings, cfg):
             done.append(f"Safe hours {value}" if window else "Safe hours off")
         else:
             done.append(f"Safe hours already {value}")
+    if "MakeRoom" in settings:
+        on = yes_no("MakeRoom", settings["MakeRoom"])
+        if on != cfg["sync"].get("make_room", True):
+            changes[("sync", "make_room")] = on
+            done.append("Make room on full players " + ("on" if on else "off"))
+        else:
+            done.append("Make room already " + ("on" if on else "off"))
     if "RecentPlayMonths" in settings:
         try:
             months = int(settings["RecentPlayMonths"])

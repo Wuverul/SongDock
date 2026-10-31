@@ -37,6 +37,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from datetime import datetime, timezone
 
 log = logging.getLogger("rockbox_handler")
@@ -342,12 +343,33 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
     def cached(t):
         return os.path.join(cache_dir, t["file"])
     changed = {nid for nid in changed if os.path.exists(cached(wanted[nid]))}
+
+    # Songs taken off earlier to make room, and new songs pushing out the
+    # oldest allowed to go (dock_room; see ipod_handler.apply_plan).
+    import dock_room
+    now = time.time()
+    room_rows = record.room_removed(guid)
+    record.clear_room_removed(guid, [n for n in room_rows if n in present or n not in keep])
+    rules = dock_room.rules(manifest, cache_dir, record, now)
+    returning = {n for n in room_rows
+                 if n in wanted and n not in present and not (rules and rules.recent(n))}
+    new_songs = [t for nid, t in wanted.items() if nid not in present and nid not in returning]
+    new_bytes = sum(ipod_handler.file_size(cached(t)) for t in new_songs)
+    freed = sum(on_disk(r) for nid, r in present.items() if nid not in keep)
+    free = shutil.disk_usage(mount).free
+    victims = []
+    if rules:
+        victims = dock_room.pick(
+            [ipod_handler.file_size(cached(t)) for t in new_songs],
+            free - FREE_SPACE_MARGIN + freed,
+            [(rules.date(nid, r.get("added_at")), nid, on_disk(r)) for nid, r in present.items()
+             if nid in keep and nid not in changed and not rules.recent(nid, r.get("added_at"))])
+    freed += sum(on_disk(present[nid]) for nid in victims)
     no_room = ipod_handler.swaps_without_room(
-        shutil.disk_usage(mount).free,
+        free,
         {nid: (ipod_handler.file_size(cached(wanted[nid])), on_disk(present[nid]))
          for nid in changed},
-        sum(ipod_handler.file_size(cached(t)) for nid, t in wanted.items() if nid not in present),
-        sum(on_disk(r) for nid, r in present.items() if nid not in keep))
+        new_bytes, freed)
     changed -= no_room
     record.set_swaps_no_room(guid, len(no_room))
     if no_room:
@@ -355,12 +377,15 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
 
     removed = 0
     for nid, r in present.items():
-        if nid in keep and nid not in changed:
+        if nid in keep and nid not in changed and nid not in victims:
             continue
+        if nid in victims:
+            record.save_room_removed(guid, nid)
         path = os.path.join(mount, r["dbid"])
         if os.path.exists(path):
             os.remove(path)
-        reason = "re-encoded" if nid in changed else "no longer in any synced playlist"
+        reason = ("re-encoded" if nid in changed else "made room for new songs"
+                  if nid in victims else "no longer in any synced playlist")
         record.mark_removed(guid, r["dbid"], reason)
         log_info(f"Removed {r['artist']} - {r['title']} ({reason})")
         _remove_empty_dirs(mount, os.path.dirname(r["dbid"]))
@@ -369,7 +394,7 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
     renamed = 0
     for nid, r in present.items():
         t = planned.get(nid)
-        if not t or nid in changed or nid not in keep:
+        if not t or nid in changed or nid not in keep or nid in victims:
             continue
         if any((t.get(k) or None) != (r.get(k) or None) for k in TAGGED if t.get(k)):
             write_tags(os.path.join(mount, r["dbid"]), t)
@@ -379,7 +404,8 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
             record.add_track(guid, r["dbid"], **fields)
             renamed += 1
 
-    additions = [t for nid, t in wanted.items() if nid not in present or nid in changed]
+    additions = new_songs + [wanted[nid] for nid in changed]
+    additions += [wanted[nid] for nid in sorted(returning)]
     added = covers = not_added = 0
     for i, t in enumerate(additions):
         src = os.path.join(cache_dir, t["file"])
@@ -387,7 +413,7 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
             log_info(f"Skipping {t.get('title')}: not in the cache right now")
             continue
         if shutil.disk_usage(mount).free - os.path.getsize(src) < FREE_SPACE_MARGIN:
-            not_added = len(additions) - i
+            not_added = sum(a["id"] not in returning for a in additions[i:])
             log_info(f"Player is full: {not_added} track(s) not added")
             break
         if progress:
@@ -410,6 +436,8 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
                          artist=t.get("artist"), album=t.get("album"), title=t.get("title"),
                          genre=t.get("genre"), track_no=t.get("track"),
                          duration=t.get("duration"), encoding=t.get("encoding"))
+        if t["id"] in changed and present[t["id"]].get("added_at"):
+            record.set_added_at(guid, rel, present[t["id"]]["added_at"])
         added += 1
         try:
             covers += write_cover(os.path.join(mount, rel), folder)
@@ -420,7 +448,7 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
     playlists_changed = sync_playlists(record, guid, mount, manifest) if playlists else 0
     return {"added": added, "removed": removed, "replaced": len(changed),
             "renamed": renamed, "swaps_no_room": len(no_room), "art_added": covers,
-            "not_added_full": not_added,
+            "not_added_full": not_added, "no_space": not_added,
             "playlists_changed": playlists_changed}
 
 

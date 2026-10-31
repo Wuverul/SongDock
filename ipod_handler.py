@@ -31,8 +31,11 @@ import gc
 import os
 import shutil
 import time
+import types
 import warnings
 from datetime import datetime, timedelta
+
+import dock_room
 
 # pygpod warns at import that pyusb (its USB auto-detection) is missing; the
 # dock reads the player's identity from udev instead, so it isn't needed.
@@ -782,6 +785,11 @@ def pending_conversions(manifest, records):
     return lossless, other
 
 
+def counted_ids(record, guid, records):
+    """Songs not to list as missing: on the player, or taken off to make room."""
+    return {r["navidrome_id"] for r in records} | set(record.room_removed(guid))
+
+
 def conversions_ready(manifest, records, no_room=0):
     """(to lossless, other, held back): pending_conversions without the
     `no_room` swaps the last sync couldn't fit (players.swaps_no_room), which
@@ -907,11 +915,13 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                                  album=t.get("album"), title=t.get("title"),
                                  track_no=t.get("track"), duration=t.get("duration"),
                                  encoding=t.get("encoding"))
-            for r, _ in session["swapped"]:
+            for r, _, new in session["swapped"]:
                 record.mark_removed(guid, r["dbid"], "re-encoded")
+                if r.get("added_at"):
+                    record.set_added_at(guid, new.dbid, r["added_at"])
         record.clear_copied(guid, [track.ipod_path for track, _ in pending])
         pending.clear()
-        for r, path in session["swapped"]:
+        for r, path, _ in session["swapped"]:
             log_info(f"Replaced {r['artist']} - {r['title']} (re-encoded)")
             if os.path.exists(path):
                 os.remove(path)
@@ -931,13 +941,38 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     def cached(t):
         return os.path.join(cache_dir, t["file"])
     changed = {nid for nid in changed if os.path.exists(cached(wanted[nid]))}
+
+    # Songs taken off earlier to make room (dock_room): they come back only
+    # into free room, or as new songs if their date has become recent. New
+    # songs that don't fit push out the oldest songs allowed to go.
+    room_rows = record.room_removed(guid)
+    for track, t in pending:                  # re-added after a crash
+        if t["id"] in room_rows:
+            track.take_history(types.SimpleNamespace(**room_rows[t["id"]]))
+    record.clear_room_removed(guid, [n for n in room_rows if n in present or n not in keep])
+    rules = (dock_room.rules(manifest, cache_dir, record, wall())
+             if "make_room_months" in manifest else None)
+    returning = {n for n in room_rows
+                 if n in wanted and n not in present and not (rules and rules.recent(n))}
+    new_songs = [t for nid, t in wanted.items() if nid not in present and nid not in returning]
+    new_bytes = sum(file_size(cached(t)) for t in new_songs)
+    freed = sum(size_on_player(r) for nid, r in present.items() if nid not in keep)
+    free = shutil.disk_usage(mount).free
+    victims = []
+    if rules and not (deadline and wall() >= deadline):
+        candidates = [(rules.date(nid, r.get("added_at")), nid, size_on_player(r))
+                      for nid, r in present.items()
+                      if nid in keep and nid not in changed and "added_at" in r
+                      and not rules.recent(nid, r["added_at"])]
+        victims = dock_room.pick([file_size(cached(t)) for t in new_songs],
+                                 free - FREE_SPACE_MARGIN + freed, candidates)
+    freed += sum(size_on_player(present[nid]) for nid in victims)
     no_room = swaps_without_room(
-        shutil.disk_usage(mount).free,
+        free,
         {nid: (file_size(cached(wanted[nid])), size_on_player(present[nid])) for nid in changed},
-        sum(file_size(cached(t)) for nid, t in wanted.items() if nid not in present),
-        sum(size_on_player(r) for nid, r in present.items() if nid not in keep))
+        new_bytes, freed)
     changed -= no_room
-    removals = [r for nid, r in present.items() if nid not in keep]
+    removals = [r for nid, r in present.items() if nid not in keep or nid in victims]
 
     # Tracks already on the player that were added without tags, or whose
     # album name or genre changed in the plan (fixed in the iTunesDB; no
@@ -959,10 +994,11 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         log_info(f"Genre updated on {regenred} track(s) (the [genres] list)")
     session["dirty"] = session["dirty"] or bool(renamed)
     # Songs the player lacks first, then swaps, smallest increase first.
-    additions = [t for nid, t in wanted.items() if nid not in present]
+    additions = list(new_songs)
     additions += sorted((wanted[nid] for nid in changed),
                         key=lambda t: (file_size(cached(t))
                                        - size_on_player(present[t["id"]]), t["id"]))
+    additions += [wanted[nid] for nid in sorted(returning)]
 
     # Remove from the DB, save, and only then delete the files: if the save
     # fails, restoring the backup finds every file still there. (pygpod's
@@ -975,19 +1011,25 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     removed, doomed = 0, []
     for r in removals:
         track = on_player[int(r["dbid"])]
+        if r["navidrome_id"] in victims:
+            record.save_room_removed(guid, r["navidrome_id"], track.play_count, track.skip_count,
+                                     track.rating, track.time_played)
         doomed.append(os.path.join(mount, ipod_path_to_rel(track.ipod_path)))
         db.remove_track(track, delete_file=False)
         pending[:] = [(p, t) for p, t in pending if p is not track]
     if removals:
         commit()
         for r in removals:
-            reason = "no longer in any synced playlist"
+            reason = ("made room for new songs" if r["navidrome_id"] in victims
+                      else "no longer in any synced playlist")
             record.mark_removed(guid, r["dbid"], reason)
             log_info(f"Removed {r['artist']} - {r['title']} ({reason})")
             removed += 1
         for path in doomed:
             if os.path.exists(path):
                 os.remove(path)
+    for nid in victims:
+        del present[nid]
 
     start_artwork_ids_at(db)
     # Tracks added before the prepare job embedded Navidrome's cover (the
@@ -1032,7 +1074,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         if shutil.disk_usage(mount).free - size < FREE_SPACE_MARGIN:
             if swap:
                 no_room.add(t["id"])
-            else:
+            elif t["id"] not in returning:
                 skipped_full += 1
             continue
         if progress:
@@ -1052,9 +1094,11 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
             db.remove_track(old_track, delete_file=False)
             pending[:] = [(p, e) for p, e in pending if p is not old_track]
             session["swapped"].append(
-                (old, os.path.join(mount, ipod_path_to_rel(old_track.ipod_path))))
+                (old, os.path.join(mount, ipod_path_to_rel(old_track.ipod_path)), track))
             replaced += 1
             removed += 1
+        if t["id"] in room_rows:
+            track.take_history(types.SimpleNamespace(**room_rows[t["id"]]))
         pending.append((track, t))
         added += 1
         if clock() - session["last_save"] >= save_every or len(pending) >= SAVE_AFTER:
@@ -1079,6 +1123,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
             commit()
     return {"added": added, "removed": removed, "replaced": replaced, "renamed": renamed,
             "swaps_no_room": len(no_room), "art_added": art_added, "not_added_full": skipped_full,
+            "no_space": skipped_full if final else 0,
             "not_added_limit": over_limit, "playlists_changed": playlists_changed}
 
 

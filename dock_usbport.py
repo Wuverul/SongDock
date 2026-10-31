@@ -38,7 +38,7 @@ STATE = "/run/musicdock/usbport.json"
 STUCK_AFTER = 60                 # seconds of silence after the kernel gave up
 # Resting screens only: never over a sync, the boot screens or CONNECTING
 # (a re-sync dropping the iPod on purpose).
-SHOW_OVER = ("none,idle,preparing,restoring,safehours,safe,failed,notsynced,wifi,"
+SHOW_OVER = ("none,idle,preparing,restoring,safehours,safe,nospace,failed,notsynced,wifi,"
              "wififail,setup,setupfail")
 
 # The kernel's last resorts for a device that won't connect...

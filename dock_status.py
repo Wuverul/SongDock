@@ -80,7 +80,7 @@ SYNC_SCREENS = {"syncing", "prepsync"}         # "do not remove": nothing else c
 PREPARE_SCREENS = {"idle", "preparing", "restoring"}       # drawn by the prepare job
 # Resting screens --refresh may redraw when Wi-Fi connects or drops. Active
 # screens (syncing, preparing, boot) redraw often enough on their own.
-REFRESHABLE = {"idle", "safe", "failed", "notsynced", "wifi", "wififail", "setup",
+REFRESHABLE = {"idle", "safe", "nospace", "failed", "notsynced", "wifi", "wififail", "setup",
                "setupfail", "usbstuck", "restoring", "safehours"}
 # Options that control drawing rather than what's drawn; not saved for --refresh.
 CONTROL_OPTIONS = {"--force": 0, "--only-over": 1, "--preview": 1, "--at": 1,
@@ -353,6 +353,14 @@ def render(screen, args):
         lines([(f"+{args.added}  {minus}{args.removed} tracks", body_f),
                (fit(plays, body_f), body_f),
                (f"Synced {now}", body_f)])
+
+    elif screen == "nospace":
+        # A sync that ended with new songs left off (dock_room).
+        header(f"{warn}PLAYER FULL", inverted=True)
+        lines([("Safe to remove", body_f),
+               (fit(f"{args.not_added} songs didn't fit", body_f), body_f),
+               ("Not enough free space to sync", small_f),
+               (f"Synced {now}", small_f)])
 
     elif screen in ("wifi", "wififail"):
         # Result of a wifi.txt on the player (the sync itself succeeded).
@@ -748,7 +756,7 @@ def build_parser():
     p.add_argument("screen", choices=["idle", "preparing", "syncing", "safe",
                                       "failed", "starting", "offline", "notsynced", "wifi", "wififail",
                                       "setup", "setupfail", "prepsync",
-                                      "connecting", "usbstuck", "restoring", "safehours"])
+                                      "connecting", "usbstuck", "restoring", "safehours", "nospace"])
     p.add_argument("--step", type=int, help="syncing: current step")
     p.add_argument("--part-done", type=int,
                    help="syncing: items done within this step (fills the bar)")
@@ -784,6 +792,8 @@ def build_parser():
                    help="idle: songs the next sync swaps for another format")
     p.add_argument("--swaps-no-room", type=int, default=0,
                    help="idle: format swaps waiting for room on the player")
+    p.add_argument("--not-added", type=int, default=0,
+                   help="nospace: new songs that didn't fit on the player")
     p.add_argument("--last-sync", type=float, metavar="EPOCH",
                    help="idle: when the iPod was last synced")
     p.add_argument("--queued", type=int, default=0,
@@ -923,7 +933,7 @@ REST_MODES = {
     # 10 min after a sync; FAILED, WI-FI UNCHANGED and SETUP NOT USED stay up
     # until unplugged.
     "timer": "safe,notsynced,wifi,setup",
-    "unplug": "safe,failed,notsynced,wifi,wififail,setup,setupfail",  # player physically removed
+    "unplug": "safe,nospace,failed,notsynced,wifi,wififail,setup,setupfail",  # player physically removed
 }
 MIN_SHOWN = 60   # seconds SAFE/FAILED stay up before an unplug swaps them
 
@@ -954,7 +964,7 @@ def rest_main(argv=None, sleep=time.sleep):
         return
     prev = build_parser().parse_args(state.get("argv") or [screen])
     when = datetime.fromtimestamp(drawn_at).strftime("%-I:%M %p")
-    if screen in ("safe", "wifi", "wififail", "setup", "setupfail"):
+    if screen in ("safe", "nospace", "wifi", "wififail", "setup", "setupfail"):
         plays = "no play counts" if prev.no_plays else f"{prev.plays} plays"
         detail = (f"Last synced {when}\n"
                   f"+{prev.added}  \u2212{prev.removed} tracks \u00b7 {plays}")

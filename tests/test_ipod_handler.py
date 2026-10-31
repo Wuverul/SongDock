@@ -13,6 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.dirname(__file__))
+import dock_room  # noqa: E402
 import ipod_fixtures as fx  # noqa: E402
 import ipod_handler as h  # noqa: E402
 from dock_record import Record  # noqa: E402
@@ -733,6 +734,151 @@ class HandlerTests(unittest.TestCase):
         self.assertNotEqual(tracks[0].dbid, before.dbid)
         self.assertEqual((tracks[0].play_count, tracks[0].skip_count, tracks[0].rating,
                           tracks[0].time_played), (7, 2, 80, 3000000000))
+
+    # Making room on a full player (dock_room).
+    def room_setup(self, ages_days, months=3):
+        """Songs on the player whose plays are `ages_days` old (None = no date)."""
+        self.rec.upsert_player(G, model="xB903")
+        self.now = 1_800_000_000
+        songs = [self.song(f"n{i}", f"Song {i}", track=i) for i in range(len(ages_days))]
+        self.apply(self.manifest(songs))
+        self.rec.db.execute("UPDATE tracks SET added_at = 1000")
+        self.rec.db.commit()
+        dates = {s["id"]: self.now - d * 86400 for s, d in zip(songs, ages_days) if d is not None}
+        self.write_dates(dates)
+        return songs
+
+    def write_dates(self, songs):
+        import json
+        with open(os.path.join(self.cache, dock_room.DATES_FILE), "w") as f:
+            json.dump({"playlists": {}, "songs": songs}, f)
+
+    def room_plan(self, songs, months=3):
+        return dict(self.manifest(songs), make_room_months=months)
+
+    def apply_with_room(self, plan, songs_of_room, **kw):
+        """Sync on a player with room for `songs_of_room` more song files than
+        it holds now, counting files as they come and go."""
+        one = os.path.getsize(os.path.join(self.cache, "tracks", "n0.mp3"))
+        real = shutil.disk_usage(self.tmp)
+        used = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(
+            os.path.join(self.mount, "iPod_Control", "Music")) for f in fs)
+        total = used + h.FREE_SPACE_MARGIN + songs_of_room * one
+
+        def usage(path):
+            now_used = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(
+                os.path.join(self.mount, "iPod_Control", "Music")) for f in fs)
+            return real._replace(free=total - now_used)
+        with mock.patch("shutil.disk_usage", side_effect=usage), \
+                mock.patch("time.time", return_value=self.now):
+            return self.apply(plan, wall=lambda: self.now, **kw)
+
+    def on_player_ids(self):
+        return sorted(h.navidrome_id_from(t) for t in self.db().tracks)
+
+    def test_nothing_is_removed_when_everything_fits(self):
+        songs = self.room_setup([400, 300, 200])
+        new = self.song("new", "New", track=9)
+        summary = self.apply_with_room(self.room_plan(songs + [new]), 2)
+        self.assertEqual((summary["removed"], summary["no_space"]), (0, 0))
+        self.assertEqual(self.on_player_ids(), ["n0", "n1", "n2", "new"])
+
+    def test_only_the_oldest_songs_go_and_only_enough(self):
+        songs = self.room_setup([200, 400, 300, 150])     # all older than 3 months
+        new = self.song("new", "New", track=9)
+        summary = self.apply_with_room(self.room_plan(songs + [new]), 0)
+        self.assertEqual((summary["removed"], summary["no_space"]), (1, 0))
+        self.assertEqual(self.on_player_ids(), ["n0", "n2", "n3", "new"])   # n1: oldest
+
+    def test_songs_within_the_months_are_never_removed_and_the_sync_reports_it(self):
+        songs = self.room_setup([30, 10])
+        new = self.song("new", "New", track=9)
+        summary = self.apply_with_room(self.room_plan(songs + [new]), 0)
+        self.assertEqual((summary["removed"], summary["no_space"]), (0, 1))
+        self.assertEqual(self.on_player_ids(), ["n0", "n1"])
+        self.assertEqual(self.rec.player(G)["full"], 1)
+
+    def test_old_songs_go_for_what_fits_when_not_everything_can(self):
+        songs = self.room_setup([200, 10])
+        new = [self.song(f"new{i}", f"New {i}", track=9) for i in (1, 2)]
+        summary = self.apply_with_room(self.room_plan(songs + new), 0)
+        self.assertEqual((summary["removed"], summary["added"], summary["no_space"]), (1, 1, 1))
+        self.assertEqual(self.on_player_ids(), ["n1", "new1"])
+
+    def test_songs_with_no_play_go_before_played_ones(self):
+        songs = self.room_setup([200, None])
+        new = self.song("new", "New", track=9)
+        self.apply_with_room(self.room_plan(songs + [new]), 0)
+        self.assertEqual(self.on_player_ids(), ["n0", "new"])
+
+    def test_a_song_recently_added_to_the_player_is_safe(self):
+        songs = self.room_setup([None, 200])
+        self.rec.db.execute("UPDATE tracks SET added_at = ? WHERE navidrome_id = 'n0'",
+                            (self.now - 86400,))
+        self.rec.db.commit()
+        new = self.song("new", "New", track=9)
+        self.apply_with_room(self.room_plan(songs + [new]), 0)
+        self.assertEqual(self.on_player_ids(), ["n0", "new"])
+
+    def test_turned_off_or_without_dates_nothing_goes(self):
+        songs = self.room_setup([400])
+        new = self.song("new", "New", track=9)
+        summary = self.apply_with_room(self.manifest(songs + [new]), 0)      # setting off
+        self.assertEqual((summary["removed"], summary["no_space"]), (0, 1))
+        os.remove(os.path.join(self.cache, dock_room.DATES_FILE))
+        summary = self.apply_with_room(self.room_plan(songs + [new]), 0)     # no dates
+        self.assertEqual((summary["removed"], summary["no_space"]), (0, 1))
+
+    def test_removed_song_stays_off_quietly_then_returns_with_its_counts(self):
+        songs = self.room_setup([400, 300])
+        db = self.db()
+        for t in db.tracks:
+            if h.navidrome_id_from(t) == "n0":
+                t.set_header(0x50, "<I", 9)
+                t.set_header(0x1F, "<B", 60)
+        db.save()
+        new = self.song("new", "New", track=9)
+        plan = self.room_plan(songs + [new])
+        self.apply_with_room(plan, 0)
+        self.assertEqual(self.on_player_ids(), ["n1", "new"])
+        # Next sync, still full: it doesn't push anything off, nor count as an error.
+        summary = self.apply_with_room(plan, 0)
+        self.assertEqual((summary["removed"], summary["no_space"], summary["added"]), (0, 0, 0))
+        self.assertEqual(self.rec.player(G)["full"], 0)
+        records = self.rec.tracks(G)
+        self.assertEqual(h.pending_changes(plan, h.counted_ids(self.rec, G, records)), (0, 0))
+        self.assertIn("n0", self.rec.songs_on_every_player())
+        # Room appears: it's back with the iPod's counts.
+        self.apply_with_room(plan, 1)
+        back = {h.navidrome_id_from(t): t for t in self.db().tracks}["n0"]
+        self.assertEqual((back.play_count, back.rating), (9, 60))
+        self.apply_with_room(plan, 0)
+        self.assertEqual(self.rec.room_removed(G), {})
+
+    def test_removed_song_in_an_updated_playlist_returns_as_a_new_song(self):
+        songs = self.room_setup([400, 300])
+        new = self.song("new", "New", track=9)
+        plan = self.room_plan(songs + [new])
+        self.apply_with_room(plan, 0)
+        self.write_dates({"n0": self.now - 86400, "n1": self.now - 300 * 86400})
+        self.apply_with_room(plan, 0)
+        self.assertEqual(self.on_player_ids(), ["n0", "new"])
+
+    def test_a_swap_keeps_the_songs_original_date(self):
+        plan = self.counted_swap()
+        self.rec.db.execute("UPDATE tracks SET added_at = 1000")
+        self.rec.db.commit()
+        self.apply(plan)
+        self.assertEqual(self.rec.tracks(G)[0]["added_at"], 1000)
+
+    def test_swaps_dont_push_songs_off(self):
+        songs = self.room_setup([400, 300])
+        shutil.copy(os.path.join(self.cache, "tracks", "n0.mp3"),
+                    os.path.join(self.cache, "tracks", "n0.m4a"))
+        plan = self.room_plan([dict(songs[0], file="tracks/n0.m4a", encoding="alac 16"), songs[1]])
+        summary = self.apply_with_room(plan, 0)
+        self.assertEqual((summary["removed"], summary["swaps_no_room"]), (0, 1))
+        self.assertEqual(self.on_player_ids(), ["n0", "n1"])
 
     def counted_swap(self):
         """A song with iPod counts, plus a playlist, and a plan to swap it."""

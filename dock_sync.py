@@ -502,7 +502,10 @@ def run_sync(device, show, work=None, total=None):
             else:
                 if batch.get("run"):
                     dock_progress.clear_run()          # the run's last sync: done
-                show("safe", "--added", str(summary.get("added", 0)),
+                show("nospace" if summary.get("no_space") else "safe",
+                     *(["--not-added", str(summary["no_space"])]
+                       if summary.get("no_space") else []),
+                     "--added", str(summary.get("added", 0)),
                      "--removed", str(summary.get("removed", 0)),
                      "--plays", str(summary.get("plays_sent", 0)),
                      "--queued", str(summary.get("plays_queued", 0)),
@@ -656,6 +659,7 @@ def make_ipod_work(cfg, guid, product, write):
             try:
                 import dock_restore
                 present = {r["navidrome_id"] for r in record.tracks(player_guid)}
+                present |= set(record.room_removed(player_guid))
                 info = dock_restore.status(player_guid, present, manifest)
                 if info:
                     RESTORE.update(have=info["have"], total=info["total"])
@@ -770,10 +774,10 @@ def ask_for_followup(cfg, applied, guid):
         try:
             records = record.tracks(guid)
             no_room = (record.player(guid) or {}).get("swaps_no_room")
+            counted = ipod_handler.counted_ids(record, guid, records)
         finally:
             record.close()
-        add, remove = ipod_handler.pending_changes(
-            newest, {r["navidrome_id"] for r in records})
+        add, remove = ipod_handler.pending_changes(newest, counted)
         if not (add or remove
                 or any(ipod_handler.conversions_ready(newest, records, no_room)[:2])):
             return False

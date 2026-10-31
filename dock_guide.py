@@ -182,10 +182,13 @@ A daily window with no syncs, e.g. to grab the iPod for a morning commute:
   An iPod docked then just charges; a sync running when the window opens
   finishes early. Either way it syncs afterwards if it's still docked.
 
-When the dock's cache is full, songs already on your players lose their
-cached copy to make room (they stay on the players). Songs not played lately
-go first:
-  RecentPlayMonths=3  (the default; RecentPlayMonths=0 ignores plays)
+When new songs don't fit on a player, it loses its oldest songs, only as many
+as it takes. A song's date is its last play, when it reached the player, or
+when a playlist holding it changed, whichever is newest. Favorites go by plays
+like the rest. A removed song returns when there's free room.
+  RecentPlayMonths=3  (the default) songs newer than this are never removed.
+                      If that isn't enough, the screen shows PLAYER FULL.
+  MakeRoom=no         nothing is removed; new songs wait for room
 
 The Navidrome server and the account the dock signs in with:
   Server=https://music.example.com
@@ -241,6 +244,8 @@ WHAT THE SCREEN MEANS
   NOT SYNCED         The iPod has no {marker} (or isn't an iPod).
   CONNECTING         New music is ready for a docked iPod; it syncs again
                      by itself. Do not unplug.
+  PLAYER FULL        Finished, safe to remove, but new songs didn't fit even
+                     after removing songs older than RecentPlayMonths.
   DOCK READY         Idle. Shows what the next sync will add and remove.
                      "No room to convert 7": 7 songs keep their format
                      until the player has space.

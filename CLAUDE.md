@@ -872,6 +872,17 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   recent_play_months` (default 3, 0 = ignore; `RecentPlayMonths=`) go first,
   then largest first. Last played = the later of Navidrome's `played` and the
   record's plays. Only the cache copy goes: songs stay on the players.
+- **Making room on a full player (`dock_room.py`, user, 2026-10-30):** new songs
+  that don't fit push off the oldest songs, just enough, and never one dated
+  within `recent_play_months` (date = latest of last play, added to the player,
+  a playlist holding it changing; favorites have no date of their own). Not
+  enough = PLAYER FULL (`nospace`). `make_room` (default on; `MakeRoom=`). Removed
+  songs stay in the plan, listed in `room_removed` with their iPod counts: they
+  count as held, return only into free room (counts restored) or as new songs
+  once their date is recent. Format swaps never push songs off. Dates live in
+  cache/song_dates.json, not the plan; no file = nothing removed. Playlist dates
+  are when the dock saw the song list change: Navidrome's `changed` moves on
+  every read of a smart playlist. Not on hardware yet.
 - **Songs too big for the cache (2026-10-26, user: "people do some crazy
   things"):** a run stops at the first song that doesn't fit, so one that
   can't fit even in an emptied cache would block everything after it

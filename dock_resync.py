@@ -44,7 +44,7 @@ APPLE = "05ac"
 REPLUG_PAUSE = 2              # seconds between dropping the iPod and taking it back
 SYNC_START_WAIT = 60          # seconds for the sync to take over the screen
 # CONNECTING may replace any resting screen, never SYNCING or the boot screens.
-CONNECTING_OVER = ("none,idle,preparing,restoring,safehours,safe,failed,notsynced,wifi,"
+CONNECTING_OVER = ("none,idle,preparing,restoring,safehours,safe,nospace,failed,notsynced,wifi,"
                    "wififail,setup,"
                    "setupfail")
 

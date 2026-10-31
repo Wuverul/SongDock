@@ -265,6 +265,11 @@ def ipod_section(record_path, manifest, now=None):
             "SELECT navidrome_id, encoding FROM tracks WHERE guid = ? AND state = 'present'",
             (p["guid"],))]
         present = [r["navidrome_id"] for r in records]
+        try:
+            set_aside = [r[0] for r in db.execute(
+                "SELECT navidrome_id FROM room_removed WHERE guid = ?", (p["guid"],))]
+        except sqlite3.Error:                     # the table comes with the next sync
+            set_aside = []
         sent, waiting, unmatched, oldest = db.execute(
             "SELECT SUM(sent_at IS NOT NULL), "
             "SUM(sent_at IS NULL AND navidrome_id IS NOT NULL), "
@@ -276,12 +281,13 @@ def ipod_section(record_path, manifest, now=None):
     lines = [f"iPod ...{p['guid'][-4:]} ({p['model'] or 'model ?'}): last synced "
              f"{when(p['last_sync'])} ({ago(p['last_sync'], now)}), {len(set(present))} tracks"]
     if manifest:
-        add, remove = ipod_handler.pending_changes(manifest, present)
+        add, remove = ipod_handler.pending_changes(manifest, present + set_aside)
         lossless, other, held = ipod_handler.conversions_ready(
             manifest, records, p["swaps_no_room"] if "swaps_no_room" in p.keys() else 0)
         changes = [f"+{add} -{remove} tracks"] if add or remove else []
         changes += [f"{lossless} to lossless"] if lossless else []
         changes += [f"{other} to another format"] if other else []
+        changes += [f"{len(set_aside)} taken off to make room"] if set_aside else []
         changes += [f"{held} format changes waiting for room on the player"] if held else []
         lines.append("Next sync: " + (", ".join(changes) or "nothing to change"))
     plays = f"Plays: {sent or 0} sent so far, {waiting or 0} waiting to send"

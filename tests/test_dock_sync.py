@@ -223,6 +223,7 @@ class OptInTests(unittest.TestCase):
         record = mock.Mock()
         record.player.return_value = {"guid": "G"}
         record.tracks.return_value = []
+        record.room_removed.return_value = {}
         dev = FakeDevice(self.root)
         dev.make_writable = mock.Mock()
         steps = []

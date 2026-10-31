@@ -81,5 +81,42 @@ class PendingScreenTests(unittest.TestCase):
         dock_status.render("idle", args)
 
 
+class RoomDatesTests(unittest.TestCase):
+    def dates(self, previous, playlists, now=5000):
+        import dock_room
+        songs = [{"id": i, "played": p} for i, p in (("a", 100), ("b", 0), ("c", 0))]
+        return dock_room.new_dates(previous, songs, playlists, lambda t: t["played"], now)
+
+    def test_first_run_dates_nothing_a_change_dates_the_whole_list(self):
+        lists = [{"target": "playlist:L", "song_ids": ["a", "b"]}]
+        first = self.dates(None, lists)
+        self.assertEqual(first["songs"], {"a": 100})          # lists already there are old
+        self.assertEqual(self.dates(first, lists, now=9000), first)     # same songs, same date
+        grown = [{"target": "playlist:L", "song_ids": ["a", "b", "c"]}]
+        self.assertEqual(self.dates(first, grown)["songs"], {"a": 5000, "b": 5000, "c": 5000})
+
+    def test_a_new_list_counts_favorites_dont(self):
+        first = self.dates(None, [])
+        lists = [{"target": "starred", "song_ids": ["a", "b"]}]
+        self.assertEqual(self.dates(first, lists)["songs"], {"a": 100})
+        lists = [{"target": "playlist:New", "song_ids": ["b"]}]
+        self.assertEqual(self.dates(first, lists)["songs"], {"a": 100, "b": 5000})
+
+    def test_pick_removes_just_enough_and_nothing_for_what_cant_fit(self):
+        import dock_room
+        old = [(30, "x", 10), (10, "y", 10), (20, "z", 10)]
+        self.assertEqual(dock_room.pick([5], 5, old), [])
+        self.assertEqual(dock_room.pick([15], 0, old), ["y", "z"])
+        self.assertEqual(dock_room.pick([100], 0, old), [])
+        self.assertEqual(dock_room.pick([10, 100], 0, old), ["y"])
+
+
+class FullScreenTests(unittest.TestCase):
+    def test_renders(self):
+        args = dock_status.build_parser().parse_args(
+            ["nospace", "--not-added", "12", "--added", "3", "--wifi", "-50", "--ip", "10.0.0.2"])
+        dock_status.render("nospace", args)
+
+
 if __name__ == "__main__":
     unittest.main()

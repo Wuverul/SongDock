@@ -74,6 +74,27 @@ class RockboxTests(unittest.TestCase):
         return {k: (f.get(k) or [None])[0] for k in ("title", "album", "genre",
                                                      rb.ID_TAG.lower())}
 
+    def test_full_player_loses_its_oldest_song_for_a_new_one(self):
+        import dock_room
+        import json
+        songs = [self.song(f"n{i}", f"Song {i}", track=i) for i in range(2)]
+        self.sync(self.manifest(songs))
+        self.rec.db.execute("UPDATE tracks SET added_at = 1000")
+        self.rec.db.commit()
+        with open(os.path.join(self.cache, dock_room.DATES_FILE), "w") as f:
+            json.dump({"songs": {"n1": 2000}}, f)
+        new = self.song("new", "New", track=9)
+        one = os.path.getsize(os.path.join(self.cache, "tracks", "n0.mp3"))
+        real = shutil.disk_usage(self.tmp)
+        with mock.patch("shutil.disk_usage",
+                        return_value=real._replace(free=rb.FREE_SPACE_MARGIN + one // 2)):
+            summary = self.sync(dict(self.manifest(songs + [new]), make_room_months=3))
+        self.assertEqual(summary["removed"], 1)
+        self.assertEqual(set(self.rec.room_removed(G)), {"n0"})
+        ids = {r["navidrome_id"] for r in self.rec.tracks(G)}
+        self.assertNotIn("n0", ids)
+        self.assertIn("n1", ids)
+
     def test_swap_without_room_keeps_the_file(self):
         a = self.song("n1", "One")
         self.sync(self.manifest([a]))
