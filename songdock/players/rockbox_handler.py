@@ -176,7 +176,8 @@ def safe_name(text, limit=80):
 def track_path(t, ext):
     """Where a planned track goes, relative to the player's root."""
     artist = safe_name(t.get("album_artist") or t.get("artist") or "Unknown Artist")
-    album = safe_name(t.get("album") or "Unknown Album")
+    # A "<Artist> Singles" song keeps its own folder: art here is per folder.
+    album = safe_name(t.get("folder_album") or t.get("album") or "Unknown Album")
     number = ""
     if t.get("track"):
         number = (f"{int(t['disc'])}-" if t.get("disc") and int(t["disc"]) > 1 else "") \

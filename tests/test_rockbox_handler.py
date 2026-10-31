@@ -205,6 +205,11 @@ class RockboxTests(unittest.TestCase):
         self.assertTrue(summary["paused"])
         self.assertTrue(summary["replug_to_finish"])
 
+    def test_a_singles_song_keeps_its_own_folder_and_cover(self):
+        t = {"album_artist": "Fox", "album": "Fox Singles", "folder_album": "Bruises",
+             "title": "Bruises", "id": "n"}
+        self.assertEqual(rb.track_path(t, ".mp3"), os.path.join("MediaDock", "Fox", "Bruises", "Bruises.mp3"))
+
     def test_swap_without_room_keeps_the_file(self):
         a = self.song("n1", "One")
         self.sync(self.manifest([a]))

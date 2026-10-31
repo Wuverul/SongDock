@@ -271,6 +271,13 @@ class SettingsTests(PlayersBase):
         self.assertEqual(self.apply("FavoriteRating=0\n")["done"], ["Ratings don't favorite songs"])
         self.assertIn("0 to 5", self.apply("FavoriteRating=9\n")["reason"])
 
+    def test_singles_album_from_the_ipod(self):
+        self.assertEqual(self.apply("SinglesAlbum=6\n")["done"],
+                         ['6+ one-track albums become "<Artist> Singles"'])
+        self.assertEqual(self.settings()["sync"]["singles_album_min"], 6)
+        self.assertEqual(self.apply("SinglesAlbum=0\n")["done"], ["One-track albums stay separate"])
+        self.assertIn("from 2 to 100", self.apply("SinglesAlbum=1\n")["reason"])
+
     def test_lossless_tag_can_be_turned_off(self):
         result = self.apply("LosslessTag=none\n")
         self.assertTrue(result["ok"])

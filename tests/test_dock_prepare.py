@@ -902,6 +902,27 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(server, cfg)
         self.assertNotIn("favorite_rating", self.manifest())
 
+    def test_singles_grouped_once_with_lookups_remembered(self):
+        songs = [song(f"s{i}", albumId=f"al{i}", album=f"Al {i}") for i in range(4)]
+        calls = []
+
+        class Server(FakeServer):
+            def call(self, method, **kw):
+                if method == "getAlbum":
+                    calls.append(kw["id"])
+                    return {"album": {"id": kw["id"], "name": "x", "songCount": 1, "song": []}}
+                return super().call(method, **kw)
+        server = Server(songs=songs)
+        self.run_prepare(server)
+        tracks = self.manifest()["tracks"]
+        self.assertEqual({t["album"] for t in tracks}, {"Artist Singles"})
+        self.assertEqual(sorted(t["folder_album"] for t in tracks), [f"Al {i}" for i in range(4)])
+        made = len(calls)
+        generated = self.manifest().get("generated")
+        self.run_prepare(Server(songs=[dict(s) for s in songs]))
+        self.assertEqual(len(calls), made)                    # remembered
+        self.assertEqual(self.manifest().get("generated"), generated)   # plan unchanged
+
     def test_making_room_on_players_is_off_unless_turned_on(self):
         server = FakeServer(songs=[song("a")])
         self.run_prepare(server)

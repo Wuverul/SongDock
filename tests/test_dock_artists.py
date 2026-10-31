@@ -197,6 +197,46 @@ class TidyTests(unittest.TestCase):
             self.assertEqual(run(extra), [("Simon & Garfunkel", "V (feat. Z)"),
                                           ("Simon & Garfunkel", "W")])
 
+    # "<Artist> Singles"
+    def singles(self, n, artist="Fox", start=0):
+        return [{"id": f"{artist}{i}", "artist": artist, "title": f"T{i}", "album": f"A{i}",
+                 "albumId": f"{artist}-a{i}"} for i in range(start, start + n)]
+
+    def group(self, songs, minimum=4, counts=None):
+        counts = counts if counts is not None else {s["albumId"]: 1 for s in songs}
+        return a.group_singles(songs, counts, minimum), songs
+
+    def test_four_singles_become_one_album_three_dont(self):
+        moved, songs = self.group(self.singles(4))
+        self.assertEqual(moved, 4)
+        self.assertEqual({s["album"] for s in songs}, {"Fox Singles"})
+        self.assertEqual(songs[0]["folder_album"], "A0")
+        moved, songs = self.group(self.singles(3))
+        self.assertEqual(moved, 0)
+        self.assertEqual(songs[0]["album"], "A0")
+
+    def test_a_song_kept_from_a_longer_album_doesnt_count(self):
+        songs = self.singles(4)
+        counts = {s["albumId"]: 1 for s in songs}
+        counts["Fox-a3"] = 12
+        self.assertEqual(self.group(songs, counts=counts)[0], 0)
+        self.assertEqual(songs[3]["album"], "A3")
+
+    def test_an_unknown_track_count_doesnt_count(self):
+        songs = self.singles(4)
+        self.assertEqual(self.group(songs, counts={})[0], 0)
+
+    def test_albums_with_several_planned_songs_stay(self):
+        songs = self.singles(4) + [dict(self.singles(1)[0], id="again")]
+        counts = {s["albumId"]: 1 for s in songs}
+        self.assertEqual(self.group(songs, counts=counts)[0], 0)        # a0 has 2 songs: 3 left
+
+    def test_artists_counted_apart_and_zero_is_off(self):
+        songs = self.singles(4) + self.singles(3, "Other")
+        self.group(songs)
+        self.assertEqual(songs[-1]["album"], "A2")
+        self.assertEqual(self.group(self.singles(4), minimum=0)[0], 0)
+
     def test_extra_names(self):
         songs = self.songs("Mine, Yours")
         a.tidy(songs, ("Mine, Yours",))

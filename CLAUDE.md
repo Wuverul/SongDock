@@ -886,6 +886,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   recent_play_months` (default 3, 0 = ignore; `RecentPlayMonths=`) go first,
   then largest first. Last played = the later of Navidrome's `played` and the
   record's plays. Only the cache copy goes: songs stay on the players.
+- **Singles albums (user, 2026-10-31):** `dock_artists.group_singles`: an artist with
+  `[sync] singles_album_min` (default 4, 0 off; `SinglesAlbum=`) albums whose real track count
+  is 1 (`album_song_counts` in the plan) gets them as "<Artist> Singles", after the genres. Names
+  only, in the iTunesDB, no re-copy; tracks sort by title. Art isn't shared in an album named
+  "... Singles". Rockbox keeps each in its own folder (`folder_album`, cover.jpg is per folder).
 - `dock_share.py` (user, 2026-10-30): `musicdock-status --share`, for bug reports and
   friends helping out; prints only, sends nothing. A fixed list of facts (add new
   settings to `SHARED_SETTINGS` on purpose); error lines lose library names, then

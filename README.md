@@ -102,6 +102,11 @@ music in the background, so syncs are quick.
   for every player on it, since it keeps one copy of each song. Forgetting
   that player puts the original formats back.
 
+- **Singles in one place:** an artist with 4 or more one-track albums gets them as one
+  album on the player, "<Artist> Singles", each song keeping its own art. Songs kept from
+  a longer album don't count. Only the player's names change. `singles_album_min` (or
+  `SinglesAlbum=` in a `DockSetup.txt`) sets how many; 0 turns it off.
+
 - **Ratings become favorites:** rate a song 4 or 5 stars on a stock iPod and the next
   sync favorites it in Navidrome, once, so it stays on the iPod even after leaving
   its playlists. Lowering the rating changes nothing, and a favorite you remove stays

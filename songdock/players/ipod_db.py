@@ -620,7 +620,9 @@ class StreamDatabase:
         if not art:
             return False
         key = art_key(track.album, len(art))
-        if self.share_art:
+        # Each song of a "<Artist> Singles" album has its own cover: never share.
+        share = self.share_art and not (track.album or "").casefold().endswith(" singles")
+        if share:
             image = self.art_index().get(key)
             if image is not None and image in self.images():
                 self.link_art(track, image, len(art))
@@ -629,7 +631,7 @@ class StreamDatabase:
         if image is None:
             return False
         self.link_art(track, image, len(art))
-        if self.share_art:
+        if share:
             self.art_index()[key] = image
         self._dirty = True
         return True

@@ -26,6 +26,7 @@ and the list of known iPods written into its MediaDock.txt.
                                  players that can't play it (FLAC=yes: as-is)
     SafeHours=07:00-10:00        no syncs in this daily window (local time;
                                  SafeHours=off to turn it off)
+    SinglesAlbum=4               one-track albums before "<Artist> Singles" (0 = off)
     FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
     AutoUpdate=no                new releases are announced, not installed
     MakeRoom=yes                 a full player loses its oldest songs for new ones
@@ -68,7 +69,7 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
             "makeroom": "MakeRoom", "autoupdate": "AutoUpdate",
-            "favoriterating": "FavoriteRating"}
+            "favoriterating": "FavoriteRating", "singlesalbum": "SinglesAlbum"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
 
@@ -247,6 +248,17 @@ def plan_settings(settings, cfg):
             done.append(f"Safe hours {value}" if window else "Safe hours off")
         else:
             done.append(f"Safe hours already {value}")
+    if "SinglesAlbum" in settings:
+        try:
+            count = int(settings["SinglesAlbum"])
+        except ValueError:
+            count = -1
+        if count != 0 and not 2 <= count <= 100:
+            raise SetupFileError("SinglesAlbum must be 0 (off) or a whole number from 2 to 100")
+        if count != cfg["sync"].get("singles_album_min", 4):
+            changes[("sync", "singles_album_min")] = count
+        done.append(f"{count}+ one-track albums become \"<Artist> Singles\"" if count
+                    else "One-track albums stay separate")
     if "FavoriteRating" in settings:
         try:
             stars = int(settings["FavoriteRating"])

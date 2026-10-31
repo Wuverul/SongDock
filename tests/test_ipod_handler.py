@@ -953,6 +953,28 @@ class HandlerTests(unittest.TestCase):
         self.favorites_after(self.rate(5))
         self.assertEqual(self.favorites_after(self.rate(1)), ["n1"])
 
+    def test_singles_album_keeps_a_cover_per_song_even_at_the_same_size(self):
+        # Two different covers of exactly the same size: the one case where sharing
+        # by album name and size would show the wrong art.
+        import io
+        from PIL import Image
+
+        def cover(colour):
+            out = io.BytesIO()
+            Image.new("RGB", (64, 64), colour).save(out, "PNG")
+            return out.getvalue().ljust(400, b"\0")     # the same size exactly
+        covers = [cover((200, 0, 0)), cover((0, 0, 200))]
+        self.assertEqual(len(covers[0]), len(covers[1]))
+
+        def images(album):
+            art = iter(covers)
+            songs = [self.song(f"{album}{i}", f"Song {i}", album=album, track=i) for i in (1, 2)]
+            with mock.patch("pygpod.tags.extract_artwork", side_effect=lambda p: next(art)):
+                self.apply(self.manifest(songs))
+            return {t.mhii_link for t in self.db().tracks if t.album == album}
+        self.assertEqual(len(images("Whole")), 1)         # a normal album shares by name + size
+        self.assertEqual(len(images("Fox Singles")), 2)
+
     def counted_swap(self):
         """A song with iPod counts, plus a playlist, and a plan to swap it."""
         a = self.song("n1", "One")

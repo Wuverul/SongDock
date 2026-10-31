@@ -484,6 +484,33 @@ def plan_genres(client, cfg, songs, previous, album_info=None):
     return genres, album_types
 
 
+def one_track_albums(client, songs, previous, album_info, minimum):
+    """{album id: its real track count} for albums that could make a "<Artist>
+    Singles": the only song of theirs in the plan, by an artist with `minimum` such
+    albums. Kept in the manifest so each is looked up once; a failed lookup is
+    retried next run."""
+    if not minimum:
+        return {}
+    known = previous.get("album_song_counts", {})
+    plan = {}
+    for s in songs:
+        if s.get("albumId"):
+            plan.setdefault(s["albumId"], []).append(s.get("artist"))
+    by_artist = {}
+    for album_id, artists in plan.items():
+        if len(artists) == 1:
+            by_artist.setdefault(artists[0], []).append(album_id)
+    counts = {}
+    for albums in by_artist.values():
+        if len(albums) >= minimum:
+            for album_id in sorted(albums):
+                count = known.get(album_id) or album_fields(client, album_id,
+                                                            album_info).get("songCount")
+                if count:
+                    counts[album_id] = count
+    return counts
+
+
 def serves_basic_player(mode, player_kinds, previous):
     """The format mode once the dock's players are known: one cache holds one
     format per song, so a Rockbox-only dock keeps the server's formats (OGG,
@@ -1047,6 +1074,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         dock_artists.tidy(targets, cfg["sync"].get("artist_names", ()), unsplit_artists,
                           cfg["sync"].get("compilation_albums", ()))
     genres, album_types = plan_genres(client, cfg, targets, previous, album_info)
+    # After the genres, which go by each song's real album.
+    singles_min = cfg["sync"].get("singles_album_min", 4)
+    single_albums = one_track_albums(client, targets, previous, album_info, singles_min)
+    dock_artists.group_singles(targets, single_albums, singles_min)
     lossless_on = (bool(previous.get("lossless_playlists")) if player_kinds is None else
                    bool(LOSSLESS_PLAYERS.get(device, set()) & set(player_kinds)))
     lossless, lossless_lists = lossless_songs(
@@ -1319,6 +1350,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "album": t.get("album"), "track": t.get("track"),
             "disc": t.get("discNumber"), "year": t.get("year"),
             "duration": t.get("duration"), "genre": genres.get(t["id"]),
+            **({"folder_album": t["folder_album"]} if t.get("folder_album") else {}),
             "source_suffix": t.get("suffix"),
             "converted": bool(format_of(t)),
             "encoding": made_as(t),
@@ -1365,6 +1397,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "tracks": ready, "on_player": uncached, "playlists": playlists,
             "skipped": not_ready, "kept_after_removal": len(kept.items),
             **({"album_types": album_types} if album_types else {}),
+            **({"album_song_counts": single_albums} if single_albums else {}),
             **({"interim": True} if waiting else {}),
         }
 

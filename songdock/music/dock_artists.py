@@ -170,3 +170,28 @@ def note(names, shown=20):
     more = f" and {len(names) - shown} more" if len(names) > shown else ""
     return ("Listed as one artist, since nothing shows they're separate: "
             + "; ".join(names[:shown]) + more)
+
+
+def group_singles(songs, song_counts, minimum=4):
+    """An artist with `minimum` or more one-track albums gets them as one album,
+    "<Artist> Singles" (user, 2026-10-31). song_counts: {album id: tracks the album
+    really has}, so one song kept from a full album doesn't count. A song's real
+    album stays in "folder_album", for players that keep art per folder. Returns
+    how many songs moved. Only names change, so falling below `minimum` undoes it."""
+    if not minimum:
+        return 0
+    in_plan = {}
+    for s in songs:
+        in_plan.setdefault(s.get("albumId"), []).append(s)
+    by_artist = {}
+    for album_id, tracks in in_plan.items():
+        if album_id and len(tracks) == 1 and song_counts.get(album_id) == 1:
+            by_artist.setdefault(tracks[0].get("artist"), []).append(tracks[0])
+    moved = 0
+    for artist, singles in by_artist.items():
+        if artist and len(singles) >= minimum:
+            for s in singles:
+                s["folder_album"] = s.get("album")
+                s["album"] = f"{artist} Singles"
+                moved += 1
+    return moved
