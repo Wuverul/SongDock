@@ -665,7 +665,7 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   and goes in the manifest's `unsplit_artists`, shown in MediaDock.txt and
   musicdock-status. `artists` can't decide it alone: it often holds a whole
   credit as one name. Spellings differing only in case or punctuation take
-  the most common. `KEEP_NAMES` + `[sync] artist_names` are never split;
+  the most common. `KEEP_NAMES` + `[sync] artist_names` (`DockSetup.txt` `ArtistNames=`, separated by `;`, replaces the list; 2026-10-31) are never split;
   `primary_artist = false` turns it all off. **`[sync] compilation_albums`** (user,
   2026-10-30; `DockSetup.txt` `CompilationAlbums=`): albums whose name
   contains the words list as one artist, ahead of the rules above, e.g.

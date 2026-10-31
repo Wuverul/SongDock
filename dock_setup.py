@@ -8,6 +8,7 @@ and the list of known iPods written into its MediaDock.txt.
     PlaylistTag=#car             sync playlists tagged #car instead ("none" = off)
     LosslessTag=none             no lossless songs on this dock (default #lossless)
     CompilationAlbums=A = B; C   these compilations list as one artist ("none" = off)
+    ArtistNames=Now, Now; A & B  these credits are one artist, never split ("none" = off)
     SyncStarred=no               don't sync starred songs (also SyncFavorites=)
     Server=https://music.example.com      a new Navidrome address (or several,
                                           comma-separated, in the order to try); needs
@@ -59,7 +60,8 @@ SETUP_FILE = "DockSetup.txt"
 GUIDE_FILE = "MediaDock README.txt"     # the manual (dock_guide.py)
 ACTIONS = {"forget": dock_players.forget, "keep": dock_players.keep}
 SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
-            "compilationalbums": "CompilationAlbums", "syncstarred": "SyncStarred",
+            "compilationalbums": "CompilationAlbums", "artistnames": "ArtistNames",
+            "syncstarred": "SyncStarred",
             "syncfavorites": "SyncStarred", "server": "Server", "username": "Username",
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
@@ -156,6 +158,17 @@ def plan_settings(settings, cfg):
         changes[("sync", "compilation_albums")] = albums
         done.append(f"{len(albums)} compilation(s) list as one artist" if albums
                     else "No compilations list as one artist")
+    if "ArtistNames" in settings:
+        value = settings["ArtistNames"]
+        if not value:
+            raise SetupFileError('ArtistNames needs artist names (or "none")')
+        names = [] if value.lower() in ("none", "off") else \
+            [n.strip() for n in value.split(";") if n.strip()]
+        if value.lower() not in ("none", "off") and not names:
+            raise SetupFileError('ArtistNames needs artist names (or "none")')
+        changes[("sync", "artist_names")] = names
+        done.append(f"{len(names)} artist name(s) kept whole" if names
+                    else "No extra artist names kept whole")
     if "SyncStarred" in settings:
         on = yes_no("SyncStarred", settings["SyncStarred"])
         targets = ([t for t in targets if t != "starred"] if not on else

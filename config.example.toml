@@ -28,7 +28,7 @@ primary_artist = true              # one artist per song: the album's, else the 
                                    # credit ("A & B" -> A), others as "(feat. B)" in the title.
                                    # On the player only.
 artist_names = []                  # credits never to split, e.g. ["Now, Now"]; common ones
-                                   # are already known
+                                   # are already known. Also ArtistNames= in DockSetup.txt.
 compilation_albums = []            # compilations to list as one artist, the songs' artists going
                                    # to their titles. Any album whose name contains the words:
                                    # ["Now That's What I Call Music",

@@ -102,6 +102,7 @@ lists under A and is titled "Song (feat. B)". A comma, & or / stays part of
 the name if nothing shows two people (MediaDock.txt lists these).
 This only changes the names on the iPod, not in Navidrome.
 Compilations can list as one artist instead: see CompilationAlbums below.
+A name split by mistake can be kept whole: see ArtistNames below.
 When a song leaves all of those, the next sync removes it from the iPod;
 {removal}
 
@@ -150,6 +151,11 @@ Which music syncs:
                          artist, the songs' artists going to their titles.
                          "= name" chooses the artist's name. Separate them
                          with ;. This replaces the whole list; =none clears it
+  ArtistNames=Now, Now; Simon & Garfunkel
+                         treat these credits as one artist, for a name with
+                         a comma, & or / that the dock would otherwise split.
+                         Separate them with ;. This replaces the whole list;
+                         =none clears it
   SyncStarred=no         stop syncing starred songs, e.g. to keep a big
                          library starred in a desktop app while the iPod
                          gets playlists only; SyncStarred=yes turns it back

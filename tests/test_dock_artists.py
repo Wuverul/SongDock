@@ -181,6 +181,21 @@ class TidyTests(unittest.TestCase):
         self.assertEqual(a.tidy(songs), 0)
         self.assertNotIn("artist", songs[0])
 
+    def test_listed_names_stay_whole_with_evidence_against_them(self):
+        def run(extra):
+            songs = [{"id": "1", "artist": "Simon & Garfunkel feat. Z", "title": "V",
+                      "album": "Mix", "albumArtist": "Various Artists"},
+                     {"id": "2", "artist": "Simon & Garfunkel", "title": "W",
+                      "album": "Duo", "albumArtist": "Simon & Garfunkel"},
+                     {"id": "3", "artist": "Simon", "title": "X", "album": "Solo",
+                      "albumArtist": "Simon"}]
+            a.tidy(songs, extra)
+            return [(t["artist"], t["title"]) for t in songs[:2]]
+        self.assertEqual(run(())[0][0], "Simon")
+        for extra in (["Simon & Garfunkel"], ["simon & garfunkel"]):
+            self.assertEqual(run(extra), [("Simon & Garfunkel", "V (feat. Z)"),
+                                          ("Simon & Garfunkel", "W")])
+
     def test_extra_names(self):
         songs = self.songs("Mine, Yours")
         a.tidy(songs, ("Mine, Yours",))

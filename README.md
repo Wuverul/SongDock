@@ -109,7 +109,8 @@ music in the background, so syncs are quick.
 
 - **One listing per artist:** a song lists under its album's artist, or on a
   Various Artists album the first name in its credit, with anyone else moved to
-  the title as "(feat. X)". Only the player's names change. `compilation_albums`
+  the title as "(feat. X)". Only the player's names change. A name split by mistake can be kept whole with
+  `artist_names`, or `ArtistNames=` in `DockSetup.txt`. `compilation_albums`
   lists chosen compilations as one artist; `primary_artist = false` turns this
   off.
 

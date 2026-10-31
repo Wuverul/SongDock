@@ -247,6 +247,23 @@ class SettingsTests(PlayersBase):
         self.assertEqual(self.settings()["sync"]["compilation_albums"], [])
         self.assertIn("needs a name", self.apply("CompilationAlbums== X\n")["reason"])
 
+    def test_artist_names_from_the_ipod(self):
+        result = self.apply("ArtistNames=Now, Now; Simon & Garfunkel ;\n")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["done"], ["2 artist name(s) kept whole"])
+        self.assertEqual(self.settings()["sync"]["artist_names"], ["Now, Now", "Simon & Garfunkel"])
+        self.apply("artistnames=Tyler, the Creator\n")       # replaces the list; any case
+        self.assertEqual(self.settings()["sync"]["artist_names"], ["Tyler, the Creator"])
+        self.assertEqual(self.apply("ArtistNames=none\n")["done"],
+                         ["No extra artist names kept whole"])
+        self.assertEqual(self.settings()["sync"]["artist_names"], [])
+        self.assertIn("needs artist names", self.apply("ArtistNames=\n")["reason"])
+        self.assertIn("needs artist names", self.apply("ArtistNames=;\n")["reason"])
+
+    def test_artist_names_quote_safely_in_the_config(self):
+        self.apply('ArtistNames=The "Best" \\ Band, Inc.\n')
+        self.assertEqual(self.settings()["sync"]["artist_names"], ['The "Best" \\ Band, Inc.'])
+
     def test_lossless_tag_can_be_turned_off(self):
         result = self.apply("LosslessTag=none\n")
         self.assertTrue(result["ok"])
