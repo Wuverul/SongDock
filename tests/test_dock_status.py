@@ -92,8 +92,10 @@ class DeviceIconTests(WifiRefreshTests):
 
     def corner(self, *argv):
         """White pixels in the top bar's right corner (where the icon goes)."""
-        img = dock_status.render(argv[0], dock_status.build_parser().parse_args(
-            list(argv) + ["--wifi", "-50"])).convert("L")
+        # Light mode whatever this machine's config says: dark mode swaps the colours.
+        with mock.patch.object(dock_status, "display_settings", return_value={"invert": False}):
+            img = dock_status.render(argv[0], dock_status.build_parser().parse_args(
+                list(argv) + ["--wifi", "-50"])).convert("L")
         w = img.size[0]
         return sum(img.getpixel((x, y)) == 255 for x in range(w - 30, w) for y in range(2, 31))
 
