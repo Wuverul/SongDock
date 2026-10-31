@@ -40,7 +40,7 @@ class LayoutTests(unittest.TestCase):
         for rel in ("VERSION", "vendor", "pi/install.sh", "pi/release_signers",
                     "config.example.toml"):
             self.assertTrue(os.path.exists(os.path.join(dock_paths.ROOT, rel)), rel)
-        for name in ("dock_status.py", "dock_resync.py"):
+        for name in ("dock_status.py", "dock_resync.py", "dock_update.py"):
             self.assertTrue(os.path.isfile(dock_paths.script(name)))
 
     def test_files_that_run_directly_find_the_rest_from_their_own_folder(self):

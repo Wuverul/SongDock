@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.7.3
+
+Singles in one place, ratings that become favorites, and a tidier project.
+
+**To update:** docks on 0.7.2 install this by themselves. From an older version, install it by hand as in the README ("Updating"). Your settings, cache and the record of what's on your players are kept.
+- **Your Albums menu may change at the next sync:** an artist with 4 or more one-track albums now gets them as one album. To keep them separate, set `singles_album_min = 0`, or `SinglesAlbum=0` in `DockSetup.txt`.
+- **Songs rated 4 or 5 stars on a stock iPod get favorited in Navidrome,** including ones rated before this update. To turn this off, set `favorite_rating = 0`, or `FavoriteRating=0` in `DockSetup.txt`.
+
+**Singles in one place**
+- An artist with 4 or more one-track albums gets them as "<Artist> Singles", with each song keeping its own album art. A song kept from a longer album doesn't count.
+- Only the names on the player change, with nothing copied again and nothing changed in Navidrome. `singles_album_min` sets how many it takes. Rockbox players keep each song in its own folder, so its cover still matches.
+
+**Ratings become favorites**
+- A song newly rated 4 or 5 stars on a stock iPod gets favorited in Navidrome at the next sync, once. `favorite_rating` sets the stars.
+- It only ever adds a favorite. A low rating can't remove one, and a favorite you remove in Navidrome stays removed unless the rating drops below that level and rises again.
+- Songs already favorited, directly or through their album, get nothing sent. If the server is down, favorites wait in a queue on the dock.
+- On Rockbox, add songs to the `Keep` playlist the dock makes in `Playlists`; the same rules apply.
+
+**Safe hours**
+- SAFE HOURS now shows whenever a player is connected during the window, within a few minutes of it opening or closing. Before, it only appeared if a sync tried to start.
+- Rockbox and basic players now stop copying when the window opens, and a swap no longer leaves a song missing if it stops early. The dock can only reconnect iPods, so other players show "replug after 10:00 AM" and need plugging in again to get the rest.
+
+**Other**
+- `ArtistNames=` in `DockSetup.txt` keeps a name with a comma, `&` or `/` from being split, with no SSH needed.
+- Each sync logs which songs are rated on the iPod.
+- The code moved into folders, described in the README. Tools are now in `scripts/`, e.g. `scripts/deploy.sh`.
+
+**Known limits**
+- Verified on an iPod nano 4G: ratings reaching the dock, favoriting, and SAFE HOURS with a docked iPod. Not yet tried on hardware: "<Artist> Singles" on the player, `Keep.m3u8` on a real Rockbox player, Rockbox and basic players stopping for safe hours, and any real automatic update, this one included.
+
 ## 0.7.2
 
 Full players can make room for new songs if you choose, SongDock updates itself, and lossless swaps are safer.

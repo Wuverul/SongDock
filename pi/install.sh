@@ -208,6 +208,10 @@ EOF
   # The check interval from config.toml (later changes apply by themselves).
   systemctl start musicdock-settings.service || true
   udevadm control --reload
+  # The 0.7.2 updater can't find the screen code after moving to this layout,
+  # so it can't take down its own UPDATING screen.
+  /usr/bin/python3 "$APP_DIR/songdock/screen/dock_status.py" idle --only-over updating \
+    >/dev/null 2>&1 || true
 fi
 
 # 7. What's next ----------------------------------------------------------------
