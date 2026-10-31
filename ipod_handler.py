@@ -793,15 +793,15 @@ def conversions_ready(manifest, records, no_room=0):
 
 
 def swaps_without_room(free, swaps, new_bytes=0, freed=0):
-    """Which format swaps can't happen: a swap deletes the old file before
-    the new one is copied, so one that doesn't fit would lose the song.
-    swaps: {song id: (new size, old size)}. Songs the player lacks (new_bytes)
-    come first, then the smallest increases, so the most songs get swapped."""
+    """Which format swaps can't happen: a song's old file stays until a save
+    has the new one, so both must fit for a moment. swaps: {song id: (new
+    size, old size)}. Songs the player lacks (new_bytes) come first, then the
+    smallest increases, so the most songs get swapped."""
     room = free - FREE_SPACE_MARGIN + freed - new_bytes
     held = set()
     for nid in sorted(swaps, key=lambda n: (swaps[n][0] - swaps[n][1], n)):
         grows = swaps[nid][0] - swaps[nid][1]
-        if grows > 0 and grows > room:
+        if swaps[nid][0] > room:
             held.add(nid)
         else:
             room -= grows
@@ -845,7 +845,8 @@ def new_session(pending=(), clock=time.monotonic):
     """State shared by the apply_plan calls of one sync: tracks copied
     but not yet saved, when the database was last saved, and how many
     tracks were copied so far (for progress)."""
-    return {"pending": list(pending), "last_save": clock(), "dirty": False, "copied": 0}
+    return {"pending": list(pending), "swapped": [], "last_save": clock(), "dirty": False,
+            "copied": 0}
 
 
 def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
@@ -906,8 +907,15 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                                  album=t.get("album"), title=t.get("title"),
                                  track_no=t.get("track"), duration=t.get("duration"),
                                  encoding=t.get("encoding"))
+            for r, _ in session["swapped"]:
+                record.mark_removed(guid, r["dbid"], "re-encoded")
         record.clear_copied(guid, [track.ipod_path for track, _ in pending])
         pending.clear()
+        for r, path in session["swapped"]:
+            log_info(f"Replaced {r['artist']} - {r['title']} (re-encoded)")
+            if os.path.exists(path):
+                os.remove(path)
+        session["swapped"].clear()
 
     # Tracks whose cached file changed encoding (e.g. mp3_quality) are replaced.
     changed = {nid for nid, r in present.items()
@@ -915,8 +923,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                and wanted[nid].get("encoding") and r["encoding"] != wanted[nid]["encoding"]}
     keep = targeted_ids(manifest)        # a song not cached right now stays put
 
-    # A swap deletes the old file first: only start one whose new file is here
-    # and fits. The rest keep the format they have.
+    # Only start a swap whose new file is here and fits. The rest keep the
+    # format they have.
     def size_on_player(r):
         return file_size(os.path.join(mount, ipod_path_to_rel(on_player[int(r["dbid"])].ipod_path)))
 
@@ -929,9 +937,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         sum(file_size(cached(t)) for nid, t in wanted.items() if nid not in present),
         sum(size_on_player(r) for nid, r in present.items() if nid not in keep))
     changed -= no_room
-    if no_room:
-        log_info(f"Player is full: {len(no_room)} song(s) keep their current format")
-    removals = [r for nid, r in present.items() if nid not in keep or nid in changed]
+    removals = [r for nid, r in present.items() if nid not in keep]
 
     # Tracks already on the player that were added without tags, or whose
     # album name or genre changed in the plan (fixed in the iTunesDB; no
@@ -952,25 +958,30 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     if regenred:
         log_info(f"Genre updated on {regenred} track(s) (the [genres] list)")
     session["dirty"] = session["dirty"] or bool(renamed)
-    additions = [t for nid, t in wanted.items() if nid not in present or nid in changed]
+    # Songs the player lacks first, then swaps, smallest increase first.
+    additions = [t for nid, t in wanted.items() if nid not in present]
+    additions += sorted((wanted[nid] for nid in changed),
+                        key=lambda t: (file_size(cached(t))
+                                       - size_on_player(present[t["id"]]), t["id"]))
 
     # Remove from the DB, save, and only then delete the files: if the save
     # fails, restoring the backup finds every file still there. (pygpod's
     # delete_file=True would delete before the save.) A crash after the save
     # leaves orphan files, which the next reconcile removes.
-    removed, doomed, replaced_tracks = 0, [], {}
+    # A format swap isn't removed here. Its old track stays until the save that
+    # adds the new one, which takes over its counts in the same write: however
+    # a sync is cut short, the iPod has one or the other, counts included. A
+    # new file the database never got is cleared by the next reconcile.
+    removed, doomed = 0, []
     for r in removals:
         track = on_player[int(r["dbid"])]
-        if r["navidrome_id"] in changed:
-            replaced_tracks[r["navidrome_id"]] = track
         doomed.append(os.path.join(mount, ipod_path_to_rel(track.ipod_path)))
         db.remove_track(track, delete_file=False)
         pending[:] = [(p, t) for p, t in pending if p is not track]
     if removals:
         commit()
         for r in removals:
-            reason = ("re-encoded" if r["navidrome_id"] in changed
-                      else "no longer in any synced playlist")
+            reason = "no longer in any synced playlist"
             record.mark_removed(guid, r["dbid"], reason)
             log_info(f"Removed {r['artist']} - {r['title']} ({reason})")
             removed += 1
@@ -997,14 +1008,13 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         log_info(f"Added album art to {art_added} track(s) already on the player")
         session["dirty"] = True
     import dock_limits
-    added, skipped_full, over_limit = 0, 0, 0
+    added, skipped_full, over_limit, replaced = 0, 0, 0, 0
     for n, t in enumerate(additions):
-        if len(db.tracks) >= dock_limits.STOCK_LIMIT:
+        swap = t["id"] in changed
+        if not swap and len(db.tracks) >= dock_limits.STOCK_LIMIT:
             # Stock iPods are reported to fail at about 50,000 songs.
-            over_limit = len(additions) - n
-            log_info(f"{dock_limits.STOCK_LIMIT:,} songs on the iPod: the most the dock "
-                     f"adds to a stock iPod; {over_limit} track(s) not added")
-            break
+            over_limit += 1
+            continue
         if deadline and wall() >= deadline:
             session["paused"] = True
             log_info(f"Safe hours: stopping with {len(additions) - n} track(s) still to "
@@ -1015,10 +1025,16 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
             # The prepare job pruned or is replacing it; next sync gets it.
             log_info(f"Skipping {t.get('title')}: not in the cache right now")
             continue
-        if shutil.disk_usage(mount).free - os.path.getsize(path) < FREE_SPACE_MARGIN:
-            skipped_full = len(additions) - n
-            log_info(f"Player is full: {skipped_full} track(s) not added")
-            break
+        size = os.path.getsize(path)
+        if swap and session["swapped"] and \
+                shutil.disk_usage(mount).free - size < FREE_SPACE_MARGIN:
+            commit()                               # the old files replaced so far can go
+        if shutil.disk_usage(mount).free - size < FREE_SPACE_MARGIN:
+            if swap:
+                no_room.add(t["id"])
+            else:
+                skipped_full += 1
+            continue
         if progress:
             progress(session["copied"] + added, session["copied"] + len(additions), t)
         # Navidrome's album name, not the file's tag: they can differ
@@ -1027,10 +1043,18 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         overrides = {"album": t["album"]} if t.get("album") else {}
         track = db.add_track(path, **overrides)
         fill_missing_names(track, t)
-        if t["id"] in replaced_tracks:
-            track.take_history(replaced_tracks[t["id"]])
         track.comment = NAVIDROME_TAG + t["id"]
         record.log_copied(guid, track.ipod_path, t["id"], t)
+        if swap:
+            old = present[t["id"]]
+            old_track = on_player[int(old["dbid"])]
+            track.take_history(old_track)
+            db.remove_track(old_track, delete_file=False)
+            pending[:] = [(p, e) for p, e in pending if p is not old_track]
+            session["swapped"].append(
+                (old, os.path.join(mount, ipod_path_to_rel(old_track.ipod_path))))
+            replaced += 1
+            removed += 1
         pending.append((track, t))
         added += 1
         if clock() - session["last_save"] >= save_every or len(pending) >= SAVE_AFTER:
@@ -1038,14 +1062,21 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                      "last save)")
             commit()
     session["copied"] += added
+    if over_limit:
+        log_info(f"{dock_limits.STOCK_LIMIT:,} songs on the iPod: the most the dock "
+                 f"adds to a stock iPod; {over_limit} track(s) not added")
+    if skipped_full:
+        log_info(f"Player is full: {skipped_full} track(s) not added")
 
+    if no_room:
+        log_info(f"Player is full: {len(no_room)} song(s) keep their current format")
     playlists_changed = 0
     if final:
         record.set_swaps_no_room(guid, len(no_room))
         playlists_changed = sync_playlists(db, record, guid, manifest, pending)
         if pending or playlists_changed or session["dirty"]:
             commit()
-    return {"added": added, "removed": removed, "replaced": len(changed), "renamed": renamed,
+    return {"added": added, "removed": removed, "replaced": replaced, "renamed": renamed,
             "swaps_no_room": len(no_room), "art_added": art_added, "not_added_full": skipped_full,
             "not_added_limit": over_limit, "playlists_changed": playlists_changed}
 
@@ -1097,14 +1128,15 @@ def sync_playlists(db, record, guid, manifest, pending=()):
     delete ones it made that are no longer wanted. Playlists the dock didn't
     make are never touched. `pending`: (track, plan entry) in the DB but
     not yet recorded. Returns how many changed."""
+    tracks = {t.dbid: t for t in db.tracks}
     by_nid = {}
     for r in record.tracks(guid):
-        by_nid.setdefault(r["navidrome_id"], int(r["dbid"]))
+        if int(r["dbid"]) in tracks:         # not the old track of a song just swapped
+            by_nid.setdefault(r["navidrome_id"], int(r["dbid"]))
     known = {int(r["dbid"]) for r in record.tracks(guid)}
     for track, t in pending:
         by_nid.setdefault(t["id"], track.dbid)
         known.add(track.dbid)
-    tracks = {t.dbid: t for t in db.tracks}
     managed = record.managed_playlists(guid)
     existing = {p.name: p for p in db.playlists if not p.is_master}
     changed, now_managed = 0, {}

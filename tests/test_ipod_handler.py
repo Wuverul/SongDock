@@ -734,6 +734,84 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((tracks[0].play_count, tracks[0].skip_count, tracks[0].rating,
                           tracks[0].time_played), (7, 2, 80, 3000000000))
 
+    def counted_swap(self):
+        """A song with iPod counts, plus a playlist, and a plan to swap it."""
+        a = self.song("n1", "One")
+        lists = [("playlist:L", "L", ["n1"])]
+        self.apply(self.manifest([a], lists))
+        db = self.db()
+        db.tracks[0].set_header(0x50, "<I", 7)
+        db.tracks[0].set_header(0x1F, "<B", 80)
+        db.save()
+        shutil.copy(os.path.join(self.cache, "tracks", "n1.mp3"),
+                    os.path.join(self.cache, "tracks", "n1.m4a"))
+        return self.manifest([dict(a, file="tracks/n1.m4a", encoding="alac 16")], lists)
+
+    def test_power_cut_during_a_swap_keeps_the_old_track_and_its_counts(self):
+        plan = self.counted_swap()
+        before = self.db().tracks[0].dbid
+
+        def power_cut(db, guid):
+            raise RuntimeError("power cut")
+        with self.assertRaises(RuntimeError):
+            self.apply(plan, save=power_cut)
+        self.assertEqual(len(self.files()), 2)                # the new file was copied
+        track = self.db().tracks[0]
+        self.assertEqual((track.dbid, track.play_count, track.rating), (before, 7, 80))
+        self.apply(plan)                                      # the next sync finishes it
+        tracks = self.db().tracks
+        self.assertEqual(len(tracks), 1)
+        self.assertNotEqual(tracks[0].dbid, before)
+        self.assertEqual((tracks[0].play_count, tracks[0].rating), (7, 80))
+        self.assertEqual(len(self.files()), 1)
+        self.assertEqual(self.rec.copied(G), [])
+        self.assertEqual([t.dbid for t in self.db().playlists[-1].tracks], [tracks[0].dbid])
+
+    def test_safe_hours_before_a_swap_leaves_the_song_alone(self):
+        plan = self.counted_swap()
+        before = self.db().tracks[0].dbid
+        session = h.new_session()
+        summary = self.apply(plan, session=session, deadline=1, wall=lambda: 2)
+        self.assertTrue(session["paused"])
+        self.assertEqual((summary["replaced"], summary["removed"]), (0, 0))
+        track = self.db().tracks[0]
+        self.assertEqual((track.dbid, track.play_count), (before, 7))
+        self.assertEqual(len(self.files()), 1)
+
+    def test_swap_keeps_its_counts_and_playlist_place(self):
+        plan = self.counted_swap()
+        self.apply(plan)
+        db = self.db()
+        self.assertEqual((db.tracks[0].play_count, db.tracks[0].rating), (7, 80))
+        self.assertEqual([t.dbid for t in db.playlists[-1].tracks], [db.tracks[0].dbid])
+        self.assertEqual(len(self.files()), 1)
+
+    def test_tight_player_saves_between_swaps_to_free_the_old_files(self):
+        songs = [self.song(f"n{i}", f"Song {i}", track=i) for i in (1, 2)]
+        self.apply(self.manifest(songs))
+        new = []
+        for s in songs:
+            shutil.copy(os.path.join(self.cache, s["file"]),
+                        os.path.join(self.cache, "tracks", f"{s['id']}.m4a"))
+            new.append(dict(s, file=f"tracks/{s['id']}.m4a", encoding="alac 16"))
+        one = os.path.getsize(os.path.join(self.cache, songs[0]["file"]))
+        saves, copying = [], []                       # room for one extra file at a time
+        real = shutil.disk_usage(self.tmp)
+
+        def save(db, guid):
+            saves.append(1)
+            h.checked_save(db, guid)
+
+        def free(path):
+            extra = one if saves or not copying else 0
+            return real._replace(free=h.FREE_SPACE_MARGIN + extra)
+        with mock.patch("shutil.disk_usage", side_effect=free):
+            summary = self.apply(self.manifest(new), save=save,
+                                 progress=lambda *a: copying.append(1))
+        self.assertEqual((summary["replaced"], summary["swaps_no_room"]), (2, 0))
+        self.assertEqual(len(saves), 2)
+        self.assertEqual(len(self.db().tracks), 2)
+
     def swap_with_free(self, free):
         """An MP3 on the player, then the plan asks for a 40 MB lossless file."""
         a = self.song("n1", "One")
@@ -781,7 +859,7 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(h.swaps_without_room(margin + 130, swaps, new_bytes=100),
                          {"big"})
         self.assertEqual(h.swaps_without_room(margin + 30, swaps, new_bytes=100),
-                         {"big", "small"})
+                         {"big", "small", "shrinks"})
         self.assertEqual(h.swaps_without_room(margin, swaps, freed=500), set())
 
     def test_held_back_swaps_arent_counted_as_pending(self):

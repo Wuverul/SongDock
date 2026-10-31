@@ -1022,10 +1022,18 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    pending: 109 songs" / "Format changes: n songs" instead of "up to
    date" (a small extra row beside +/- counts); `pending_conversions`.
    They also count for the auto re-sync, so a docked iPod swaps by itself.
-   **Space (user, 2026-10-30):** a swap deletes the old file first, so
-   `swaps_without_room` starts only those whose new file is cached and
-   fits (songs the player lacks first, then the smallest increases). The
-   rest keep their format and names still follow the plan;
+   **Swaps can't lose counts (user, 2026-10-30):** the old track stays in
+   the iTunesDB until the save holding the new one, which took its history
+   in memory; the old file goes after that save. Cut short at any point,
+   the iPod has one or the other. Before the save, `readd_copied` sees the
+   old track has that song, clears the log entry, and the new file is an
+   orphan. Safe hours stop before the next swap. Both files must fit for a
+   moment; on a tight player a save between swaps frees the old ones.
+   Rockbox still deletes first (no counts on the player to lose; a song
+   can be missing until the next sync).
+   **Space (user, 2026-10-30):** `swaps_without_room` starts only swaps
+   whose new file is cached and fits (songs the player lacks first, then
+   the smallest increases). The rest keep their format; names follow the plan;
    `players.swaps_no_room` holds the count, which `conversions_ready` takes
    off the pending swaps: DOCK READY "No room to convert n", no re-syncs.
    **Sizes in the plan:** eviction drops the largest files first, so the
@@ -1033,9 +1041,7 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
    keep their real `size`; those never measured, and `skipped` entries,
    carry `estimate` (`estimated_size`). `plan_bytes` totals them,
    `fit_note` warns when the plan exceeds the player, `alac_bytes` grows
-   only MP3s from lossless sources. **Open:** safe hours cutting a sync
-   short after swap removals: those songs are gone until the next sync
-   and lose their iPod counts.
+   only MP3s from lossless sources.
    The notes below are the original plan:
    1. **Hi-res down-conversion first.** `audio_options` for `alac` is
       only `-c:a alac`, so 24-bit / 96 kHz FLAC stays hi-res: 3-4x the
