@@ -111,6 +111,7 @@ class RoomDatesTests(unittest.TestCase):
         self.assertEqual(dock_room.pick([10, 100], 0, old), ["y"])
 
 
+@unittest.skipIf(dock_status is None, "needs Pillow (dock_status)")
 class FullScreenTests(unittest.TestCase):
     def test_renders(self):
         args = dock_status.build_parser().parse_args(

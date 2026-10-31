@@ -261,6 +261,30 @@ All settings are in `~/.config/musicdock/config.toml` on the Pi. See
 explanations: which lists to sync, MP3 quality, how long removed songs stay
 cached, dark mode, and more.
 
+## Updating
+
+Your settings, cache and the record of what's on your players are kept. Plays
+waiting to be sent stay queued.
+
+1. Wait until the screen shows **DOCK READY** or **SAFE TO REMOVE**, then unplug
+   the iPod, so no sync is running during the update.
+2. Find the newest version on the
+   [releases page](https://github.com/Wuverul/SongDock/releases). Read its notes
+   in `CHANGELOG.md`: they say if the next sync will change anything on your iPod.
+3. On the Pi, download and install it, putting that version in place of `0.7.1`:
+
+   ```sh
+   VERSION=0.7.1
+   curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
+   tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
+   cd ~/musicdock/songdock && sudo ./pi/install.sh
+   ```
+
+4. Reboot if the installer asks you to, then run `musicdock-status` and check
+   that **Problems** says none.
+
+There's no need to reinstall Raspberry Pi OS or set anything up again.
+
 ## Known limitations
 
 This is an early release, built and used with one iPod. What hasn't been
