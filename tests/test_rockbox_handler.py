@@ -95,6 +95,115 @@ class RockboxTests(unittest.TestCase):
         self.assertNotIn("n0", ids)
         self.assertIn("n1", ids)
 
+    # The Keep list.
+    def keep_lines(self, *lines):
+        path = os.path.join(self.mount, rb.PLAYLIST_DIR, rb.KEEP_LIST)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+    def rel_of(self, nid):
+        return next(r["dbid"] for r in self.rec.tracks(G) if r["navidrome_id"] == nid)
+
+    def test_keep_list_is_made_empty_and_left_alone(self):
+        s = self.song("n1", "One")
+        self.sync(self.manifest([s]))
+        path = os.path.join(self.mount, rb.PLAYLIST_DIR, rb.KEEP_LIST)
+        self.sync(self.manifest([s]))                  # first sync adds the song; this one sees it
+        with open(path) as f:
+            self.assertEqual(f.read(), "#EXTM3U\n")
+        self.assertEqual(self.rec.unsent_favorites(), [])
+
+    def test_listed_songs_are_favorited_once_in_any_path_form(self):
+        songs = [self.song(f"n{i}", f"Song {i}", track=i) for i in range(4)]
+        self.sync(self.manifest(songs))
+        self.sync(self.manifest(songs))
+        rel = self.rel_of
+        self.keep_lines("#EXTM3U", "/" + rel("n0"), "/<microSD1>/" + rel("n1").upper(),
+                        "/MediaDock/gone/song.mp3", "# a comment")
+        client = mock.Mock()
+        client.call.return_value = {}
+        rb.sync_player(self.mount, G, self.rec, self.manifest(songs), self.cache,
+                       work_dir=os.path.join(self.tmp, "work"), write=True, client=client)
+        starred = [c.kwargs["id"] for c in client.call.call_args_list if c.args[0] == "star"]
+        self.assertEqual(sorted(starred), ["n0", "n1"])
+        self.assertTrue(all(c.args[0] != "unstar" for c in client.call.call_args_list))
+        client.reset_mock()
+        rb.sync_player(self.mount, G, self.rec, self.manifest(songs), self.cache,
+                       work_dir=os.path.join(self.tmp, "work"), write=True, client=client)
+        self.assertEqual([c for c in client.call.call_args_list if c.args[0] == "star"], [])
+
+    def test_a_song_already_a_favorite_gets_nothing_sent_from_the_list(self):
+        s = dict(self.song("n1", "One"), sources=["starred"])
+        self.sync(self.manifest([s]))
+        self.sync(self.manifest([s]))
+        self.keep_lines("/" + self.rel_of("n1"))
+        self.sync(self.manifest([s]))
+        self.assertEqual(self.rec.unsent_favorites(), [])
+
+    def test_taking_a_song_off_the_list_removes_no_favorite(self):
+        s = self.song("n1", "One")
+        self.sync(self.manifest([s]))
+        self.sync(self.manifest([s]))
+        self.keep_lines("/" + self.rel_of("n1"))
+        client = mock.Mock(call=mock.Mock(return_value={}))
+        rb.sync_player(self.mount, G, self.rec, self.manifest([s]), self.cache,
+                       work_dir=os.path.join(self.tmp, "work"), write=True, client=client)
+        self.keep_lines("#EXTM3U")
+        rb.sync_player(self.mount, G, self.rec, self.manifest([s]), self.cache,
+                       work_dir=os.path.join(self.tmp, "work"), write=True, client=client)
+        self.assertEqual({c.args[0] for c in client.call.call_args_list}, {"star"})
+
+    def test_a_navidrome_playlist_called_keep_cant_overwrite_the_list(self):
+        s = self.song("n1", "One")
+        self.sync(self.manifest([s]))
+        self.keep_lines("# mine")
+        self.sync(self.manifest([s], playlists=[("playlist:k", "Keep", ["n1"])]))
+        with open(os.path.join(self.mount, rb.PLAYLIST_DIR, rb.KEEP_LIST)) as f:
+            self.assertIn("# mine", f.read())
+
+    def test_generic_players_get_no_keep_list(self):
+        s = self.song("n1", "One")
+        rb.sync_player(self.mount, G, self.rec, self.manifest([s]), self.cache,
+                       work_dir=os.path.join(self.tmp, "work"), write=True, kind="generic")
+        self.assertFalse(os.path.exists(os.path.join(self.mount, rb.PLAYLIST_DIR, rb.KEEP_LIST)))
+
+    # Safe hours.
+    def test_safe_hours_stop_copying_and_leave_nothing_missing(self):
+        songs = [self.song(f"n{i}", f"Song {i}", track=i) for i in range(3)]
+        self.sync(self.manifest(songs[:1]))
+        checks = []
+
+        def wall():                  # the window opens after one song
+            checks.append(1)
+            return 0 if len(checks) <= 1 else 1000
+        summary = rb.apply_plan(self.rec, G, self.mount, self.manifest(songs), self.cache,
+                                deadline=500, wall=wall)
+        self.assertTrue(summary["paused"])
+        self.assertEqual(summary["added"], 1)
+        self.assertEqual(sorted(r["navidrome_id"] for r in self.rec.tracks(G)), ["n0", "n1"])
+
+    def test_safe_hours_before_a_swap_leaves_the_old_file(self):
+        s = self.song("n1", "One")
+        self.sync(self.manifest([s]))
+        before = self.files()
+        shutil.copy(os.path.join(self.cache, "tracks", "n1.mp3"),
+                    os.path.join(self.cache, "tracks", "n1.flac"))
+        new = dict(s, file="tracks/n1.flac", encoding="original")
+        summary = rb.apply_plan(self.rec, G, self.mount, self.manifest([new]), self.cache,
+                                deadline=1, wall=lambda: 2)
+        self.assertEqual((summary["paused"], summary["removed"], summary["replaced"]), (True, 0, 0))
+        self.assertEqual(self.files(), before)
+        self.assertEqual(self.rec.tracks(G)[0]["encoding"], "mp3 v0")
+
+    def test_sync_player_passes_the_deadline_and_asks_for_a_replug(self):
+        s = [self.song("n1", "One")]
+        with mock.patch.object(rb.time, "time", return_value=2):
+            summary = rb.sync_player(self.mount, G, self.rec, self.manifest(s), self.cache,
+                                     work_dir=os.path.join(self.tmp, "work"), write=True,
+                                     deadline=1)
+        self.assertTrue(summary["paused"])
+        self.assertTrue(summary["replug_to_finish"])
+
     def test_swap_without_room_keeps_the_file(self):
         a = self.song("n1", "One")
         self.sync(self.manifest([a]))
@@ -157,8 +266,8 @@ class RockboxTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.mount, "Playlists",
                                                     "Road Trip.m3u8")))
         self.sync(self.manifest([a]))                                # playlist unsynced
-        self.assertEqual(os.listdir(os.path.join(self.mount, "Playlists")),
-                         ["Road Trip.m3u8"])
+        self.assertEqual(sorted(os.listdir(os.path.join(self.mount, "Playlists"))),
+                         [rb.KEEP_LIST, "Road Trip.m3u8"])
 
     def test_plays_from_the_log_queued_then_log_deleted(self):
         a = self.song("n1", "One")

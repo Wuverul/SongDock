@@ -107,6 +107,8 @@ music in the background, so syncs are quick.
   its playlists. Lowering the rating changes nothing, and a favorite you remove stays
   removed. `favorite_rating` (or `FavoriteRating=` in a `DockSetup.txt`) sets the
   stars; 0 turns it off.
+  On Rockbox, add songs to the `Keep` playlist the dock makes in `Playlists`; the same
+  rules apply.
 
 - **Lossless for chosen songs:** add `#lossless` to a playlist's comment in
   Navidrome and its songs sync as ALAC (FLAC on a Rockbox-only dock) if the

@@ -418,7 +418,7 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   log snapshotted, queued (committed), and only then deleted, in write
   mode only; unmatched plays queue without a song. Record copy at
   `MediaDock/.musicdock/dock.db`. The iPod README gets a Rockbox paragraph
-  (Last.fm Log setting, Database Auto Update). Keep.m3u8: not built.
+  (Last.fm Log setting, Database Auto Update). **`Playlists/Keep.m3u8` (2026-10-31):** the dock makes it empty and never writes it again; each write sync reads it before copying (paths matched from `MediaDock/`, any case, drive prefix allowed) and favorites through `Record.note_ratings`, like stock ratings; only ever adds. A Navidrome playlist named Keep isn't written over it. **Safe hours stop copying here too (2026-10-31):** `deadline` as on stock; a swap's old file goes just before its copy, so an early stop leaves no song missing. Only Apple devices can be re-plugged, so others show "replug after 10:00 AM".
 - **Stock-iPod compatibility switch (2026-10-23):** `DockSetup.txt`
   `StockCompatible=no|yes` sets `[device] type` to `rockbox` / `stock_ipod`.
   **Failsafe (user requirement):** `=no` is refused while

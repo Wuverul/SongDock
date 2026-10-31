@@ -28,6 +28,8 @@ On the player:
                       time; "S" (skipped) lines are ignored. Its plays are
                       queued on the Pi (committed) before the log is deleted,
                       and the log is only deleted in write mode.
+  Playlists/Keep.m3u8 songs to favorite in Navidrome: the player's owner adds
+                      them, the dock only makes the empty file and reads it.
 
 The record's track key (dbid) is the file's path under the player's root.
 Untested on a real Rockbox player (2026-10-23): built against fake players.
@@ -45,6 +47,7 @@ log = logging.getLogger("rockbox_handler")
 ROCKBOX_DIR = ".rockbox"
 MUSIC_DIR = "MediaDock"
 PLAYLIST_DIR = "Playlists"
+KEEP_LIST = "Keep.m3u8"       # songs the player's owner wants favorited (user-made entries)
 SCROBBLER_LOG = ".scrobbler.log"
 COVER_FILE = "cover.jpg"
 COVER_MAX = 600
@@ -317,7 +320,8 @@ def reconcile(record, guid, mount):
 
 
 # ================================================================== apply ====
-def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlists=True):
+def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlists=True,
+               deadline=None, wall=time.time):
     """Make MediaDock/ and the dock's playlists match the staged plan:
     removals (only songs that left every target), re-tags for changed names
     or genres, then additions, each recorded once its file is complete."""
@@ -358,7 +362,7 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
     freed = sum(on_disk(r) for nid, r in present.items() if nid not in keep)
     free = shutil.disk_usage(mount).free
     victims = []
-    if rules:
+    if rules and not (deadline and wall() >= deadline):
         victims = dock_room.pick(
             [ipod_handler.file_size(cached(t)) for t in new_songs],
             free - FREE_SPACE_MARGIN + freed,
@@ -377,15 +381,15 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
 
     removed = 0
     for nid, r in present.items():
-        if nid in keep and nid not in changed and nid not in victims:
-            continue
+        if nid in changed or (nid in keep and nid not in victims):
+            continue                      # a swap's old file goes just before its copy
         if nid in victims:
             record.save_room_removed(guid, nid)
         path = os.path.join(mount, r["dbid"])
         if os.path.exists(path):
             os.remove(path)
-        reason = ("re-encoded" if nid in changed else "made room for new songs"
-                  if nid in victims else "no longer in any synced playlist")
+        reason = ("made room for new songs" if nid in victims
+                  else "no longer in any synced playlist")
         record.mark_removed(guid, r["dbid"], reason)
         log_info(f"Removed {r['artist']} - {r['title']} ({reason})")
         _remove_empty_dirs(mount, os.path.dirname(r["dbid"]))
@@ -406,19 +410,40 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
 
     additions = new_songs + [wanted[nid] for nid in changed]
     additions += [wanted[nid] for nid in sorted(returning)]
-    added = covers = not_added = copy_bytes = 0
+    added = covers = not_added = copy_bytes = replaced = 0
+    paused = False
     copy_began = time.monotonic()
     for i, t in enumerate(additions):
+        if deadline and wall() >= deadline:
+            paused = True
+            log_info(f"Safe hours: stopping with {len(additions) - i} track(s) still to copy "
+                     "(they follow at the next sync)")
+            break
         src = os.path.join(cache_dir, t["file"])
         if not os.path.exists(src):
             log_info(f"Skipping {t.get('title')}: not in the cache right now")
             continue
-        if shutil.disk_usage(mount).free - os.path.getsize(src) < FREE_SPACE_MARGIN:
+        swap = t["id"] in changed
+        freed_now = on_disk(present[t["id"]]) if swap else 0
+        if shutil.disk_usage(mount).free + freed_now - os.path.getsize(src) < FREE_SPACE_MARGIN:
+            if swap:
+                no_room.add(t["id"])
+                continue
             not_added = sum(a["id"] not in returning for a in additions[i:])
             log_info(f"Player is full: {not_added} track(s) not added")
             break
         if progress:
             progress(added, len(additions), t)
+        if swap:
+            old = present[t["id"]]
+            old_path = os.path.join(mount, old["dbid"])
+            if os.path.exists(old_path):
+                os.remove(old_path)
+            record.mark_removed(guid, old["dbid"], "re-encoded")
+            log_info(f"Removed {old['artist']} - {old['title']} (re-encoded)")
+            _remove_empty_dirs(mount, os.path.dirname(old["dbid"]))
+            removed += 1
+            replaced += 1
         rel = track_path(t, os.path.splitext(t["file"])[1].lower())
         stem, ext = os.path.splitext(rel)
         n = 2
@@ -449,12 +474,66 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
     if added:
         log_info(f"Copied {added} tracks, {copy_bytes / 1e6:.1f} MB in "
                  f"{time.monotonic() - copy_began:.1f} s")
+    record.set_swaps_no_room(guid, len(no_room))
     record.set_player_full(guid, not_added or no_room)
     playlists_changed = sync_playlists(record, guid, mount, manifest) if playlists else 0
-    return {"added": added, "removed": removed, "replaced": len(changed),
+    return {"added": added, "removed": removed, "replaced": replaced, "paused": paused,
             "renamed": renamed, "swaps_no_room": len(no_room), "art_added": covers,
             "not_added_full": not_added, "no_space": not_added,
             "playlists_changed": playlists_changed}
+
+
+def keep_list_songs(mount, known):
+    """Paths in Playlists/Keep.m3u8 as (song ids, how many lines matched nothing),
+    or None if it can't be read. Rockbox writes absolute paths, maybe with a
+    drive name first; `known`: {path under the player's root: song id}."""
+    try:
+        with open(os.path.join(mount, PLAYLIST_DIR, KEEP_LIST), encoding="utf-8-sig",
+                  errors="replace") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return None
+    by_path = {path.casefold(): nid for path, nid in known.items()}
+    found, unknown = set(), 0
+    for line in lines:
+        line = line.strip().replace("\\", "/")
+        if not line or line.startswith("#"):
+            continue
+        at = line.casefold().find(MUSIC_DIR.casefold() + "/")
+        nid = by_path.get(line[at:].casefold()) if at >= 0 else None
+        if nid:
+            found.add(nid)
+        else:
+            unknown += 1
+    return found, unknown
+
+
+def queue_keep_list(record, guid, mount, manifest):
+    """Songs on the player's Keep list get favorited on the server, once each,
+    as a rating does on a stock iPod (Record.note_ratings). This only ever adds
+    a favorite. The empty list is made here, so Rockbox offers it under
+    "Add to Playlist"; taking a song off it allows it to be kept again."""
+    import ipod_handler
+    path = os.path.join(mount, PLAYLIST_DIR, KEEP_LIST)
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("#EXTM3U\n")
+            f.flush()
+            os.fsync(f.fileno())
+        return 0
+    known = {r["dbid"].replace(os.sep, "/"): r["navidrome_id"] for r in record.tracks(guid)}
+    listed = keep_list_songs(mount, known)
+    if listed is None:
+        return 0
+    found, unknown = listed
+    if unknown:
+        log_info(f"{KEEP_LIST}: {unknown} line(s) aren't songs the dock put on this player")
+    queued = record.note_ratings(guid, found, set(known.values()) - found,
+                                 ipod_handler.already_favorites(manifest))
+    if queued:
+        log_info(f"{KEEP_LIST}: favoriting {queued} song(s)")
+    return queued
 
 
 def sync_playlists(record, guid, mount, manifest):
@@ -469,6 +548,9 @@ def sync_playlists(record, guid, mount, manifest):
     changed, now = 0, {}
     for pl in manifest.get("playlists", []):
         name = safe_name(pl["name"]) + ".m3u8"
+        if name.casefold() == KEEP_LIST.casefold():
+            log_info(f"Not writing playlist {pl['name']!r}: {KEEP_LIST} is yours to edit")
+            continue
         path = os.path.join(folder, name)
         if os.path.exists(path) and name not in managed.values():
             # A lost record: re-adopt a playlist that only lists the dock's
@@ -535,7 +617,7 @@ def player_name(mount):
 
 def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root=None,
                 write=False, client=None, step=None, progress=None, kind="rockbox",
-                **_ignored):
+                deadline=None, **_ignored):
     """One dock session for a Rockbox player, or with kind="generic" a plain
     music-folder player (no plays, no playlists) - the sync job's steps 2-5,
     with the same summary keys as ipod_handler.sync_player."""
@@ -578,10 +660,16 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root=
         report = reconcile(record, guid, mount)
         if report["reset"]:
             log_info("Player appears to have been reset: rebuilding it")
+        if not generic:
+            queue_keep_list(record, guid, mount, manifest)
+            if client is not None:
+                summary["favorited"] = dock_plays.upload_favorites(client, record)
         step(5, "Copying tracks")
         result = apply_plan(record, guid, mount, manifest, cache_dir, progress=progress,
-                            playlists=not generic)
+                            playlists=not generic, deadline=deadline)
         summary.update(result, reconcile=report, wrote=True)
+        # Only Apple devices can be re-plugged by the dock (dock_resync).
+        summary["replug_to_finish"] = bool(result.get("paused"))
         try:
             dest = os.path.join(mount, MUSIC_DIR, RECORD_COPY)
             os.makedirs(os.path.dirname(dest), exist_ok=True)

@@ -60,7 +60,11 @@ change files inside MediaDock. To browse the dock's music by artist and
 album, turn on Settings > General Settings > Database > Auto Update (or
 run Update Now after a sync). Plays are read from Rockbox's .scrobbler.log
 (Settings > Playback Settings > Last.fm Log: on); skipped songs aren't
-counted."""
+counted.
+
+To favorite a song in Navidrome, add it to the Keep playlist while it plays
+(context menu > Playlist > Add to Existing Playlist > Keep). The next sync
+favorites it once. Taking it off the list leaves the favorite as it is."""
     else:
         hands_off = """Don't add music with Finder, iTunes or the Apple Music app: they replace
 the iPod's music list, and the dock loses track of everything it added.
@@ -186,7 +190,8 @@ Music format (stock iPods and Rockbox players):
 A daily window with no syncs, e.g. to grab the iPod for a morning commute:
   SafeHours=07:00-10:00  (local time; the default; SafeHours=off for none)
   An iPod docked then just charges; a sync running when the window opens
-  finishes early. Either way it syncs afterwards if it's still docked.
+  finishes early. Either way it syncs afterwards if it's still docked. Other
+  players stop early too, but need plugging in again to get the rest.
 
 When new songs don't fit on a player, they wait and the screen shows PLAYER
 FULL. Nothing is removed unless you turn this on:

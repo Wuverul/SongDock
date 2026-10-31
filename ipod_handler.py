@@ -81,6 +81,13 @@ def log_ratings(db, entries):
         log_info(f"Rated {t.rating // 20} stars: {t.artist} - {t.title}")
 
 
+def already_favorites(manifest):
+    """Songs the plan has from "starred": favorites, directly or by album."""
+    plan = manifest or {}
+    return {t["id"] for key in ("tracks", "on_player") for t in plan.get(key, [])
+            if "starred" in t.get("sources", ())}
+
+
 def queue_favorites(db, record, guid, stars, manifest=None):
     """Songs newly rated `stars` or more on the iPod get favorited on the server,
     once each: after that a favorite removed in Navidrome stays removed, unless
@@ -93,10 +100,7 @@ def queue_favorites(db, record, guid, stars, manifest=None):
         nid = ids.get(t.dbid) or navidrome_id_from(t)
         if nid:
             (high if t.rating >= stars * 20 else low).append(nid)
-    plan = manifest or {}
-    favorited = {t["id"] for key in ("tracks", "on_player") for t in plan.get(key, [])
-                 if "starred" in t.get("sources", ())}
-    queued = record.note_ratings(guid, high, low, favorited)
+    queued = record.note_ratings(guid, high, low, already_favorites(manifest))
     if queued:
         log_info(f"Rated {stars}+ stars on the iPod: favoriting {queued} song(s)")
     return queued

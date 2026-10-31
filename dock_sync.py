@@ -477,8 +477,10 @@ def run_sync(device, show, work=None, total=None):
         elif summary.get("paused"):
             import dock_safehours
             window = dock_safehours.from_config(dock_config_or_empty())
-            resume = (f"rest after {dock_safehours.clock_text(dock_safehours.window_end(window))}"
-                      if window else "rest at the next sync")
+            end = dock_safehours.clock_text(dock_safehours.window_end(window)) if window else None
+            resume = ("rest at the next sync" if not end
+                      else f"replug after {end}" if summary.get("replug_to_finish")
+                      else f"rest after {end}")
             show("safehours", "--detail", f"Synced +{summary.get('added', 0)}, {resume}",
                  force=True)
         elif summary.get("setup"):
@@ -682,8 +684,9 @@ def make_ipod_work(cfg, guid, product, write):
                 backup_root=os.path.join(base, "backups", player_guid),
                 write=writing and not refused, client=client, usb_product=product, step=step,
                 progress=progress, block_device=whole_disk(getattr(device, "path", "")),
-                **({"next_plan": lambda plan: next_plan(cache_dir, plan, deadline=deadline),
-                    "deadline": deadline} if kind == "stock" else {"kind": kind}))
+                deadline=deadline,
+                **({"next_plan": lambda plan: next_plan(cache_dir, plan, deadline=deadline)}
+                   if kind == "stock" else {"kind": kind}))
             if writing:
                 summary["notes"] = size_notes(record, player_guid, device.root, manifest,
                                               cfg, kind)
@@ -707,7 +710,8 @@ def make_ipod_work(cfg, guid, product, write):
         elif writing:
             if summary.get("paused"):
                 log.info("Safe hours from %s: stopped copying; the rest follows after "
-                         "%s if the iPod is still docked", dock_safehours.text(window),
+                         "%s (an iPod still docked syncs by itself; other players "
+                         "need plugging in again)", dock_safehours.text(window),
                          dock_safehours.clock_text(dock_safehours.window_end(window)))
                 if not isinstance(device, FakeDevice):
                     dock_safehours.schedule_after(window, DOCK_RESYNC)

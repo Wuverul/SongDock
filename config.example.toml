@@ -47,7 +47,7 @@ recent_play_months = 3             # 0-120: with make_room, songs played, added 
                                    # playlist updated within this long are never removed.
                                    # Also decides which cached copies go first when the
                                    # dock's cache is full (those songs stay on players).
-favorite_rating = 4                # songs newly rated this many stars or more on a stock
+favorite_rating = 4                # (Rockbox players use a Keep playlist instead) songs newly rated this many stars or more on a stock
                                    # iPod get favorited in Navidrome, once. 0 = never.
 auto_update = true                 # install new signed releases: announced for 4 hours,
                                    # then installed once no player is connected.
