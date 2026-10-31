@@ -31,3 +31,5 @@ id_*
 # Release packages (make_release.sh)
 dist/
 TASKS.md
+Decktop_Tasks.md
+Desktop_Tasks.md
