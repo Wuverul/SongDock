@@ -81,17 +81,22 @@ def log_ratings(db, entries):
         log_info(f"Rated {t.rating // 20} stars: {t.artist} - {t.title}")
 
 
-def queue_favorites(db, record, guid, stars):
+def queue_favorites(db, record, guid, stars, manifest=None):
     """Songs newly rated `stars` or more on the iPod get favorited on the server,
     once each: after that a favorite removed in Navidrome stays removed, unless
-    the rating drops and rises again. Lowering a rating changes nothing there."""
+    the rating drops and rises again. This only ever adds a favorite: no rating
+    can remove one (user, 2026-10-31). Songs already favorites, directly or by
+    album (the plan's "starred" source), get nothing sent."""
     ids = {int(r["dbid"]): r["navidrome_id"] for r in record.tracks(guid)}
     high, low = [], []
     for t in db.tracks:
         nid = ids.get(t.dbid) or navidrome_id_from(t)
         if nid:
             (high if t.rating >= stars * 20 else low).append(nid)
-    queued = record.note_ratings(guid, high, low)
+    plan = manifest or {}
+    favorited = {t["id"] for key in ("tracks", "on_player") for t in plan.get(key, [])
+                 if "starred" in t.get("sources", ())}
+    queued = record.note_ratings(guid, high, low, favorited)
     if queued:
         log_info(f"Rated {stars}+ stars on the iPod: favoriting {queued} song(s)")
     return queued
@@ -1345,7 +1350,7 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
                 db.merge_play_counts(entries)   # files deleted once a save has these
             log_ratings(db, entries)
             if manifest.get("favorite_rating"):
-                queue_favorites(db, record, guid, manifest["favorite_rating"])
+                queue_favorites(db, record, guid, manifest["favorite_rating"], manifest)
                 if client:
                     import dock_plays
                     summary["favorited"] = dock_plays.upload_favorites(client, record)

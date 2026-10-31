@@ -909,6 +909,8 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   (default 4, 0 off; `FavoriteRating=`), passed in the plan. `Record.note_ratings` keeps
   `rated_favorites`: a song at or above it is queued once; only dropping below allows
   another. Sent with `star` by the sync and every prepare check. Stock iPods only.
+  **Only ever adds (user):** no code may send `unstar`; a test fails if any does. A song
+  already a favorite (the plan's "starred" source, song or album) gets nothing sent.
 - **Making room on a full player (`dock_room.py`, user, 2026-10-30):** new songs
   that don't fit push off the oldest songs, just enough, and never one dated
   within `recent_play_months` (date = latest of last play, added to the player,

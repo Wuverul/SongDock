@@ -335,16 +335,23 @@ class Record:
                                               if n in held}
         return held or {}
 
-    def note_ratings(self, guid, high, low):
+    def note_ratings(self, guid, high, low, favorited=()):
         """Songs on this player rated at the favorite level (`high`) or below it
         (`low`). A song newly high is queued once, and only a song that drops
-        low can be queued again. Returns how many were queued."""
+        low can be queued again. `favorited`: songs already favorites, directly
+        or by album: noted as done, with nothing to send. Returns how many were
+        queued."""
         now = int(time.time())
         with self.db:
             before = self.db.total_changes
             self.db.executemany("INSERT OR IGNORE INTO rated_favorites (guid, navidrome_id, "
-                                "queued_at) VALUES (?, ?, ?)", [(guid, n, now) for n in high])
-            queued = self.db.total_changes - before
+                                "queued_at, sent_at) VALUES (?, ?, ?, ?)",
+                                [(guid, n, now, now) for n in high if n in favorited])
+            noted = self.db.total_changes - before
+            self.db.executemany("INSERT OR IGNORE INTO rated_favorites (guid, navidrome_id, "
+                                "queued_at) VALUES (?, ?, ?)",
+                                [(guid, n, now) for n in high if n not in favorited])
+            queued = self.db.total_changes - before - noted
             self.db.executemany("DELETE FROM rated_favorites WHERE guid = ? AND "
                                 "navidrome_id = ? AND sent_at IS NOT NULL",
                                 [(guid, n) for n in low])

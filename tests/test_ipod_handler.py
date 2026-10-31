@@ -918,6 +918,30 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(self.favorites_after(self.rate(2)), [])
         self.assertEqual(self.favorites_after(self.rate(5)), ["n1"])
 
+    def test_a_song_already_a_favorite_gets_nothing_sent(self):
+        song = self.song("n1", "One")
+        self.apply(self.manifest([song]))
+        plan = self.manifest([dict(song, sources=["starred"])])
+        h.queue_favorites(self.rate(5), self.rec, G, 4, plan)
+        self.assertEqual(self.rec.unsent_favorites(), [])
+
+    def test_no_rating_can_remove_a_favorite(self):
+        # 1 star on a favorite, then every other rating: only "star" is ever sent,
+        # and no code in the dock can send anything else about favorites.
+        import dock_plays
+        import glob
+        self.apply(self.manifest([self.song("n1", "One")]))
+        calls = []
+        client = mock.Mock(call=lambda method, **kw: calls.append(method))
+        for stars in (5, 1, 0, 5, 1, 4, 0):
+            h.queue_favorites(self.rate(stars), self.rec, G, 4)
+            dock_plays.upload_favorites(client, self.rec)
+        self.assertEqual(set(calls), {"star"})
+        root = os.path.join(os.path.dirname(__file__), "..")
+        for path in glob.glob(os.path.join(root, "*.py")):
+            with open(path) as f:
+                self.assertNotIn("unstar", f.read().lower(), path)
+
     def test_threshold_can_be_five(self):
         self.apply(self.manifest([self.song("n1", "One")]))
         self.assertEqual(self.favorites_after(self.rate(4), stars=5), [])
