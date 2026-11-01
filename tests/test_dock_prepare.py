@@ -57,6 +57,16 @@ class FakeServer:
             return {"playlists": {"playlist": [
                 {"id": pid, "name": v[0], **({"comment": v[2]} if len(v) > 2 else {})}
                 for pid, v in self.playlists.items()]}}
+        if endpoint == "search3":
+            self.searches = getattr(self, "searches", []) + [params["query"]]
+            if getattr(self, "search_error", None):
+                raise self.search_error
+            return {"searchResult3": {"song": [s for s in getattr(self, "library", [])
+                                               if s.get("title") == params["query"]]}}
+        if endpoint == "getSong":
+            if getattr(self, "song_error", None):
+                raise self.song_error
+            return {"song": next(s for s in self.library if s["id"] == params["id"])}
         if endpoint == "getPlaylist":
             if params["id"] not in self.playlists:
                 raise SubsonicError("getPlaylist: not found (code 70)")
@@ -177,6 +187,80 @@ class PrepareTests(unittest.TestCase):
                                                             "songCount": 31}})
         self.run_prepare(server)
         self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["new"])
+
+    def test_ep_preferred_over_one_track_release_without_a_type(self):
+        a = song("one", title="DINNER!", albumId="x", musicBrainzId="r")
+        b = song("ep", title="DINNER!", albumId="y", musicBrainzId="r")
+        server = FakeServer(songs=[a, b], album_meta={"x": {"releaseTypes": [], "songCount": 1},
+                                                      "y": {"releaseTypes": ["ep"],
+                                                            "songCount": 6}})
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["ep"])
+
+    def library_with_album_copy(self, copy_types=("album",)):
+        single = song("s1", title="Liebe", album="Liebe", albumId="sgl",
+                      musicBrainzId="rec-1", duration=166)
+        album = song("a1", title="Liebe", album="Squaredance", albumId="alb",
+                     musicBrainzId="rec-1", duration=166)
+        server = FakeServer(songs=[single], album_meta={
+            "sgl": {"releaseTypes": ["single"], "songCount": 1},
+            "alb": {"releaseTypes": list(copy_types), "songCount": 31}})
+        server.library = [single, album]
+        return server
+
+    def test_single_moves_to_its_album_when_the_album_isnt_selected(self):
+        server = self.library_with_album_copy()
+        self.run_prepare(server)
+        m = self.manifest()
+        self.assertEqual([(t["id"], t["album"]) for t in m["tracks"]], [("a1", "Squaredance")])
+        self.assertEqual(m["tracks"][0]["sources"], ["starred"])
+        self.assertEqual(m["playlists"][0]["song_ids"], ["a1"])
+        self.run_prepare(server)                      # stays, and isn't searched for again
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a1"])
+        self.assertEqual(server.searches, ["Liebe"])
+
+    def test_single_doesnt_move_to_a_compilation_or_live_album(self):
+        for types in (["album", "compilation"], ["album;live"]):
+            with self.subTest(types):
+                self.run_prepare(self.library_with_album_copy(types))
+                self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["s1"])
+                os.remove(os.path.join(self.cache, "manifest.json"))
+
+    def test_single_with_no_album_copy_is_searched_for_weekly(self):
+        server = self.library_with_album_copy()
+        server.library = server.library[:1]
+        self.run_prepare(server)
+        self.run_prepare(server)
+        self.assertEqual(server.searches, ["Liebe"])
+        path = os.path.join(self.cache, "manifest.json")
+        m = self.manifest()
+        m["album_copies"]["s1"]["checked"] -= 8 * 86400
+        with open(path, "w") as f:
+            json.dump(m, f)
+        server.library = self.library_with_album_copy().library
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a1"])
+
+    def test_album_copy_unreadable_stops_the_run_and_gone_returns_the_single(self):
+        server = self.library_with_album_copy()
+        self.run_prepare(server)
+        server.song_error = SubsonicError("getSong: can't reach server", network=True)
+        with self.assertRaises(dock_prepare.PrepareError):
+            self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a1"])
+        server.song_error = SubsonicError("getSong: not found (code 70)", code=70)
+        server.library = server.library[:1]
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["s1"])
+
+    def test_failed_search_leaves_the_single_and_tries_again(self):
+        server = self.library_with_album_copy()
+        server.search_error = SubsonicError("search3: can't reach server", network=True)
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["s1"])
+        server.search_error = None
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a1"])
 
     def test_different_lengths_or_no_ids_are_not_merged(self):
         studio = song("st", title="Look at the Sky", albumId="n", musicBrainzId="r1",

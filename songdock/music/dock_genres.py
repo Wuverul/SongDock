@@ -111,11 +111,11 @@ def song_tags(song):
 
 def release_types(album):
     """An album's release types, lower case. Navidrome sends a list, or for
-    some albums one string such as "album;compilation"."""
+    some albums one string such as "album;compilation", or a list holding those."""
     types = album.get("releaseTypes") or []
     if isinstance(types, str):
-        types = types.split(";")
-    return [t.strip().lower() for t in types if t and t.strip()]
+        types = [types]
+    return [t.strip().lower() for joined in types for t in (joined or "").split(";") if t.strip()]
 
 
 def tidy(tag):

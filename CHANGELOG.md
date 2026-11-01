@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A song selected as a single that your library also has on an album or EP now goes on the player under that album, even if the album isn't selected. It never moves to a compilation, soundtrack or live album. A moved song is copied again and its play count on the iPod starts over; plays already sent stay in Navidrome on the single.
+
 ## 0.7.3
 
 Singles in one place, ratings that become favorites, and a tidier project.

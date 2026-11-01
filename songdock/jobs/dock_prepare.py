@@ -276,7 +276,7 @@ def lossless_songs(client, tag, targets, playlists, previous_ids=()):
 
 
 def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites",
-                  tag="", previously_tagged=(), album_info=None):
+                  tag="", previously_tagged=(), album_info=None, album_copies=None):
     """Resolve the configured targets into one de-duplicated set of tracks.
 
     targets: e.g. ["starred", "playlist:Mel Test"].
@@ -286,6 +286,8 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     added too. previously_tagged: playlist IDs tagged last run, so an empty
     playlist listing (server trouble) stops the run instead of pruning.
     album_info: pass a dict to keep the album records read along the way.
+    album_copies: pass a dict to also look through the whole library for the
+    album a single is on; last run's answers go in, this run's come out.
     Returns (tracks in artist/album/track order, {song id: [targets]},
     [playlist records for the manifest, in target order]).
     """
@@ -352,7 +354,13 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             raise PrepareError(f"unknown target {target!r} "
                                "(use \"starred\" or \"playlist:<name>\")")
         add(target, songs)
+    if album_copies is not None:
+        known = dict(album_copies)
+        album_copies.clear()
+        album_copies.update(find_album_copies(client, tracks, sources, album_info, known))
     merge_same_recordings(client, tracks, sources, playlists, album_info)
+    for song_id in [i for i, targets in sources.items() if not targets]:
+        del tracks[song_id], sources[song_id]        # a copy that didn't win
     unify_album_names(client, tracks.values(), album_info)
     return sorted(tracks.values(), key=library_order), sources, playlists
 
@@ -362,6 +370,10 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
 RELEASE_RANK = {"album": 0, "": 1, "ep": 2, "single": 3, "live": 4, "compilation": 5,
                 "soundtrack": 5, "remix": 6, "demo": 7}
 SAME_LENGTH = 2              # seconds: copies of one recording are this close
+# Never moved to from a single found alone: the song isn't "from" these.
+NOT_ITS_ALBUM = {"compilation", "soundtrack", "live", "remix", "demo", "dj-mix",
+                 "mixtape/street"}
+ALBUM_COPY_CHECK_DAYS = 7    # how often a single with no album copy is looked up again
 
 
 def album_fields(client, album_id, album_info):
@@ -388,6 +400,94 @@ def recording_key(song):
     return ("isrc", isrc.upper()) if isrc else None
 
 
+def release_rank(client, song, album_info):
+    """Sort key for the copies of one recording, best first. A release with no
+    type and one track is a single, whatever it's filed as: femtanyl's "DINNER!"
+    has no type and would beat the EP it's on (2026-10-31)."""
+    info = album_fields(client, song.get("albumId"), album_info) \
+        if song.get("albumId") else {}
+    types = dock_genres.release_types(info)
+    if not types:
+        types = ["single"] if info.get("songCount") == 1 else [""]
+    return (min(RELEASE_RANK.get(t, 4) for t in types),
+            bool(info.get("isCompilation")), -(info.get("songCount") or 0),
+            song.get("year") or 9999, song["id"])
+
+
+def search_album_copy(client, song, album_info):
+    """The best copy of `song`'s recording elsewhere in the library, on a release
+    that ranks above it and is its own (no compilations or live albums), or None."""
+    key = recording_key(song)
+    title = song.get("title") or ""
+    found = client.call("search3", query=title, songCount=30, albumCount=0,
+                        artistCount=0).get("searchResult3", {}).get("song", [])
+    copies = []
+    for other in found:
+        if (other["id"] == song["id"] or recording_key(other) != key or not other.get("albumId")
+                or abs((other.get("duration") or 0) - (song.get("duration") or 0)) > SAME_LENGTH):
+            continue
+        info = album_fields(client, other["albumId"], album_info)
+        if not info or info.get("isCompilation") \
+                or NOT_ITS_ALBUM & set(dock_genres.release_types(info)):
+            continue
+        if release_rank(client, other, album_info) < release_rank(client, song, album_info):
+            copies.append(other)
+    return min(copies, key=lambda s: release_rank(client, s, album_info)) if copies else None
+
+
+def find_album_copies(client, tracks, sources, album_info, known, now=None):
+    """Add to `tracks` the album copy of each single in the plan, so that
+    merge_same_recordings keeps it: starring a single files the song under its
+    album even when the album itself isn't selected (user, 2026-10-31).
+
+    Only a song alone from its release can be such a single. `known` is last run's
+    {song id: {"copy": id or None, "checked": time}}; returns this run's. A found copy
+    is read again every run, and if that fails the run stops, or the song would swap
+    back and forth with the server. A song with none is looked up weekly.
+    """
+    now = time.time() if now is None else now
+    in_plan = {}
+    for song in tracks.values():
+        in_plan[song.get("albumId")] = in_plan.get(song.get("albumId"), 0) + 1
+    result = {}
+    for song in list(tracks.values()):
+        if not recording_key(song) or not song.get("albumId") or in_plan[song["albumId"]] > 1:
+            continue
+        entry = known.get(song["id"], {})
+        copy = None
+        if entry.get("copy"):
+            try:
+                copy = client.call("getSong", id=entry["copy"]).get("song")
+            except SubsonicError as e:
+                if e.code != 70:
+                    raise PrepareError(f"couldn't read {song.get('title')!r}'s album "
+                                       f"copy: {e}") from None
+            if copy and not (album_fields(client, copy.get("albumId"), album_info)
+                             and album_fields(client, song["albumId"], album_info)):
+                raise PrepareError(f"couldn't read the albums of {song.get('title')!r}")
+        elif "copy" in entry and now - entry.get("checked", 0) < ALBUM_COPY_CHECK_DAYS * 86400:
+            result[song["id"]] = entry
+            continue
+        checked = entry.get("checked", now) if copy else now
+        if not copy:
+            info = album_fields(client, song["albumId"], album_info)
+            if not info:
+                continue                             # lookup failed: retry next run
+            if release_rank(client, song, album_info)[0] != RELEASE_RANK["single"]:
+                result[song["id"]] = {"copy": None, "checked": now}
+                continue
+            try:
+                copy = search_album_copy(client, song, album_info)
+            except SubsonicError as e:
+                log.warning("Couldn't look for %r on an album (%s)", song.get("title"), e)
+                continue
+        result[song["id"]] = {"copy": copy["id"] if copy else None, "checked": checked}
+        if copy and copy["id"] not in tracks:
+            tracks[copy["id"]] = copy
+            sources[copy["id"]] = []
+    return result
+
+
 def merge_same_recordings(client, tracks, sources, playlists, album_info):
     """Keep one copy of a recording that the targets list on several releases
     (e.g. a single and its album), preferring the album.
@@ -406,12 +506,7 @@ def merge_same_recordings(client, tracks, sources, playlists, album_info):
             groups.setdefault(key, []).append(song)
 
     def rank(song):
-        info = album_fields(client, song.get("albumId"), album_info) \
-            if song.get("albumId") else {}
-        types = dock_genres.release_types(info) or [""]
-        return (min(RELEASE_RANK.get(t, 4) for t in types),
-                bool(info.get("isCompilation")), -(info.get("songCount") or 0),
-                song.get("year") or 9999, song["id"])
+        return release_rank(client, song, album_info)
 
     replaced = {}
     for songs in groups.values():
@@ -1065,10 +1160,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     previously_tagged = [p["id"] for p in previous.get("playlists", [])
                          if p.get("via") == "tag"]
     album_info = {}                 # album records read this run, shared
+    album_copies = dict(previous.get("album_copies", {}))
     targets, sources, playlists = target_tracks(
         client, cfg["sync"]["targets"], known,
         cfg["sync"].get("favorites_playlist", "Favorites"),
-        cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info)
+        cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info, album_copies)
     unsplit_artists = set()
     if cfg["sync"].get("primary_artist", True):
         dock_artists.tidy(targets, cfg["sync"].get("artist_names", ()), unsplit_artists,
@@ -1398,6 +1494,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "skipped": not_ready, "kept_after_removal": len(kept.items),
             **({"album_types": album_types} if album_types else {}),
             **({"album_song_counts": single_albums} if single_albums else {}),
+            **({"album_copies": album_copies} if album_copies else {}),
             **({"interim": True} if waiting else {}),
         }
 

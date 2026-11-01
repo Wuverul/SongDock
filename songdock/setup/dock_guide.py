@@ -202,6 +202,9 @@ FULL. Nothing is removed unless you turn this on:
                       rest. A removed song returns when there's free room.
   RecentPlayMonths=3  (the default) songs newer than this are never removed
 
+A song starred as a single that your library also has on an album or EP goes
+on the player under that album, even if the album itself isn't selected.
+
 An artist with 4 or more one-track albums gets them as one album, "<Artist>
 Singles", each song keeping its own art. Only the names here change.
   SinglesAlbum=6  how many it takes (SinglesAlbum=0: leave them separate)

@@ -508,6 +508,18 @@ service and script. Paths below without a folder are in one of these. Docks move
   Verified on 9 Kitsune² songs on two albums: spectrograms matched 0.999+
   (one was 1.9 dB louder), while studio vs live scored 0.2; 13 same-title
   Porter Robinson pairs (live/studio, different IDs) are left alone.
+- **A single goes under its album (user, 2026-10-31):** a one-track release with no
+  type now ranks as a single (femtanyl's "DINNER!" was beating the EP it's on). And
+  `find_album_copies` looks through the **whole library**, not only the targets: a
+  single-ranked song alone from its release, with an album/EP copy of the same recording
+  (ID + length, as above), is replaced by that copy even if the album isn't selected. Never
+  moves to a compilation, soundtrack, live, remix, demo, DJ mix or mixtape. Answers are in the
+  manifest's `album_copies`: no copy = searched again weekly; a found copy is read every run,
+  and a failed read stops the run (else it would swap back); gone (code 70) returns the single.
+  A swap is a new song ID: copied again, iPod counts start over, later plays go to the
+  album's song in Navidrome (`take_history` covers one ID only). Dry run on the real library:
+  7 found, 3 still to move. **On the Nano 2026-11-01:** femtanyl DINNER!, AND IM GONE, KATAMARI
+  swapped in one automatic sync (+3 -3, ~1 min), no errors.
 - **Simplified genres (2026-10-19, `dock_genres.py`):** Navidrome songs carry
   several genre tags, and the iPod showed each combination as a genre (56
   for 78 albums). `[genres]` in the config is an ordered list of groups
