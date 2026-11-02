@@ -48,6 +48,20 @@ class RestoreTests(unittest.TestCase):
         self.assertIsNone(self.status(4000, plan(4000), now=200))      # done: forgotten
         self.assertIsNone(self.status(3900, plan(4000), now=300))      # a new one needs 500
 
+    def test_a_grown_plan_on_a_well_filled_player_is_not(self):
+        # 2026-11-02: 2,261 on the Nano, 4,013 planned for a bigger iPod.
+        self.assertIsNone(self.status(2261, plan(4013), now=0))
+        self.assertFalse(os.path.exists(self.path))
+
+    def test_a_full_player_ends_a_restore(self):
+        self.status(0, plan(4000), now=0)
+        self.assertIsNone(dock_restore.status("G", {f"s{i}" for i in range(2000)}, plan(4000),
+                                              100, self.path, full=True))
+        self.assertIsNone(self.status(2000, plan(4000), now=200))      # not started again
+
+    def test_a_wiped_player_still_is(self):
+        self.assertIsNotNone(self.status(0, plan(2105), now=0))
+
     def test_left_text(self):
         self.assertEqual(dock_restore.left_text(None), "")
         self.assertEqual(dock_restore.left_text(20 * 60), "About 20 min left")

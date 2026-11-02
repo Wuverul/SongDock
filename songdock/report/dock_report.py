@@ -291,6 +291,8 @@ def ipod_section(record_path, manifest, now=None):
         lossless, other, held = ipod_handler.conversions_ready(
             manifest, records, p["swaps_no_room"] if "swaps_no_room" in p.keys() else 0)
         changes = [f"+{add} -{remove} tracks"] if add or remove else []
+        if add and "full" in p.keys() and p["full"]:
+            changes += ["the player is full: the added songs wait for room"]
         changes += [f"{lossless} to lossless"] if lossless else []
         changes += [f"{other} to another format"] if other else []
         changes += [f"{len(set_aside)} taken off to make room"] if set_aside else []

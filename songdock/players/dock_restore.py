@@ -11,8 +11,13 @@ so far (user request, 2026-10-26).
 
 The start of a restore is kept in restore.json next to the record (it
 survives restarts; the pace is measured from it) and dropped once the
-player has everything. Not yet tried on hardware: a real wiped or new
-iPod is needed.
+player has everything. Verified 2026-11-01 on a wiped Nano (the count ran;
+the screen didn't, see TASKS).
+
+A restore starts only for a player that's nearly empty (new or wiped): one that
+lacks songs because the plan grew isn't being restored. With 2,000 songs added
+for a bigger iPod (2026-11-02), a full Nano showed RESTORING with no end. A full
+player ends a restore too: it can't take the rest.
 """
 
 import json
@@ -55,11 +60,12 @@ def targets(manifest):
             | {s["id"] for s in manifest.get("skipped", [])})
 
 
-def status(guid, present, manifest, now=None, path=None):
+def status(guid, present, manifest, now=None, path=None, full=False):
     """{"have", "total", "left" (seconds or None)} while `guid` is being
     restored, else None. `present`: Navidrome IDs the record has on it.
-    Starts a restore when RESTORE_MIN or more are missing; ends it once
-    nothing is."""
+    Starts a restore when the player holds fewer than RESTORE_MIN songs of the
+    plan and lacks at least RESTORE_MIN; ends it once nothing is missing, or the
+    player is full (`full`: its last sync ran out of room)."""
     if not guid or "tracks" not in (manifest or {}):
         return None
     now = time.time() if now is None else now
@@ -68,13 +74,13 @@ def status(guid, present, manifest, now=None, path=None):
     have, total = len(wanted & set(present)), len(wanted)
     state = _load(path)
     entry = state.get(guid)
-    if have >= total:
+    if have >= total or full:
         if entry:
             del state[guid]
             _save(path, state)
         return None
     if entry is None:
-        if total - have < RESTORE_MIN:
+        if total - have < RESTORE_MIN or have >= RESTORE_MIN:
             return None
         entry = state[guid] = {"started": now, "have_at_start": have}
         _save(path, state)
@@ -98,7 +104,7 @@ def for_last_player(manifest, now=None, path=None):
             record.close()
     except Exception:
         return None
-    return status(player["guid"], present, manifest, now, path)
+    return status(player["guid"], present, manifest, now, path, full=bool(player.get("full")))
 
 
 def left_text(seconds):

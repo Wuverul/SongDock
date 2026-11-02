@@ -57,6 +57,17 @@ class RecordTests(unittest.TestCase):
         self.rec.set_player_full(classic, False)
         self.assertEqual(set(self.rec.songs_on_every_player()), {"n1"})
 
+    def test_every_player_full(self):
+        self.assertFalse(self.rec.every_player_full())          # no players
+        nano, classic = GUID, "000A270000000003"
+        self.rec.upsert_player(nano)
+        self.rec.set_player_full(nano, True)
+        self.assertTrue(self.rec.every_player_full())
+        self.rec.upsert_player(classic)                          # a new one has room
+        self.assertFalse(self.rec.every_player_full())
+        self.rec.set_player_full(classic, True)
+        self.assertTrue(self.rec.every_player_full())
+
     def test_last_played(self):
         self.assertEqual(self.rec.last_played(), {})
         self.rec.queue_plays(GUID, [

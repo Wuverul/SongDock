@@ -3,7 +3,11 @@
 #   sudo ./pi/install.sh           install / update
 #   sudo ./pi/install.sh --check   only report what would change
 # Safe to run again: every step checks first and only acts if needed.
-# (On the developer's Mac, deploy.sh --install runs this over SSH.)
+# (On the developer's Mac, deploy.sh runs this over SSH.)
+#
+# The code is installed in /opt/songdock, owned by root: services run it as root,
+# so a copy the login user could edit would make that account root (security
+# review, 2026-11-02). The folder this is run from is only the source.
 set -euo pipefail
 
 CHECK=0
@@ -14,12 +18,20 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SOURCE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+INSTALL_DIR=/opt/songdock
+APP_DIR="$INSTALL_DIR/app"
+VENV="$INSTALL_DIR/venv"
+PREPARE_UNIT=/etc/systemd/system/musicdock-prepare.service
 LOGIN_USER="${SUDO_USER:-root}"
+# The updater runs this as root: the dock's user is the one the prepare job runs as.
+if [ "$LOGIN_USER" = "root" ] && [ -f "$PREPARE_UNIT" ]; then
+  LOGIN_USER="$(sed -n 's/^User=//p' "$PREPARE_UNIT")"
+  LOGIN_USER="${LOGIN_USER:-root}"
+fi
 USER_HOME="$(getent passwd "$LOGIN_USER" | cut -d: -f6)"
 USER_GROUP="$(id -gn "$LOGIN_USER")"
 CONFIG="$USER_HOME/.config/musicdock/config.toml"
-VENV="$USER_HOME/musicdock/venv"
 REBOOT_NEEDED=0
 TODO=()
 
@@ -40,8 +52,31 @@ fi
 grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null \
   || echo "   note: this doesn't look like a Raspberry Pi; continuing anyway"
 
+# 1b. The code, owned by root ----------------------------------------------------
+# Copied from wherever this was unpacked (or deployed) into $APP_DIR, then the
+# rest of this script runs from that copy, so nothing root runs is the user's.
+if [ "$SOURCE_DIR" != "$APP_DIR" ]; then
+  say "Installing the code in $APP_DIR (owned by root)"
+  if [ $CHECK = 1 ]; then plan "copy $SOURCE_DIR to $APP_DIR"; else
+    install -d -o root -g root -m 755 "$INSTALL_DIR"
+    rm -rf "$APP_DIR.copy"
+    cp -R "$SOURCE_DIR" "$APP_DIR.copy"
+    find "$APP_DIR.copy" -name __pycache__ -prune -exec rm -rf {} +
+    chown -R root:root "$APP_DIR.copy"
+    chmod -R u+rwX,go+rX,go-w "$APP_DIR.copy"
+    rm -rf "$APP_DIR.replaced"          # (.old/.new are the updater's)
+    if [ -d "$APP_DIR" ]; then mv "$APP_DIR" "$APP_DIR.replaced"; fi
+    mv "$APP_DIR.copy" "$APP_DIR"
+    rm -rf "$APP_DIR.replaced"
+    exec env SUDO_USER="$LOGIN_USER" "$APP_DIR/pi/install.sh" "$@"
+  fi
+else
+  # Run in place (by the updater): make sure it's still root's alone.
+  [ $CHECK = 1 ] || { chown -R root:root "$APP_DIR"; chmod -R go-w "$APP_DIR"; }
+fi
+
 # 2. System packages (only the missing ones) -----------------------------------
-PACKAGES="ffmpeg rsync eject python3-pil python3-gpiozero python3-lgpio python3-spidev
+PACKAGES="ffmpeg rsync eject dosfstools python3-pil python3-gpiozero python3-lgpio python3-spidev
           python3-venv fonts-dejavu-core"
 MISSING=""
 for pkg in $PACKAGES; do
@@ -124,17 +159,23 @@ fi
 
 # 4. Python packages not in apt (pygpod, mutagen) in a venv --------------------
 # The venv also sees apt's Pillow/gpiozero (--system-site-packages).
-# Raspberry Pi OS blocks system-wide pip installs.
+# Raspberry Pi OS blocks system-wide pip installs. Owned by root like the code:
+# the sync runs this python as root, and it loads whatever its folders hold.
 say "Python environment: $VENV"
 if [ $CHECK = 1 ]; then
   [ -x "$VENV/bin/python" ] || plan "create the venv"
   plan "pip install -r pi/requirements.txt (pygpod, mutagen)"
 else
-  [ -x "$VENV/bin/python" ] \
-    || sudo -u "$LOGIN_USER" python3 -m venv --system-site-packages "$VENV"
-  sudo -u "$LOGIN_USER" "$VENV/bin/pip" install -q --disable-pip-version-check \
+  [ -x "$VENV/bin/python" ] || python3 -m venv --system-site-packages "$VENV"
+  "$VENV/bin/pip" install -q --disable-pip-version-check --root-user-action=ignore \
     -r "$APP_DIR/pi/requirements.txt"
+  chown -R root:root "$VENV"
+  chmod -R go-w "$VENV"
+  # Compiled now, as root: the prepare job (the login user) can't write here.
+  "$VENV/bin/python" -m compileall -q "$APP_DIR/songdock" "$APP_DIR/vendor" >/dev/null || true
 fi
+OLD_VENV="$USER_HOME/musicdock/venv"
+[ -d "$OLD_VENV" ] && TODO+=("Older versions kept their code and venv in your home: once this works, rm -rf $OLD_VENV (and the code folder this was run from, unless you deploy into it)")
 
 # 5. Config (created from the template only if there isn't one) ----------------
 if [ -f "$CONFIG" ]; then
@@ -171,7 +212,7 @@ else
               musicdock-wifiprefer.service musicdock-wifiprefer.timer \
               musicdock-update.service musicdock-update.timer; do
     sed -e "s|@APP_DIR@|$APP_DIR|g" -e "s|@HOME@|$USER_HOME|g" \
-        -e "s|@USER@|$LOGIN_USER|g" \
+        -e "s|@VENV@|$VENV|g" -e "s|@USER@|$LOGIN_USER|g" \
       "$APP_DIR/pi/$unit" > "/etc/systemd/system/$unit"
   done
   install -m 644 "$APP_DIR/pi/99-musicdock.rules" /etc/udev/rules.d/99-musicdock.rules

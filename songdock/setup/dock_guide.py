@@ -277,7 +277,8 @@ WHAT THE SCREEN MEANS
   PLAYER FULL        Finished, safe to remove, but new songs didn't fit.
   DOCK READY         Idle. Shows what the next sync will add and remove.
                      "No room to convert 7": 7 songs keep their format
-                     until the player has space.
+                     until the player has space. "Player full: 72
+                     waiting": songs that come once there's room.
   WI-FI CHANGED / WI-FI UNCHANGED, DOCK UPDATED / SETUP NOT USED
                      Results of {wifi} and {setup} (see above).
   USB NOT WORKING    A plug-in failed and the dock stopped noticing

@@ -215,6 +215,62 @@ class OptInTests(unittest.TestCase):
             summary = dock_sync.make_ipod_work(cfg, "G", 0x1263, write)(dev, lambda *a, **k: None)
         return summary, sp, dev
 
+    def run_with_damage(self, marker="MediaDock.txt", write=True, repair=None, plays=None):
+        """A sync of a player whose FAT is flagged. Returns (order of events, error)."""
+        self.ipod(marker=marker) if marker else self.ipod()
+        with open(os.path.join(self.root, "manifest.json"), "w") as f:
+            json.dump({"tracks": []}, f)
+        cfg = {"sync": {"cache_dir": self.root},
+               "server": {"url": "https://x", "username": "u", "password": "p"}}
+        record = mock.Mock()
+        record.player.return_value = None
+        record.tracks.return_value = []
+        record.room_removed.return_value = {}
+        events = []
+        dev = FakeDevice(self.root)
+        dev.needs_repair = lambda: True
+        dev.repair = mock.Mock(side_effect=repair or (lambda: events.append("repair")))
+        dev.make_writable = lambda: events.append("writable")
+
+        def sync_player(*a, **kw):
+            events.append("sync write" if kw["write"] else "plays")
+            if plays and not kw["write"]:
+                raise plays
+            return {"added": 0}
+        error = None
+        with mock.patch("dock_record.Record", return_value=record), \
+                mock.patch("ipod_handler.sync_player", side_effect=sync_player):
+            try:
+                dock_sync.make_ipod_work(cfg, "G", 0x1263, write)(dev, lambda *a, **k: None)
+            except dock_sync.SyncError as e:
+                error = e
+        return events, error, dev
+
+    def test_damaged_player_gives_up_its_plays_before_the_repair(self):
+        events, error, _ = self.run_with_damage()
+        self.assertIsNone(error)
+        self.assertEqual(events, ["plays", "repair", "writable", "sync write"])
+
+    def test_plays_that_cant_be_read_dont_stop_the_repair(self):
+        events, error, _ = self.run_with_damage(plays=OSError(5, "Input/output error"))
+        self.assertIsNone(error)
+        self.assertEqual(events, ["plays", "repair", "writable", "sync write"])
+
+    def test_failed_repair_never_makes_the_player_writable(self):
+        events, error, _ = self.run_with_damage(repair=SyncError("Player's files are damaged"))
+        self.assertIn("damaged", str(error))
+        self.assertEqual(events, ["plays"])
+
+    def test_player_that_hasnt_opted_in_is_never_repaired(self):
+        events, error, dev = self.run_with_damage(marker=None)
+        dev.repair.assert_not_called()
+        self.assertEqual(events, [])
+
+    def test_read_only_dock_doesnt_repair(self):
+        events, _, dev = self.run_with_damage(write=False)
+        dev.repair.assert_not_called()
+        self.assertEqual(events, ["plays"])
+
     def test_safe_hours_deadline_and_restore_count_reach_the_handler(self):
         self.ipod(marker="MediaDock.txt")
         with open(os.path.join(self.root, "manifest.json"), "w") as f:
@@ -801,6 +857,68 @@ class SafeHoursSyncTests(unittest.TestCase):
     def test_outside_or_off_syncs_as_usual(self):
         self.assertEqual(self.check(11), (False, []))
         self.assertEqual(self.check(8, safe_hours=""), (False, []))
+
+
+
+class RepairTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dev = os.path.join(self.tmp.name, "sda1")
+
+    def boot(self, fat32=True, dirty=True):
+        boot = bytearray(512)
+        boot[0x16:0x18] = b"\0\0" if fat32 else b"\x10\0"
+        boot[0x41 if fat32 else 0x25] = 1 if dirty else 0
+        with open(self.dev, "wb") as f:
+            f.write(boot)
+
+    def test_dirty_flag_is_read_for_each_fat_type(self):
+        for fat32 in (True, False):
+            for dirty in (True, False):
+                self.boot(fat32, dirty)
+                self.assertEqual(dock_sync.fat_dirty(self.dev), dirty, (fat32, dirty))
+
+    def test_unreadable_boot_sector_isnt_dirty(self):
+        self.assertFalse(dock_sync.fat_dirty(self.dev))
+
+    def repair(self, check_exit=0, tool="/usr/sbin/fsck.vfat"):
+        device = dock_sync.BlockDevice(self.dev, mount_point=self.tmp.name)
+        device.mounted = True
+        calls = []
+
+        def run(cmd, *a, **k):
+            calls.append(cmd)
+            code = check_exit if "-n" in cmd else 1
+            return mock.Mock(returncode=code, stdout="", stderr="")
+        with mock.patch.object(dock_sync.shutil, "which", return_value=tool), \
+                mock.patch.object(dock_sync.subprocess, "run", side_effect=run), \
+                mock.patch.object(dock_sync, "run", side_effect=lambda cmd, short: calls.append(cmd)):
+            try:
+                return device.repair(), calls, device
+            except SyncError as e:
+                return e, calls, device
+
+    def test_repair_runs_unmounted_and_mounts_read_only_again(self):
+        result, calls, device = self.repair()
+        self.assertIs(result, True)
+        self.assertEqual([c[0] for c in calls], ["umount", "fsck.vfat", "fsck.vfat", "mount"])
+        self.assertIn("-a", calls[1])
+        self.assertIn("-n", calls[2])
+        self.assertIn("ro,noatime", calls[3])
+        self.assertTrue(device.mounted)
+        self.assertNotIn("eject", [c[0] for c in calls])
+
+    def test_still_damaged_after_the_repair_is_an_error(self):
+        result, calls, device = self.repair(check_exit=1)
+        self.assertIsInstance(result, SyncError)
+        self.assertTrue(device.mounted)          # the sync's normal unmount still runs
+        self.assertEqual(calls[-1][0], "mount")
+
+    def test_without_the_tool_it_carries_on_as_before(self):
+        result, calls, _ = self.repair(tool=None)
+        self.assertIs(result, False)
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

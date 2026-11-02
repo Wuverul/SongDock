@@ -28,6 +28,18 @@ class LayoutTests(unittest.TestCase):
         for rel in found:
             self.assertTrue(os.path.exists(os.path.join(ROOT, rel)), rel)
 
+    def test_services_run_only_root_owned_code(self):
+        # Security review 2026-11-02: code root runs must not be the login user's.
+        for path in glob.glob(os.path.join(ROOT, "pi", "*.service")):
+            with open(path) as f:
+                for line in f:
+                    if line.startswith(("ExecStart", "Environment=EPD_LIB")):
+                        self.assertNotIn("@HOME@", line, os.path.basename(path))
+        with open(os.path.join(ROOT, "pi", "install.sh")) as f:
+            text = f.read()
+        self.assertIn('INSTALL_DIR=/opt/songdock', text)
+        self.assertNotIn('sudo -u "$LOGIN_USER" "$VENV', text)
+
     def test_no_code_left_at_the_top(self):
         self.assertEqual(glob.glob(os.path.join(ROOT, "*.py")), [])
 

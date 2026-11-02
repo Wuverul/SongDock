@@ -225,7 +225,9 @@ def draw(*args):
 
 
 def run_installer(app):
-    """The installer as if its owner ran it with sudo (it sets up that user)."""
+    """The installer as if its owner ran it with sudo (it sets up that user). Once
+    the code is root's (/opt/songdock), the installer finds the dock's user in the
+    prepare job's unit."""
     import pwd
     owner = pwd.getpwuid(os.stat(app).st_uid).pw_name
     r = subprocess.run([os.path.join(app, "pi", "install.sh")],
@@ -254,7 +256,8 @@ def unpack(package, folder, want, owner_of):
     shutil.rmtree(staging)
     if os.path.exists(os.path.join(folder, "pi", "install.sh")):
         os.chmod(os.path.join(folder, "pi", "install.sh"), 0o755)
-    st = os.stat(owner_of)            # the login user, like the folder it replaces
+    st = os.stat(owner_of)            # whoever owns the folder it replaces (root, or
+                                      # the login user before /opt/songdock)
     for root, dirs, files in os.walk(folder):
         for name in [".", *dirs, *files]:
             os.lchown(os.path.join(root, name), st.st_uid, st.st_gid)

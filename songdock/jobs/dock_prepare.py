@@ -217,6 +217,8 @@ def find_playlist(client, name, known_id=None, listing=None):
     try:
         return client.call("getPlaylist", id=pid)["playlist"]
     except SubsonicError as e:
+        if e.network:
+            raise
         raise PrepareError(f"playlist {name!r} couldn't be read: {e}") from None
 
 
@@ -266,6 +268,8 @@ def lossless_songs(client, tag, targets, playlists, previous_ids=()):
         try:
             songs = client.call("getPlaylist", id=p["id"])["playlist"].get("entry", [])
         except SubsonicError as e:
+            if e.network:
+                raise
             raise PrepareError(f"playlist {p['name']!r} (tagged {tag}) couldn't be "
                                f"read: {e}") from None
         ids.update(s["id"] for s in songs)
@@ -322,6 +326,8 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             try:
                 pl = client.call("getPlaylist", id=pid)["playlist"]
             except SubsonicError as e:
+                if e.network:
+                    raise
                 raise PrepareError(f"tagged playlist {target[1]['name']!r} couldn't "
                                    f"be read: {e}") from None
             seen_playlists.add(pid)
@@ -378,12 +384,16 @@ ALBUM_COPY_CHECK_DAYS = 7    # how often a single with no album copy is looked u
 
 def album_fields(client, album_id, album_info):
     """Navidrome's album record (name, releaseTypes, songCount...), cached in
-    `album_info`; {} if it can't be read."""
+    `album_info`; {} if the server has no such album. Any other failure is raised,
+    stopping the run: a guess here changes which copies, names and genres the plan
+    holds (one failed lookup on 2026-11-01 swapped 9 songs to another album and back)."""
     if album_id not in album_info:
         try:
             album = client.call("getAlbum", id=album_id).get("album", {})
             album_info[album_id] = {k: v for k, v in album.items() if k != "song"}
         except SubsonicError as e:
+            if e.code != 70:
+                raise
             log.warning("Couldn't look up album %s (%s)", album_id, e)
             album_info[album_id] = {}
     return album_info[album_id]
@@ -459,6 +469,8 @@ def find_album_copies(client, tracks, sources, album_info, known, now=None):
             try:
                 copy = client.call("getSong", id=entry["copy"]).get("song")
             except SubsonicError as e:
+                if e.network:
+                    raise
                 if e.code != 70:
                     raise PrepareError(f"couldn't read {song.get('title')!r}'s album "
                                        f"copy: {e}") from None
@@ -472,7 +484,7 @@ def find_album_copies(client, tracks, sources, album_info, known, now=None):
         if not copy:
             info = album_fields(client, song["albumId"], album_info)
             if not info:
-                continue                             # lookup failed: retry next run
+                continue                             # the album is gone
             if release_rank(client, song, album_info)[0] != RELEASE_RANK["single"]:
                 result[song["id"]] = {"copy": None, "checked": now}
                 continue
@@ -723,7 +735,7 @@ def shrink_cover(path, cache=None):
         from PIL import Image
     except ImportError:
         if not _warned_no_cover_tools:
-            log.warning("mutagen/Pillow missing: covers not shrunk (run with ~/musicdock/venv)")
+            log.warning("mutagen/Pillow missing: covers not shrunk (run with the venv, /opt/songdock/venv)")
             _warned_no_cover_tools = True
         return "unchecked"
 
@@ -1131,7 +1143,7 @@ def last_played_at(track, plays):
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
             on_player=None, on_batch=None, cpu_count=None, on_progress=None,
-            player_kinds=None, plays=None):
+            player_kinds=None, plays=None, players_full=False):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -1142,6 +1154,9 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     them. A player bigger than the cache then fills over several syncs.
     plays: Record.last_played(), {song id: epoch}. Songs not played in
     [sync] recent_play_months are dropped before songs that were.
+    players_full: Record.every_player_full(). Then nothing is dropped: the songs
+    it would make room for have nowhere to go (2026-11-02: a full Nano lost one
+    cached song per check to songs it couldn't take).
     player_kinds: Record.active_player_kinds(), None if the record can't be
     read (then lossless stays as it was last run: no swapping either way).
     on_batch(manifest): called each time a batch of [sync] sync_batch_size
@@ -1527,7 +1542,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
 
     def played_lately(t):
         return bool(months) and last_played_at(t, plays or {}) >= recent_since
-    evictable = sorted((n for n in held if n in existing and n not in missing_names),
+    evictable = [] if players_full else sorted(
+        (n for n in held if n in existing and n not in missing_names),
                        key=lambda n: (played_lately(wanted[n]),
                                       -os.path.getsize(os.path.join(tracks_dir, n))))
     evicted = 0
@@ -1573,7 +1589,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             if reason:
                 in_flight.release()
                 rest = [t2 for n2, t2 in missing[i:] if n2 not in held]
-                if rest:
+                if rest and players_full:
+                    log.info("Cache full and every player is full: %d tracks wait for "
+                             "a player with room", len(rest))
+                elif rest:
                     log.warning("Stopping early: %s (%d tracks wait for the next run)",
                                 reason, len(rest))
                 else:
@@ -1703,7 +1722,8 @@ def pending_args(manifest):
             manifest, records, player.get("swaps_no_room"))
         return ["--pending-add", str(add), "--pending-remove", str(remove),
                 "--pending-lossless", str(lossless), "--pending-format", str(other),
-                "--swaps-no-room", str(held), *update_args(),
+                "--swaps-no-room", str(held),
+                "--player-full", str(int(bool(player.get("full")))), *update_args(),
                 "--last-sync", str(int(player["last_sync"]))]
     except Exception:
         log.exception("Couldn't work out the next sync's changes")
@@ -1726,10 +1746,14 @@ def safe_hours_args(window, connected, screen, now=None):
 
 
 def has_pending(idle_args):
-    """True if DOCK READY's arguments say the next sync changes something."""
+    """True if DOCK READY's arguments say the next sync changes something. Songs
+    waiting for a full player don't: a sync would only show PLAYER FULL again, so
+    a docked one isn't re-plugged for them. Removals and swaps still count."""
     a = dict(zip(idle_args[1::2], idle_args[2::2]))
-    return any(int(a.get(k, 0)) for k in ("--pending-add", "--pending-remove",
-                                          "--pending-lossless", "--pending-format"))
+    keys = ["--pending-remove", "--pending-lossless", "--pending-format"]
+    if not int(a.get("--player-full", 0)):
+        keys.append("--pending-add")
+    return any(int(a.get(k, 0)) for k in keys)
 
 
 def resync_coming():
@@ -1877,6 +1901,7 @@ def main(argv=None):
         record = Record()
         try:
             on_player = record.songs_on_every_player()
+            players_full = record.every_player_full()
             player_kinds = record.active_player_kinds()
             plays = record.last_played()
         finally:
@@ -1884,6 +1909,7 @@ def main(argv=None):
     except Exception:
         log.exception("Couldn't read what's on the players (keeping every cached track)")
         on_player, player_kinds, plays = {}, None, {}
+        players_full = False
 
     def ask_for_sync(manifest, batch=False):
         """A docked (ejected) iPod gets new music without being re-plugged by
@@ -1967,6 +1993,7 @@ def main(argv=None):
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run,
                           on_player=on_player, on_progress=on_progress, player_kinds=player_kinds, plays=plays,
+                          players_full=players_full,
                           on_batch=lambda m: ask_for_sync(m, batch=True))
     except SubsonicError as e:
         if e.network:

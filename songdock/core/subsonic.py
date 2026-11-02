@@ -17,6 +17,7 @@ import logging
 import secrets
 import shutil
 import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -28,15 +29,28 @@ API_VERSION = "1.16.1"
 CLIENT_NAME = "musicdock"
 
 
+# Short outages (seen: name lookups failing for moments) shouldn't cost a whole run.
+# Only requests that read: a play sent twice would count twice.
+RETRY_WAITS = (2, 5, 15)     # seconds before each new try
+RETRY_IF_FAILED_WITHIN = 10  # seconds: a slower failure is a timeout, likely a real outage
+# ...except a failed name lookup, always tried again: the resolver's own timeouts
+# (5 s, twice) took it past the limit, so none of the first 6 was retried (2026-11-02).
+
+
+def safe_to_repeat(endpoint):
+    return endpoint.startswith(("get", "search")) or endpoint in ("ping", "download")
+
+
 class SubsonicError(Exception):
     """A failed request. `network` is True when the server couldn't be
     reached (try again later); `code` is the Subsonic error code when the
     server answered with an error (e.g. 70 = not found)."""
 
-    def __init__(self, message, code=None, network=False):
+    def __init__(self, message, code=None, network=False, name_lookup=False):
         super().__init__(message)
         self.code = code
         self.network = network
+        self.name_lookup = name_lookup
 
 
 def addresses(url):
@@ -95,6 +109,22 @@ class Client:
                 f"{urllib.parse.urlencode(query, doseq=True)}")
 
     def _open(self, endpoint, **params):
+        """Open a request, trying again after a quick network failure."""
+        waits = iter(RETRY_WAITS if safe_to_repeat(endpoint) else ())
+        while True:
+            started = time.monotonic()
+            try:
+                return self._open_any(endpoint, **params)
+            except SubsonicError as e:
+                wait = next(waits, None)
+                took = time.monotonic() - started
+                if (not e.network or wait is None
+                        or (took > RETRY_IF_FAILED_WITHIN and not e.name_lookup)):
+                    raise
+                log.info("%s after %.0f s; trying again in %d s", e, took, wait)
+                time.sleep(wait)
+
+    def _open_any(self, endpoint, **params):
         """Open a request at the address in use; if it can't be reached, at
         the next ones (switching to the first that answers)."""
         if not self._picked:
@@ -128,8 +158,8 @@ class Client:
                                 network=e.code >= 500) from None
         except (urllib.error.URLError, OSError) as e:
             reason = getattr(e, "reason", e)
-            raise SubsonicError(f"{endpoint}: can't reach server ({reason})",
-                                network=True) from None
+            raise SubsonicError(f"{endpoint}: can't reach server ({reason})", network=True,
+                                name_lookup=isinstance(reason, socket.gaierror)) from None
 
     @staticmethod
     def _check(endpoint, body):

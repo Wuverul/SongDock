@@ -245,7 +245,7 @@ for a dark case):
 | **STARTING UP...** | The dock is booting: waiting for Wi-Fi and the clock |
 | **UPDATING** | A new version of SongDock is installing (see Updating). Leave the power connected |
 | **PLAYER FULL** | The sync finished and it's safe to unplug, but new songs didn't fit. `make_room = true` lets old songs make way for them |
-| **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date"). "No room to convert 7" means 7 songs keep their current format until the player has space |
+| **DOCK READY** | Idle. Shows what the next sync will do ("Next sync: +12 -3 tracks" or "iPod is up to date"). "No room to convert 7" means 7 songs keep their current format until the player has space. "Player full: 72 waiting" means 72 songs come once there's room; a docked iPod isn't re-synced for them |
 | **PREPARING 3/12** | Downloading and converting new music. The iPod is safe to unplug |
 | **SYNCING** | **Don't unplug.** Says what it's doing (reading plays, copying music); the bar shows progress, e.g. songs copied. The icon in the corner shows the kind of player (below) |
 | **PREPARE & SYNC** | **Don't unplug.** New music is still converting while the first batches copy to the iPod (Pi Zero 2 W). Shows both counts; the bar covers both |

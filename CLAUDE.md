@@ -176,6 +176,9 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
   than hiding it.
 - **All jobs share one screen-state file** (`/var/lib/musicdock/dock_status.json`
   on the Pi), or the check above can't see another job's screen.
+- **A player flagged as not cleanly unmounted is repaired before it's made writable**
+  (`BlockDevice.repair`, FAT only, drafted 2026-11-01, not on hardware): plays queued first from
+  the read-only mount; not clean afterwards = FAILED, never read-write.
 - **Stock iPod: back up `iPod_Control/iTunes/` before every database write.**
   On failure, restore the backup and show `failed`.
 - **Never delete from the player before its play data has been uploaded.**
@@ -204,7 +207,12 @@ tools in `scripts/` (`scripts/deploy.sh`, `scripts/make_release.sh`, `scripts/ch
 puts every folder on the path, and each file that runs directly imports it first (`ROOT` =
 VERSION, vendor/, pi/; `script(name)` to run another module). `tests/test_layout.py` checks every
 service and script. Paths below without a folder are in one of these. Docks move with the release
-(its installer rewrites the services); the developer's Pi needs `scripts/deploy.sh --install`.
+(its installer rewrites the services). **Code lives in `/opt/songdock` (app/ + venv/), owned by root
+(security review, 2026-11-02):** root services ran code the login user could edit, so that account
+was root without the sudo password. `install.sh` copies itself there and re-runs from the copy;
+`deploy.sh` always runs it with sudo (password each deploy, user's choice: no NOPASSWD carve-out,
+which would reopen the hole). The updater installs in place there; the installer finds the dock's
+user from the prepare unit's `User=`. `tests/test_layout.py` checks no service runs from `@HOME@`.
 
 - `dock_status.py`: e-ink status screens (`idle`, `preparing`, `syncing`,
   `safe`, `failed`), with a Wi-Fi indicator and IP address. `--preview out.png`
@@ -236,7 +244,8 @@ service and script. Paths below without a folder are in one of these. Docks move
   the previous boot.
 - **2026-10-17 "freeze" was a Wi-Fi problem, not a crash:** the Pi roamed to an access point that associated it but passed no traffic (DHCP never completed; NetworkManager gave up after 45 s and retried the same one).
   A Pi Zero's green LED is solid when idle, so it isn't a hang sign.
-- `scripts/deploy.sh [--install] user@host`: runs tests, rsyncs to `~/musicdock/app`
+- `scripts/deploy.sh user@host`: runs tests, rsyncs to `~/musicdock/app` (the source),
+  then `sudo pi/install.sh` there, which installs into `/opt/songdock`
   on the Pi (cache stays in `~/musicdock/cache`).
 - `dock_players.py`: `musicdock-players` (installed like musicdock-status)
   lists the players in the record; `forget` / `keep <name>` set/clear
@@ -322,7 +331,7 @@ service and script. Paths below without a folder are in one of these. Docks move
   leaves it `none` for the next run. `apply_plan` adds the art in place to
   tracks already on the player (`cover: navidrome`, no artwork; pygpod's
   `_add_artwork_for_track`, no re-copy). Runs under the venv
-  (`musicdock-prepare.service` uses `~/musicdock/venv/bin/python`; install.sh
+  (`musicdock-prepare.service` uses `/opt/songdock/venv/bin/python`; install.sh
   creates the venv from `pi/requirements.txt`). Without mutagen it logs a
   warning and leaves covers as they are.
   **Parallelism:** `[sync] workers = "auto"` = CPU cores - 1 (min 1), worked
@@ -442,7 +451,16 @@ service and script. Paths below without a folder are in one of these. Docks move
   the next prepare run via auto re-sync). Without that it fails with "Stock
   iPod: dock is set up for Rockbox" (or SETUP NOT USED with the reason).
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
-  log them. **Fallback addresses (2026-10-23):** `[server] url` may be a
+  log them. **Short outages (2026-11-01):** requests that only read are tried again after 2, 5
+  and 15 s if they failed within 10 s (`RETRY_WAITS`; a slower failure is a timeout, likely a
+  real outage), and a failed name lookup always (`name_lookup`: the resolver's 5 s x 2
+  timeouts kept the first 6 real ones, 2026-11-02, from being retried); `scrobble` and `star` never are. Name lookups to the user's server fail for
+  moments now and then: a known cause on the server side, not this project's to fix.
+  **A failed lookup never guesses:** `album_fields` returns {} only for code 70 (no such
+  album) and raises otherwise, stopping the run with the plan untouched. It used to return {},
+  so one DNS failure on 2026-11-01 ranked an album as empty and swapped 9 songs to their other
+  copy and back (kept off the iPod only by safe hours). Network errors reading playlists are
+  passed on too, so an outage logs "Server unreachable", not a failed run. **Fallback addresses (2026-10-23):** `[server] url` may be a
   list in priority order (e.g. home LAN address, then a public one; user's
   choice over combining several servers' libraries, which was judged too
   risky). Before the first request each address gets a 5 s TCP check
@@ -630,7 +648,7 @@ service and script. Paths below without a folder are in one of these. Docks move
   (`idle`, `safe`, `failed`) only if connectivity changed, keeping its original
   time (`--at`). Every draw saves its content args, `drawn_at`, and `wifi_on`
   in the state file for this.
-- **pygpod on the Pi** lives in a venv: `~/musicdock/venv` (created with
+- **pygpod on the Pi** lives in a venv: `/opt/songdock/venv`, root's (until 2026-11-02 `~/musicdock/venv`; created with
   `--system-site-packages` to use apt's Pillow/gpiozero; `pip install
   pygpod==0.0.6 mutagen==1.47.0`). Raspberry Pi OS blocks system-wide pip.
 - **pygpod benchmark on the Pi Zero W (2026-10-16):** 82 tracks (810 MB) added
@@ -750,9 +768,10 @@ service and script. Paths below without a folder are in one of these. Docks move
   (`safe_hours_args`) if a player is connected, and DOCK READY once the window closes
   or the player leaves, so within one check interval. A run that fails early (server
   down) doesn't draw.
-- `dock_restore.py` (2026-10-26, user request; **not tested on hardware:
-  needs a new/wiped iPod**): a player missing >= `RESTORE_MIN` (500) songs
-  of its plan starts a restore (restore.json next to the record: start
+- `dock_restore.py` (2026-10-26, user request; ran on a wiped Nano 2026-11-01): a player
+  holding fewer than `RESTORE_MIN` (500) songs of its plan and missing >= 500 starts a
+  restore (2026-11-02: a grown plan on a well-filled Nano used to start one that never ended);
+  a full player (`players.full`) ends it (restore.json next to the record: start
   time + songs then; survives reboots); it lasts until nothing is
   missing. Screens count songs on the player / whole plan: the prepare
   job draws RESTORING (new resting screen, in DRAW_OVER, CONNECTING_OVER,
@@ -892,7 +911,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   **A full player no longer blocks eviction (user, 2026-10-30):** a final
   sync that left songs or swaps out for lack of room (or hit the 47k limit)
   sets `players.full`; `songs_on_every_player` ignores such a player while
-  another has room. The next sync with nothing left out clears it, and
+  another has room. **Every player full (2026-11-02):** nothing is evicted
+  (`Record.every_player_full`, prepare's `players_full`): the Nano lost one cached song per
+  check to songs it couldn't take. DOCK READY then says "Player full: n waiting"
+  (`--player-full`), and `has_pending` doesn't count those adds, so a docked player isn't
+  re-plugged for them (removals and swaps still are). The next sync with nothing left out clears it, and
   prepare fetches again what it lacks.
   **Eviction order (user, 2026-10-30):** songs not played in `[sync]
   recent_play_months` (default 3, 0 = ignore; `RecentPlayMonths=`) go first,

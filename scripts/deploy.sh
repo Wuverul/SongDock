@@ -2,24 +2,21 @@
 # Copy the project from the Mac to the Pi over SSH.
 #
 # Usage:
-#   scripts/deploy.sh user@pi-address             # copy files only
-#   scripts/deploy.sh --install user@pi-address   # copy, then install udev rule + service
+#   scripts/deploy.sh user@pi-address
 #
 # Set MUSICDOCK_PI=user@pi-address (e.g. in ~/.zshrc) to skip typing it.
 #
-# Code goes to ~/musicdock/app on the Pi. --delete removes files there that no
-# longer exist on the Mac, so it is kept separate from ~/musicdock/cache.
+# Copies to ~/musicdock/app on the Pi, then runs its installer with sudo (asks for
+# the Pi password), which installs the code in /opt/songdock, owned by root. The
+# copy in your home is only the source: nothing runs from it. --delete removes
+# files there that no longer exist on the Mac. --install is accepted, as before.
 set -euo pipefail
 
-INSTALL=0
-if [ "${1:-}" = "--install" ]; then
-  INSTALL=1
-  shift
-fi
+[ "${1:-}" = "--install" ] && shift         # every deploy installs now
 
 PI="${1:-${MUSICDOCK_PI:-}}"
 if [ -z "$PI" ]; then
-  echo "Usage: $0 [--install] user@pi-address   (or set MUSICDOCK_PI)" >&2
+  echo "Usage: $0 user@pi-address   (or set MUSICDOCK_PI)" >&2
   exit 1
 fi
 
@@ -59,9 +56,7 @@ rsync -av --delete \
   --exclude cache --exclude tmp --exclude TASKS.md \
   ./ "$PI:$REMOTE_DIR/"
 
-if [ "$INSTALL" -eq 1 ]; then
-  echo "== Installing udev rule and service (sudo may ask for the Pi password)"
-  ssh -t "$PI" "sudo ~/$REMOTE_DIR/pi/install.sh"
-fi
+echo "== Installing in /opt/songdock (sudo asks for the Pi password)"
+ssh -t "$PI" "sudo ~/$REMOTE_DIR/pi/install.sh"
 
 echo "== Done"

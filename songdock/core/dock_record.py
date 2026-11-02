@@ -309,6 +309,12 @@ class Record:
                                "ORDER BY artist, album, track_no", (guid, state))
         return [dict(r) for r in rows]
 
+    def every_player_full(self):
+        """True if the dock knows players and every one not forgotten is full: songs
+        they lack can't go anywhere, so the cache shouldn't make room for them."""
+        rows = self.db.execute("SELECT full FROM players WHERE forgotten_at IS NULL").fetchall()
+        return bool(rows) and all(r[0] for r in rows)
+
     def songs_on_every_player(self):
         """{navidrome_id: {encodings}} for songs present on every player the
         dock knows (players table or any track row) and hasn't forgotten, so

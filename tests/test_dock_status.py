@@ -158,6 +158,19 @@ class SyncingBarTests(unittest.TestCase):
 
 
 @unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+@unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+class PendingLineTests(unittest.TestCase):
+    def line(self, *argv):
+        return dock_status.pending_line(dock_status.build_parser().parse_args(["idle", *argv]))
+
+    def test_songs_waiting_for_a_full_player_say_so(self):
+        self.assertEqual(self.line("--pending-add", "1752", "--player-full", "1"),
+                         "Player full: 1,752 waiting")
+        self.assertIn("+1752", self.line("--pending-add", "1752"))
+        self.assertIn("+1752", self.line("--pending-add", "1752", "--pending-remove", "4",
+                                         "--player-full", "1"))     # removals make room
+
+
 class RestScreenTests(WifiRefreshTests):
     """SAFE/FAILED -> DOCK READY after an unplug or the 10-minute timer."""
 

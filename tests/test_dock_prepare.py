@@ -245,6 +245,10 @@ class PrepareTests(unittest.TestCase):
         server = self.library_with_album_copy()
         self.run_prepare(server)
         server.song_error = SubsonicError("getSong: can't reach server", network=True)
+        with self.assertRaises(SubsonicError):
+            self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a1"])
+        server.song_error = SubsonicError("getSong: database locked", code=0)
         with self.assertRaises(dock_prepare.PrepareError):
             self.run_prepare(server)
         self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a1"])
@@ -261,6 +265,55 @@ class PrepareTests(unittest.TestCase):
         server.search_error = None
         self.run_prepare(server)
         self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["a1"])
+
+    def two_copies(self):
+        a = song("keep", albumId="alb", musicBrainzId="r")
+        b = song("other", albumId="oth", musicBrainzId="r")
+
+        class Server(FakeServer):
+            fail = None
+
+            def call(self, endpoint, **params):
+                if endpoint == "getAlbum" and self.fail and params["id"] == "alb":
+                    raise self.fail
+                return super().call(endpoint, **params)
+        return Server(songs=[a, b], album_meta={"alb": {"releaseTypes": ["album"], "songCount": 12},
+                                                "oth": {"releaseTypes": [], "songCount": 26}})
+
+    def test_failed_album_lookup_stops_the_run_and_changes_nothing(self):
+        server = self.two_copies()
+        self.run_prepare(server)
+        before = self.manifest()
+        self.assertEqual([t["id"] for t in before["tracks"]], ["keep"])
+        downloads = list(server.downloads)
+        for error in (SubsonicError("getAlbum: can't reach server", network=True),
+                      SubsonicError("getAlbum: database locked", code=0),
+                      SubsonicError("getAlbum: HTTP 404")):
+            with self.subTest(str(error)):
+                server.fail = error
+                with self.assertRaises(SubsonicError):
+                    self.run_prepare(server)
+                self.assertEqual(self.manifest(), before)
+                self.assertEqual(server.downloads, downloads)
+
+    def test_album_the_server_no_longer_has_doesnt_stop_the_run(self):
+        server = self.two_copies()
+        server.fail = SubsonicError("getAlbum: not found (code 70)", code=70)
+        self.run_prepare(server)
+        self.assertEqual([t["id"] for t in self.manifest()["tracks"]], ["other"])
+
+    def test_playlist_unreachable_is_an_outage_not_a_failure(self):
+        class Server(FakeServer):
+            def call(self, endpoint, **params):
+                if endpoint == "getPlaylist":
+                    raise SubsonicError("getPlaylist: can't reach server", network=True)
+                return super().call(endpoint, **params)
+        cfg = config()
+        cfg["sync"]["playlist_tag"] = "#ipod"
+        server = Server(playlists={"p1": ("Mix", [song("a")], "#ipod")})
+        with self.assertRaises(SubsonicError) as caught:
+            self.run_prepare(server, cfg)
+        self.assertTrue(caught.exception.network)
 
     def test_different_lengths_or_no_ids_are_not_merged(self):
         studio = song("st", title="Look at the Sky", albumId="n", musicBrainzId="r1",
@@ -883,6 +936,27 @@ class PrepareTests(unittest.TestCase):
                                    plays={"a": now - 7 * 86400, "b": now - 120 * 86400})
         self.assertEqual(summary["evicted"], 1)
         self.assertEqual(self.files(), ["a.mp3", "c.mp3"])
+
+    def test_nothing_dropped_for_songs_no_player_has_room_for(self):
+        self.cached("a.mp3", 6000)
+        self.cached("b.mp3", 5000)
+        server = FakeServer(songs=[song("a"), song("b"), song("c", size=1500)])
+        summary = self.run_prepare(server, cfg=config(max_gb=self.SMALL),
+                                   on_player={"a": {"mp3 v0"}, "b": {"mp3 v0"}},
+                                   players_full=True)
+        self.assertEqual(summary["evicted"], 0)
+        self.assertEqual(self.files(), ["a.mp3", "b.mp3"])
+        self.assertNotIn("c", server.downloads)
+        self.assertEqual([s["id"] for s in summary["skipped"]], ["c"])
+
+    def test_songs_waiting_for_a_full_player_dont_ask_for_a_sync(self):
+        def args(remove=0, full=1):
+            return ["idle", "--pending-add", "1752", "--pending-remove", str(remove),
+                    "--pending-lossless", "0", "--pending-format", "0",
+                    "--player-full", str(full)]
+        self.assertFalse(dock_prepare.has_pending(args()))
+        self.assertTrue(dock_prepare.has_pending(args(remove=3)))     # removals make room
+        self.assertTrue(dock_prepare.has_pending(args(full=0)))
 
     def test_navidromes_play_date_counts_and_never_played_goes_first(self):
         now = datetime(2026, 10, 30, tzinfo=timezone.utc).timestamp()

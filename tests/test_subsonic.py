@@ -6,6 +6,7 @@ Run: python3 -m unittest discover -s tests -v
 import io
 import json
 import logging
+import socket
 import os
 import sys
 import unittest
@@ -38,6 +39,11 @@ class FakeNet:
 
 
 class FallbackTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(subsonic.time, "sleep")
+        self.sleep = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def client(self, net, url=(HOME, AWAY), probe=None):
         patcher = mock.patch.object(subsonic.urllib.request, "urlopen", net.urlopen)
         patcher.start()
@@ -92,6 +98,60 @@ class FallbackTests(unittest.TestCase):
             with self.assertRaises(SubsonicError) as e:
                 c.call("ping")
         self.assertEqual((e.exception.code, c.address), (40, HOME))
+
+    def test_a_short_outage_is_tried_again(self):
+        net = FakeNet(down=[HOME])
+        client = self.client(net, HOME)
+
+        def back_up(seconds):
+            net.down = set()
+        self.sleep.side_effect = back_up
+        self.assertEqual(client.call("getAlbum", id="x")["status"], "ok")
+        self.sleep.assert_called_once_with(subsonic.RETRY_WAITS[0])
+
+    def test_gives_up_after_the_last_wait(self):
+        client = self.client(FakeNet(down=[HOME]), HOME)
+        with self.assertRaises(SubsonicError) as caught:
+            client.call("getAlbum", id="x")
+        self.assertTrue(caught.exception.network)
+        self.assertEqual([c.args[0] for c in self.sleep.call_args_list],
+                         list(subsonic.RETRY_WAITS))
+
+    def test_sending_is_never_repeated(self):
+        client = self.client(FakeNet(down=[HOME]), HOME)
+        for endpoint in ("scrobble", "star"):
+            with self.assertRaises(SubsonicError):
+                client.call(endpoint, id="x")
+        self.sleep.assert_not_called()
+
+    def test_a_timeout_isnt_tried_again(self):
+        client = self.client(FakeNet(down=[HOME]), HOME)
+        with mock.patch.object(subsonic.time, "monotonic", side_effect=[0, 61]):
+            with self.assertRaises(SubsonicError):
+                client.call("getAlbum", id="x")
+        self.sleep.assert_not_called()
+
+    def test_a_slow_failed_name_lookup_is_still_tried_again(self):
+        lookups = iter([urllib.error.URLError(socket.gaierror(-3, "Temporary failure in "
+                                                               "name resolution"))])
+
+        def urlopen(url, timeout=None):
+            for error in lookups:
+                raise error
+            return FakeNet().urlopen(url)
+        with mock.patch.object(subsonic.urllib.request, "urlopen", urlopen), \
+                mock.patch.object(subsonic.time, "monotonic", side_effect=[0, 11, 20, 20]):
+            self.assertEqual(Client(HOME, "jo", "pw").call("getAlbum", id="x")["status"], "ok")
+        self.sleep.assert_called_once_with(subsonic.RETRY_WAITS[0])
+
+    def test_an_answer_with_an_error_isnt_tried_again(self):
+        refused = io.BytesIO(json.dumps({"subsonic-response": {
+            "status": "failed", "error": {"code": 70, "message": "not found"}}}).encode())
+        refused.headers = {}
+        with mock.patch.object(subsonic.urllib.request, "urlopen", return_value=refused):
+            with self.assertRaises(SubsonicError):
+                Client(HOME, "jo", "pw").call("getAlbum", id="x")
+        self.sleep.assert_not_called()
 
     def test_repr_hides_password(self):
         self.assertNotIn("pw", repr(Client([HOME, AWAY], "jo", "pw")))

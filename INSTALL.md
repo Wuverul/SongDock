@@ -114,6 +114,9 @@ cd ~/musicdock/songdock
 sudo ./pi/install.sh
 ```
 
+The dock's code goes to `/opt/songdock`, owned by root, since the dock's services
+run as root. The unpacked folder is only the source: you can delete it afterwards.
+
 This installs what the dock needs (ffmpeg, Python packages, the display
 driver), turns on the display interface, creates your settings file, sets up
 the dock's background services, including automatic updates (see "Updating"), and
@@ -431,7 +434,7 @@ journalctl -u 'musicdock-*' --since today        # everything today
 journalctl -b -1 -e                              # the end of the previous run (before the last restart)
 journalctl -u musicdock-prepare -e               # downloads and conversions
 journalctl -u 'musicdock-sync@*' -e              # docking sessions
-~/musicdock/venv/bin/python ~/musicdock/songdock/songdock/jobs/dock_prepare.py --show-plan
+/opt/songdock/venv/bin/python /opt/songdock/app/songdock/jobs/dock_prepare.py --show-plan
 ```
 
 ## Updating
@@ -466,7 +469,7 @@ sudo rm /etc/udev/rules.d/99-musicdock.rules \
         /usr/local/bin/musicdock-status /usr/local/bin/musicdock-players
 sudo systemctl daemon-reload
 rm -rf ~/musicdock ~/.config/musicdock
-sudo rm -rf /var/lib/musicdock
+sudo rm -rf /var/lib/musicdock /opt/songdock
 ```
 
 The music already on your iPod stays there.

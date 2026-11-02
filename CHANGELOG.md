@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Security: the dock's code now lives in `/opt/songdock`, owned by root.** Its services run as root, and the code used to sit in your home folder, so anyone who got your login could edit it and become root without your sudo password. The installer moves it there by itself, and a dock updating itself moves too. Afterwards you can delete `~/musicdock/venv`; your settings and music cache stay where they are.
+
+- Adding a lot of music no longer makes a well-filled iPod show RESTORING. That screen is now only for a new or wiped iPod, and a full one ends it.
+- A full player shows "Player full: n waiting" on DOCK READY. The dock no longer re-plugs a docked one for songs it can't take, or swaps cached songs for ones no player has room for.
+
+- A player unplugged mid-sync is repaired by the dock the next time it's docked, after its plays are read. It used to fail every sync until repaired on a computer. Basic players formatted exFAT aren't repaired yet.
+
+- A brief server or network failure can no longer change your music. Looking up an album used to carry on after a failure, which could swap songs to another album's copy and back at the next check. Now the check stops with nothing changed and tries again later.
+- Brief outages are retried a few times before a check gives up. Plays and favorites are never sent twice this way.
+
 - A song selected as a single that your library also has on an album or EP now goes on the player under that album, even if the album isn't selected. It never moves to a compilation, soundtrack or live album. A moved song is copied again and its play count on the iPod starts over; plays already sent stay in Navidrome on the single.
 
 ## 0.7.3

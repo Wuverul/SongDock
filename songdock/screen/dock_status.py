@@ -193,6 +193,8 @@ def pending_line(args, has_glyphs=True):
     add, remove = args.pending_add or 0, args.pending_remove or 0
     if not add and not remove:
         return conversions_line(args) or "iPod is up to date"
+    if args.player_full and not remove:
+        return f"Player full: {add:,} waiting"
     minus = "\u2212" if has_glyphs else "-"
     return f"Next sync: +{add}  {minus}{remove} tracks"
 
@@ -811,6 +813,8 @@ def build_parser():
                    help="idle: songs the next sync swaps for another format")
     p.add_argument("--swaps-no-room", type=int, default=0,
                    help="idle: format swaps waiting for room on the player")
+    p.add_argument("--player-full", type=int, default=0,
+                   help="idle: 1 if the player's last sync ran out of room")
     p.add_argument("--update-note", help="idle: a new version's version and time")
     p.add_argument("--not-added", type=int, default=0,
                    help="nospace: new songs that didn't fit on the player")

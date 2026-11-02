@@ -60,6 +60,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MOUNT_POINT = "/media/musicdock"
 LOCK_FILE = os.path.join(tempfile.gettempdir(), "musicdock-sync.lock")
 LIST_LIMIT = 200          # files logged by name; a full player would flood the log
+FSCK_VFAT = "fsck.vfat"     # dosfstools
 UNMOUNT_TRIES = 3         # "target is busy" usually clears within a few seconds
 TOTAL_STEPS = 3           # listing only: mount, read, unmount
 IPOD_STEPS = 6            # mount, plays, upload, backup, copy, unmount
@@ -150,6 +151,21 @@ def is_mounted_anywhere(dev_path):
         return False
 
 
+def fat_dirty(dev_path):
+    """True if a FAT volume's boot sector says it wasn't cleanly unmounted: the
+    kernel sets this flag on every writable mount and clears it on unmount."""
+    try:
+        with open(dev_path, "rb") as f:
+            boot = f.read(512)
+    except OSError as e:
+        log.warning("Couldn't read %s's boot sector: %s", dev_path, e)
+        return False
+    if len(boot) < 512:
+        return False
+    fat32 = boot[0x16:0x18] == b"\0\0"     # FAT32 has no 16-bit FAT size
+    return bool(boot[0x41 if fat32 else 0x25] & 1)
+
+
 class BlockDevice:
     """A real USB partition on the Pi. mount/umount need root."""
 
@@ -184,6 +200,37 @@ class BlockDevice:
         log.info("Remounting %s read-write", self.root)
         run(["mount", "-o", opts, self.root], "Couldn't make the player writable")
         self.writable = True
+
+    def needs_repair(self):
+        return self.fstype() == "vfat" and fat_dirty(self.path)
+
+    def repair(self):
+        """Repair the FAT, leaving the player mounted read-only as before. An iPod
+        pulled mid-copy can't be written until this is done: the first write hits the
+        damage and the kernel makes the volume read-only (2026-11-01). Raises SyncError
+        if it isn't clean afterwards, so a damaged player never becomes writable.
+        Returns False if the tool isn't installed (an older install: carry on as before)."""
+        if not shutil.which(FSCK_VFAT):
+            log.warning("%s not installed (run install.sh again); can't repair the player",
+                        FSCK_VFAT)
+            return False
+        log.warning("%s wasn't unmounted cleanly: repairing its file system", self.path)
+        run(["umount", self.root], "Couldn't unmount player to repair it")
+        self.mounted = False
+        try:
+            r = subprocess.run([FSCK_VFAT, "-a", "-w", self.path], capture_output=True, text=True)
+            log.info("%s -a: exit %d\n%s", FSCK_VFAT, r.returncode,
+                     "\n".join((r.stdout + r.stderr).splitlines()[-20:]))
+            # -a's own exit code can't tell "fixed" from "couldn't": check again.
+            clean = subprocess.run([FSCK_VFAT, "-n", self.path],
+                                   capture_output=True, text=True).returncode == 0
+        finally:
+            run(["mount", "-o", "ro,noatime", self.path, self.root], "Couldn't mount player")
+            self.mounted = True
+        if not clean:
+            raise SyncError("Player's files are damaged: repair it on a computer")
+        log.info("%s repaired", self.path)
+        return True
 
     def unmount(self):
         log.info("Flushing and unmounting %s", self.root)
@@ -284,6 +331,9 @@ class FakeDevice:
 
     def fstype(self):
         return "vfat"
+
+    def needs_repair(self):
+        return False
 
     def make_writable(self):
         log.info("[fake] Would remount %s read-write", self.root)
@@ -582,6 +632,21 @@ def whole_disk(dev_path):
     return m.group(1) if m else None
 
 
+def read_plays_before_repair(handler, device, guid, record, manifest, cache_dir, base, step,
+                             product, kind):
+    """Queue the player's plays from the read-only mount: a repair can lose the files
+    holding them. Queued plays aren't queued twice when the sync reads them again.
+    A failure doesn't stop the repair: without it the player can't sync at all."""
+    try:
+        handler.sync_player(device.root, guid, record, manifest, cache_dir,
+                            work_dir=os.path.join(base, "work", guid),
+                            backup_root=os.path.join(base, "backups", guid),
+                            write=False, step=step, usb_product=product,
+                            **({"kind": kind} if kind != "stock" else {}))
+    except Exception:
+        log.exception("Couldn't read the plays before the repair (repairing anyway)")
+
+
 def make_ipod_work(cfg, guid, product, write):
     """The player session for run_sync (needs the venv: pygpod, mutagen):
     ipod_handler for stock iPods, rockbox_handler for players with a
@@ -617,6 +682,22 @@ def make_ipod_work(cfg, guid, product, write):
             log.warning("This iPod was formatted on a Mac (HFS+), which the dock can't "
                         "write. Reading plays only. Restore it on Windows (FAT32) to sync music.")
         writing = write and not mac_formatted
+        if writing and device.needs_repair():
+            if guid and os.path.isdir(os.path.join(device.root, "iPod_Control")):
+                found = ipod_handler, "stock"
+            elif guid and rockbox_handler.is_rockbox(device.root):
+                found = rockbox_handler, "rockbox"
+            else:
+                found = None                     # a basic player has no plays
+            if found:
+                read_plays_before_repair(found[0], device, guid, record, manifest, cache_dir,
+                                         base, step, product, found[1])
+            step(2, "Repairing player: do not remove")
+            try:
+                device.repair()
+            except Exception:
+                record.close()
+                raise
         if writing:
             device.make_writable()
             if status == "known":
@@ -668,7 +749,8 @@ def make_ipod_work(cfg, guid, product, write):
                 import dock_restore
                 present = {r["navidrome_id"] for r in record.tracks(player_guid)}
                 present |= set(record.room_removed(player_guid))
-                info = dock_restore.status(player_guid, present, manifest)
+                info = dock_restore.status(player_guid, present, manifest,
+                                           full=bool((record.player(player_guid) or {}).get("full")))
                 if info:
                     RESTORE.update(have=info["have"], total=info["total"])
                     log.info("Restoring this iPod: %d of %d songs on it", info["have"],
@@ -910,7 +992,7 @@ def build_work(args, device):
     try:
         return make_ipod_work(cfg, guid, product, write)
     except ImportError as e:
-        log.error("Can't load the iPod handler (%s); run with ~/musicdock/venv", e)
+        log.error("Can't load the iPod handler (%s); run with the venv, /opt/songdock/venv", e)
         return False
 
 
