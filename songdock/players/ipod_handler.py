@@ -483,7 +483,7 @@ def readd_copied(db, record, guid, mount):
 # track added first (when its album name still differed) showed as track 1
 # (2026-10-19). ipod_db breaks ties like iTunes/libgpod: by album, disc,
 # track. The marker makes players written before that re-save once.
-SORT_ORDER_VERSION = "1"
+SORT_ORDER_VERSION = "2"     # 2: albums of one name kept apart by artist (2026-11-03)
 SORT_ORDER_MARKER = os.path.join("iPod_Control", "musicdock", "sort-order")
 
 

@@ -82,7 +82,7 @@ def install_sort_order():
             text = ipod_db._sort_text
             album, artist, title = text(meta["album"]), text(meta["artist"]), text(meta["title"])
             if sort_key == 4:
-                return (album, *numbers(meta), title)
+                return (album, artist, *numbers(meta), title)
             if sort_key == 5:
                 return (artist, album, *numbers(meta), title)
             if sort_key == 7:
@@ -92,6 +92,21 @@ def install_sort_order():
 
     build_sort_pair._musicdock = True
     pdb.Database._build_sort_pair = build_sort_pair
+
+
+class SortOrderTests(unittest.TestCase):
+    def test_albums_of_one_name_stay_apart_in_the_album_list(self):
+        # 2026-11-03: "Home" (Blackmill, 14 tracks) and "HOME" (SIAMÉS, 9) alternated
+        # by track number, and the iPod showed each as 8 albums.
+        from types import SimpleNamespace as T
+        tracks = [T(album=album, artist=artist, title=f"{artist} {n}", cd_number=1,
+                    track_number=n, genre="")
+                  for artist, album, count in (("Blackmill", "Home", 14), ("SIAMÉS", "HOME", 9))
+                  for n in range(1, count + 1)]
+        order = [tracks[i].artist for i in ipod_db.sort_order(tracks, 4, "album")]
+        self.assertEqual(order, ["Blackmill"] * 14 + ["SIAMÉS"] * 9)
+        numbers = [tracks[i].track_number for i in ipod_db.sort_order(tracks, 4, "album")]
+        self.assertEqual(numbers[:14], list(range(1, 15)))
 
 
 @unittest.skipUnless(fx.have_ipod_tools(), "needs pygpod + mutagen (the Pi venv)")

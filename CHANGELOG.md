@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Two albums with the same name by different artists ("Home" and "HOME") no longer show as many copies of each in the iPod's Albums menu. The next sync of each iPod fixes its lists, with nothing copied again.
 - Verified on an iPod classic 7th generation (flash-modded, about 460 GB): a first fill of about 4,000 songs over several syncs with a cache smaller than the music, lossless songs, album art, menus and Singles albums.
 - **Security: the dock's code now lives in `/opt/songdock`, owned by root.** Its services run as root, and the code used to sit in your home folder, so anyone who got your login could edit it and become root without your sudo password. The installer moves it there by itself, and a dock updating itself moves too. Afterwards you can delete `~/musicdock/venv`; your settings and music cache stay where they are.
 

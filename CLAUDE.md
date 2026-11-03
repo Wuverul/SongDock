@@ -562,7 +562,10 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   by one field with a stable sort, so an album's tracks kept their add order
   ("Hold Your Colour", track 10, added first, showed as track 1).
   `install_sort_order()` (called by `checked_save`) pre-orders the tracks
-  like iTunes/libgpod - albums by disc/track, artists by album/disc/track,
+  like iTunes/libgpod - albums by artist/disc/track (artist added 2026-11-03: "Home" by
+  Blackmill and "HOME" by SIAMÉS sort as one name, alternated by track number, and the
+  firmware, which starts an album wherever album or artist changes, showed 8 of each;
+  `ipod_db.sort_order`, marker version 2), artists by album/disc/track,
   genres by artist/album/disc/track - before pygpod's sort. A marker
   (`iPod_Control/musicdock/sort-order`) makes the next write sync re-save
   once so existing players get corrected lists.

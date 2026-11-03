@@ -978,23 +978,33 @@ def _without_tracks(raw, removed):
     return bytes(header) + body
 
 
+def sort_order(tracks, sort_key, field):
+    """Track positions in the order of one browse list. Ties go by album, disc and
+    track, as in iTunes/libgpod (pygpod's own sort left an album's tracks in add
+    order). The album list keeps each album's tracks together by its artist too:
+    the firmware starts a new album wherever album or artist changes, so two
+    albums of one name ("Home" by Blackmill, "HOME" by SIAMÉS: this sort ignores
+    case) sorted by track number alternated and showed as 8 albums each
+    (2026-11-03)."""
+    def key(i):
+        t = tracks[i]
+        album, artist, title = _sort_text(t.album), _sort_text(t.artist), _sort_text(t.title)
+        numbers = (t.cd_number or 0, t.track_number or 0)
+        if sort_key == 4:
+            return (album, artist, *numbers, title)
+        if sort_key == 5:
+            return (artist, album, *numbers, title)
+        if sort_key == 7:
+            return (_sort_text(t.genre), artist, album, *numbers, title)
+        return (_sort_text(getattr(t, field)), title)
+    return sorted(range(len(tracks)), key=key)
+
+
 def _sort_mhods(tracks):
     """The master playlist's browse lists: for each key a sort index (52)
-    and a letter jump table (53). Ties go by album, disc and track, as in
-    iTunes/libgpod (pygpod's own sort left an album's tracks in add order)."""
+    and a letter jump table (53), in sort_order."""
     for sort_key, field in SORT_KEYS:
-        def key(i):
-            t = tracks[i]
-            album, artist, title = _sort_text(t.album), _sort_text(t.artist), _sort_text(t.title)
-            numbers = (t.cd_number or 0, t.track_number or 0)
-            if sort_key == 4:
-                return (album, *numbers, title)
-            if sort_key == 5:
-                return (artist, album, *numbers, title)
-            if sort_key == 7:
-                return (_sort_text(t.genre), artist, album, *numbers, title)
-            return (_sort_text(getattr(t, field)), title)
-        order = sorted(range(len(tracks)), key=key)
+        order = sort_order(tracks, sort_key, field)
         body = bytearray(48 + 4 * len(order))
         struct.pack_into("<II", body, 0, sort_key, len(order))
         struct.pack_into(f"<{len(order)}I", body, 48, *order)
