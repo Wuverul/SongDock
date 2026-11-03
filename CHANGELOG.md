@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Verified on an iPod classic 7th generation (flash-modded, about 460 GB): a first fill of about 4,000 songs over several syncs with a cache smaller than the music, lossless songs, album art, menus and Singles albums.
 - **Security: the dock's code now lives in `/opt/songdock`, owned by root.** Its services run as root, and the code used to sit in your home folder, so anyone who got your login could edit it and become root without your sudo password. The installer moves it there by itself, and a dock updating itself moves too. Afterwards you can delete `~/musicdock/venv`; your settings and music cache stay where they are.
 
 - Adding a lot of music no longer makes a well-filled iPod show RESTORING. That screen is now only for a new or wiped iPod, and a full one ends it.

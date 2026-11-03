@@ -34,7 +34,8 @@ music in the background, so syncs are quick.
   |---|---|---|
   | iPod nano 4th generation | **Tested** | Rockbox Unsupported |
   | iPod nano 3rd generation | Should work; not tested | Rockbox Unsupported |
-  | iPod classic (6th/6.5th/7th generation, 2007-2009) | Should work; not tested | Should work; not tested |
+  | iPod classic 7th generation (2009) | **Tested** (a 160 GB model with a flash-storage mod) | Should work; not tested |
+  | iPod classic 6th/6.5th generation (2007-2008) | Should work; not tested | Should work; not tested |
   | iPod video (5th/5.5th generation) | Should work; not tested | Should work; not tested |
   | iPod nano 1st/2nd generation | Should work; not tested | Should work; not tested |
   | iPod photo/color, iPod 4th generation, iPod mini | Not supported | Should work; not tested |
@@ -122,8 +123,9 @@ music in the background, so syncs are quick.
   music); a 64 GB card holds roughly 35-40 GB. A bigger iPod fills over
   several syncs: once the card is full, the dock drops its copies of songs
   already on the iPod to make room for the rest, those not played lately first.
-  They stay on the iPod. (Built and tested in
-  software; not yet tried with a real iPod bigger than the card.) A single
+  They stay on the iPod. (Tried with an iPod classic and a cache smaller
+  than the music: about 4,000 songs went over in rounds of syncs, finishing
+  the same day.) A single
   song bigger than half the room the dock has for music (on a very small
   card, or a long mix in FLAC) is skipped rather than holding up the rest.
 
@@ -360,12 +362,15 @@ This is an early release, built and used with one iPod. What hasn't been
 proven yet:
 
 **Tested on real hardware:** an iPod nano 4th generation on a Pi Zero W and
-a Pi Zero 2 W, with a Navidrome server. Everything else below is either
-untested on hardware or not built.
+a Pi Zero 2 W, and an iPod classic 7th generation (a 160 GB model fitted with
+about 460 GB of flash storage) on the Pi Zero 2 W, with a Navidrome server:
+music, album art, menus, playlists, lossless (ALAC) songs, a full rebuild of a
+wiped iPod, and a first fill bigger than the dock's storage. Everything else
+below is either untested on hardware or not built.
 
-- **Other iPods are untested.** On stock firmware, the iPod classic, iPod
-  video and iPod nano 1st-3rd generation should work but haven't been
-  tried; with Rockbox, so should the iPod photo/color, 4th generation and
+- **Other iPods are untested.** On stock firmware, the iPod classic 6th and
+  6.5th generation, iPod video and iPod nano 1st-3rd generation should work
+  but haven't been tried; with Rockbox, so should the iPod photo/color, 4th generation and
   mini (see the table above). Newer nanos, the iPod touch and the shuffle
   work with neither.
 - **Rockbox support is untested on a real player.** A USB flash drive set
@@ -379,9 +384,11 @@ untested on hardware or not built.
   at all. A player that shows up as two drives
   (built-in memory and a memory card) syncs only the drive with
   `MediaDock.txt` on it.
-- **iPods bigger than the dock's storage** fill over several syncs. This is
-  built and tested in software, but hasn't run on a real iPod bigger than
-  the SD card.
+- **The iPod's model can be guessed wrong** after a restore wipes the file
+  that names it, since every iPod classic looks the same over USB: a 7th
+  generation showed as a 6th generation 80 GB. It's only a label (classics
+  share the same database format and cover sizes); it's right if the file
+  still names the model.
 - **Very large libraries:** the dock adds at most 47,000 songs to a stock
   iPod (they're reported to fail at about 50,000), and `musicdock-status`
   (and `MediaDock.txt` on the iPod) warn from 20,000. The iPod's database was measured fine at 40,000 songs on a
@@ -411,9 +418,14 @@ untested on hardware or not built.
 - **Hardware is specific:** the Waveshare 2.13" e-Paper HAT (V4 tested;
   V3 and V2 supported but untested on real screens),
   2.4 GHz Wi-Fi only (both Pi Zero models), and FAT32-formatted iPods.
-- **Written but not yet tried on real hardware:** an automatic update; `make_room` and
-  PLAYER FULL on a full player; a sync cut off by unplugging or by safe hours; the
-  RESTORING screen on a new or wiped iPod; `Keep.m3u8` on a real Rockbox player.
+- **An iPod unplugged mid-sync needed a computer to fix it** (tried once: its
+  files were left damaged, and the dock couldn't write to it until it was
+  restored). The dock now repairs that by itself before syncing, but the repair
+  hasn't run on a real unplugged iPod yet.
+- **Written but not yet tried on real hardware:** an automatic update; `make_room` on
+  a full player; a sync stopped by safe hours; plays waiting while Navidrome is
+  down; `Keep.m3u8` on a real Rockbox player. (PLAYER FULL and the RESTORING screen
+  have now run on real iPods.)
 - **Cosmetic:** on the iPod nano, album art can replace the icons of the
   built-in games.
 - **Restart the iPod once after its album art is converted.** The dock
