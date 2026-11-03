@@ -426,8 +426,6 @@ below is either untested on hardware or not built.
   a full player; a sync stopped by safe hours; plays waiting while Navidrome is
   down; `Keep.m3u8` on a real Rockbox player. (PLAYER FULL and the RESTORING screen
   have now run on real iPods.)
-- **Cosmetic:** on the iPod nano, album art can replace the icons of the
-  built-in games.
 - **Restart the iPod once after its album art is converted.** The dock
   stores one cover per album rather than one per song (about 12 times
   less space). The first sync after updating converts the art already on
