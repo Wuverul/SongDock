@@ -1060,6 +1060,15 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(server, cfg)
         self.assertNotIn("favorite_rating", self.manifest())
 
+    def test_an_album_gets_one_album_artist(self):
+        songs = [song("a", albumId="x", albumArtist="Band", track=1),
+                 song("b", albumId="x", albumArtist="Band & Guest", track=2),
+                 song("c", albumId="x", albumArtist="Band", track=3),
+                 song("d", albumId="y", album="Other", artist="Solo")]   # none: its artist
+        self.run_prepare(FakeServer(songs=songs))
+        artists = {t["id"]: t["album_artist"] for t in self.manifest()["tracks"]}
+        self.assertEqual(artists, {"a": "Band", "b": "Band", "c": "Band", "d": "Solo"})
+
     def test_singles_grouped_once_with_lookups_remembered(self):
         songs = [song(f"s{i}", albumId=f"al{i}", album=f"Al {i}") for i in range(4)]
         calls = []
@@ -1074,6 +1083,7 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(server)
         tracks = self.manifest()["tracks"]
         self.assertEqual({t["album"] for t in tracks}, {"Artist Singles"})
+        self.assertEqual({t["album_artist"] for t in tracks}, {"Artist"})   # one album
         self.assertEqual(sorted(t["folder_album"] for t in tracks), [f"Al {i}" for i in range(4)])
         made = len(calls)
         generated = self.manifest().get("generated")

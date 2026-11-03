@@ -51,7 +51,7 @@ DEFAULT_MHLI_HEADER_LEN = 92
 DEFAULT_MHII_HEADER_LEN = 80
 MHIA_ALBUM_HEADER_LEN = 88             # as libgpod (pygpod's album list)
 MHOD_ID_TITLE, MHOD_ID_PATH, MHOD_ID_ALBUM, MHOD_ID_ARTIST, MHOD_ID_GENRE = 1, 2, 3, 4, 5
-MHOD_ID_COMMENT, MHOD_ID_COMPOSER = 8, 12
+MHOD_ID_COMMENT, MHOD_ID_COMPOSER, MHOD_ID_ALBUMARTIST = 8, 12, 22
 MHOD_ID_LIBPLAYLISTINDEX, MHOD_ID_LIBPLAYLISTJUMPTABLE = 52, 53
 MHOD_ID_PLAYLIST = 100
 MHOD_ID_ALBUM_ALBUM, MHOD_ID_ALBUM_ARTIST, MHOD_ID_ALBUM_ARTIST_MHII = 200, 201, 300
@@ -69,7 +69,7 @@ DB_ID = slice(0x18, 0x20)
 SORT_KEYS = ((3, "title"), (5, "artist"), (4, "album"), (7, "genre"), (18, "composer"))
 _STRING_FIELDS = {MHOD_ID_TITLE: "title", MHOD_ID_PATH: "ipod_path", MHOD_ID_ALBUM: "album",
                   MHOD_ID_ARTIST: "artist", MHOD_ID_GENRE: "genre", MHOD_ID_COMMENT: "comment",
-                  MHOD_ID_COMPOSER: "composer"}
+                  MHOD_ID_COMPOSER: "composer", MHOD_ID_ALBUMARTIST: "albumartist"}
 
 
 class DatabaseError(Exception):
@@ -133,7 +133,7 @@ class TrackInfo:
     """One track: what the dock needs to know without the whole record."""
 
     __slots__ = ("track_id", "dbid", "_title", "_artist", "_album", "_genre", "_composer",
-                 "_comment", "ipod_path", "track_number", "cd_number", "duration_ms",
+                 "_comment", "_albumartist", "ipod_path", "track_number", "cd_number", "duration_ms",
                  "has_artwork", "mhii_link", "artwork_size", "play_count", "skip_count",
                  "rating", "time_played",
                  "_offset", "_length", "_strings", "_header", "_record")
@@ -144,9 +144,10 @@ class TrackInfo:
     genre = _name_property("genre")
     composer = _name_property("composer")
     comment = _name_property("comment")
+    albumartist = _name_property("albumartist")
 
     def __init__(self):
-        self._title = self._artist = self._album = self._genre = None
+        self._title = self._artist = self._album = self._genre = self._albumartist = None
         self._composer = self._comment = self.ipod_path = None
         self._strings = self._header = self._record = None
 
@@ -178,7 +179,7 @@ class TrackInfo:
                 if field == "ipod_path":
                     t.ipod_path = value
                 else:
-                    if field in ("artist", "album", "genre", "composer"):
+                    if field in ("artist", "album", "genre", "composer", "albumartist"):
                         value = intern(value)
                     setattr(t, "_" + field, value)
             pos += mtl
@@ -197,7 +198,7 @@ class TrackInfo:
         return (self.duration_ms or 0) / 1000.0
 
     def set_text(self, field, value):
-        """Change a name (title, artist, album, genre, comment, composer)."""
+        """Change a name (title, artist, album, genre, comment, composer, albumartist)."""
         setattr(self, "_" + field, value)
         if self._record is not None:
             from pygpod.model.track import Track
@@ -694,7 +695,7 @@ class StreamDatabase:
         final = list(self.tracks)
         albums, artists = {}, {}
         for t in final:
-            albums.setdefault((t.album or "", t.artist or ""), len(albums) + 1)
+            albums.setdefault(album_key(t), len(albums) + 1)
             if t.artist and t.artist not in artists:
                 artists[t.artist] = len(artists) + 1
         new_offsets = {}
@@ -771,7 +772,7 @@ class StreamDatabase:
             for offset, (fmt, value) in (t._header or {}).items():
                 if offset + struct.calcsize(fmt) <= hl:
                     struct.pack_into(fmt, raw, offset, value)
-            album_id = albums.get((t.album or "", t.artist or ""), 0)
+            album_id = albums.get(album_key(t), 0)
             if album_id and hl > 0x124:
                 struct.pack_into("<I", raw, 0x120, album_id)
             artist_id = artists.get(t.artist or "", 0)
@@ -978,6 +979,13 @@ def _without_tracks(raw, removed):
     return bytes(header) + body
 
 
+def album_key(t):
+    """What makes one album on the iPod: its name and album artist (the track's
+    artist when there's none). An album is never split by who plays each song
+    (user, 2026-11-03: Jet Set Radio's three artists showed as three albums)."""
+    return (t.album or "", t.albumartist or t.artist or "")
+
+
 def sort_order(tracks, sort_key, field):
     """Track positions in the order of one browse list. Ties go by album, disc and
     track, as in iTunes/libgpod (pygpod's own sort left an album's tracks in add
@@ -991,7 +999,7 @@ def sort_order(tracks, sort_key, field):
         album, artist, title = _sort_text(t.album), _sort_text(t.artist), _sort_text(t.title)
         numbers = (t.cd_number or 0, t.track_number or 0)
         if sort_key == 4:
-            return (album, artist, *numbers, title)
+            return (album, _sort_text(album_key(t)[1]), *numbers, title)
         if sort_key == 5:
             return (artist, album, *numbers, title)
         if sort_key == 7:

@@ -368,6 +368,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     for song_id in [i for i, targets in sources.items() if not targets]:
         del tracks[song_id], sources[song_id]        # a copy that didn't win
     unify_album_names(client, tracks.values(), album_info)
+    unify_album_artists(tracks.values())
     return sorted(tracks.values(), key=library_order), sources, playlists
 
 
@@ -567,6 +568,33 @@ def unify_album_names(client, songs, album_info):
                 log.info("Album name from Navidrome's album: %s - %s: %r -> %r",
                          s.get("artist"), s.get("title"), s.get("album"), name)
                 s["album"] = name
+
+
+def unify_album_artists(songs):
+    """Give every song of one Navidrome album the same album artist, the one most
+    of its songs carry (else its first song's artist): the iPod makes an album of
+    each name + album artist, so a song tagged differently would split it off
+    (user, 2026-11-03: albums always stay whole). No lookups needed."""
+    by_album = {}
+    for s in songs:
+        if s.get("albumId"):
+            by_album.setdefault(s["albumId"], []).append(s)
+    for album_songs in by_album.values():
+        seen = [s.get("displayAlbumArtist") or s.get("albumArtist") for s in album_songs]
+        counts = {}
+        for name in seen:
+            if name:
+                counts[name] = counts.get(name, 0) + 1
+        chosen = (max(counts, key=lambda n: (counts[n], -seen.index(n))) if counts
+                  else album_songs[0].get("artist"))
+        if not chosen:
+            continue
+        for s in album_songs:
+            if (s.get("displayAlbumArtist") or s.get("albumArtist")) != chosen:
+                log.info("Album artist from the rest of its album: %s - %s: %r -> %r",
+                         s.get("artist"), s.get("title"),
+                         s.get("displayAlbumArtist") or s.get("albumArtist"), chosen)
+                s["displayAlbumArtist"] = chosen
 
 
 def plan_genres(client, cfg, songs, previous, album_info=None):

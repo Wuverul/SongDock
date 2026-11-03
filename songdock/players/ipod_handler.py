@@ -483,7 +483,7 @@ def readd_copied(db, record, guid, mount):
 # track added first (when its album name still differed) showed as track 1
 # (2026-10-19). ipod_db breaks ties like iTunes/libgpod: by album, disc,
 # track. The marker makes players written before that re-save once.
-SORT_ORDER_VERSION = "2"     # 2: albums of one name kept apart by artist (2026-11-03)
+SORT_ORDER_VERSION = "3"     # 3: albums grouped by album artist (2026-11-03)
 SORT_ORDER_MARKER = os.path.join("iPod_Control", "musicdock", "sort-order")
 
 
@@ -876,6 +876,11 @@ def fill_missing_names(track, t):
     if t.get("genre") and track.genre != t["genre"]:
         track.genre = t["genre"]
         changed.add("genre")
+    # One album artist per album, so the album shows as one album (user, 2026-11-03).
+    album_artist = t.get("album_artist") or t.get("artist")
+    if album_artist and getattr(track, "albumartist", None) != album_artist:
+        track.albumartist = album_artist
+        changed.add("albumartist")
     return changed
 
 

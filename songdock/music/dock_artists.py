@@ -193,5 +193,6 @@ def group_singles(songs, song_counts, minimum=4):
             for s in singles:
                 s["folder_album"] = s.get("album")
                 s["album"] = f"{artist} Singles"
+                s["displayAlbumArtist"] = artist      # one album, not one per credit
                 moved += 1
     return moved

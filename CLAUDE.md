@@ -562,7 +562,12 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   by one field with a stable sort, so an album's tracks kept their add order
   ("Hold Your Colour", track 10, added first, showed as track 1).
   `install_sort_order()` (called by `checked_save`) pre-orders the tracks
-  like iTunes/libgpod - albums by artist/disc/track (artist added 2026-11-03: "Home" by
+  like iTunes/libgpod - albums by album artist/disc/track. **An album is never split
+  (user, 2026-11-03):** the iPod makes an album of each name + album artist (`ipod_db.album_key`;
+  track artist only when there's none), the album list (mhia) and each track's album ID follow
+  it, `fill_missing_names` sets the album artist (MHOD 22) from the plan, `unify_album_artists`
+  gives every song of a Navidrome album one album artist, and "<Artist> Singles" get that
+  artist as theirs. The Artists menu still goes by track artist. Before: (artist added 2026-11-03: "Home" by
   Blackmill and "HOME" by SIAMÉS sort as one name, alternated by track number, and the
   firmware, which starts an album wherever album or artist changes, showed 8 of each;
   `ipod_db.sort_order`, marker version 2), artists by album/disc/track,

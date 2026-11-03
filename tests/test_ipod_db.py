@@ -100,13 +100,27 @@ class SortOrderTests(unittest.TestCase):
         # by track number, and the iPod showed each as 8 albums.
         from types import SimpleNamespace as T
         tracks = [T(album=album, artist=artist, title=f"{artist} {n}", cd_number=1,
-                    track_number=n, genre="")
+                    track_number=n, genre="", albumartist=None)
                   for artist, album, count in (("Blackmill", "Home", 14), ("SIAMÉS", "HOME", 9))
                   for n in range(1, count + 1)]
         order = [tracks[i].artist for i in ipod_db.sort_order(tracks, 4, "album")]
         self.assertEqual(order, ["Blackmill"] * 14 + ["SIAMÉS"] * 9)
         numbers = [tracks[i].track_number for i in ipod_db.sort_order(tracks, 4, "album")]
         self.assertEqual(numbers[:14], list(range(1, 15)))
+
+    def test_an_album_with_several_artists_is_one_album(self):
+        # 2026-11-03: Jet Set Radio's tracks are by three artists; one album artist.
+        from types import SimpleNamespace as T
+        tracks = [T(album="Jet Set Radio", artist=artist, title=f"t{n}", cd_number=1,
+                    track_number=n, genre="", albumartist="Various Artists")
+                  for n, artist in enumerate(["Hideki Naganuma", "Richard Jacques",
+                                              "Hideki Naganuma", "Toronto"], 1)]
+        self.assertEqual({ipod_db.album_key(t) for t in tracks},
+                         {("Jet Set Radio", "Various Artists")})
+        self.assertEqual([tracks[i].track_number for i in ipod_db.sort_order(tracks, 4, "album")],
+                         [1, 2, 3, 4])
+        lone = T(album="Home", artist="Blackmill", albumartist=None)
+        self.assertEqual(ipod_db.album_key(lone), ("Home", "Blackmill"))   # no album artist
 
 
 @unittest.skipUnless(fx.have_ipod_tools(), "needs pygpod + mutagen (the Pi venv)")

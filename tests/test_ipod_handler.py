@@ -1262,5 +1262,21 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(len(os.listdir(backups)), 3)
 
 
+
+class AlbumArtistTests(unittest.TestCase):
+    def test_tracks_get_their_albums_album_artist(self):
+        from types import SimpleNamespace
+        track = SimpleNamespace(album="Jet Set Radio", title="Humming the Bassline",
+                                artist="Hideki Naganuma", genre="Video Game", albumartist=None)
+        changed = h.fill_missing_names(track, {"album": "Jet Set Radio",
+                                               "artist": "Hideki Naganuma",
+                                               "album_artist": "Various Artists"})
+        self.assertEqual((track.albumartist, changed), ("Various Artists", {"albumartist"}))
+        self.assertEqual(h.fill_missing_names(track, {"album_artist": "Various Artists"}), set())
+        lone = SimpleNamespace(album="Home", title="Home", artist="Blackmill", genre="",
+                               albumartist=None)
+        h.fill_missing_names(lone, {"artist": "Blackmill"})               # none in the plan
+        self.assertEqual(lone.albumartist, "Blackmill")
+
 if __name__ == "__main__":
     unittest.main()

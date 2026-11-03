@@ -211,6 +211,8 @@ def write_tags(path, t):
     for key in TAGGED:
         if t.get(key):
             f[key] = str(t[key])
+    if t.get("album_artist"):
+        f["albumartist"] = str(t["album_artist"])
     f[ID_TAG.lower()] = t["id"]
     f.save()
 
