@@ -1,20 +1,33 @@
 # Changelog
 
-## Unreleased
+## 0.7.4
 
-- An album always shows as one album on the iPod, however its songs are credited: the dock now sets each song's album artist and groups albums by it. Albums with guests on some tracks, compilations ("Various Artists") and "<Artist> Singles" stay whole, and two albums with the same name by different artists ("Home" and "HOME") no longer show as many copies. The Artists menu still lists each song under its own artist. The next sync of each iPod fixes it, with nothing copied again.
-- Verified on an iPod classic 7th generation (flash-modded, about 460 GB): a first fill of about 4,000 songs over several syncs with a cache smaller than the music, lossless songs, album art, menus and Singles albums.
-- **Security: the dock's code now lives in `/opt/songdock`, owned by root.** Its services run as root, and the code used to sit in your home folder, so anyone who got your login could edit it and become root without your sudo password. The installer moves it there by itself, and a dock updating itself moves too. Afterwards you can delete `~/musicdock/venv`; your settings and music cache stay where they are.
+Albums that stay whole, a dock that recovers from an unplugged iPod, and code that only root can change.
 
-- Adding a lot of music no longer makes a well-filled iPod show RESTORING. That screen is now only for a new or wiped iPod, and a full one ends it.
-- A full player shows "Player full: n waiting" on DOCK READY. The dock no longer re-plugs a docked one for songs it can't take, or swaps cached songs for ones no player has room for.
+**To update:** docks on 0.7.2 or later install this by themselves; from an older version, install it by hand as in the README ("Updating"). Your settings, cache and the record of what's on your players are kept.
+- **The dock's code moves to `/opt/songdock`, owned by root.** The installer does this by itself. Afterwards you can delete `~/musicdock/venv`; keep `~/musicdock/cache`. A dock updating itself from 0.7.3 makes the same move, which hasn't been tried on hardware yet: if an update leaves the dock not working, install by hand as in the README.
+- **Your Albums menu changes at the next sync:** albums are grouped by album artist, so albums that showed as several now show once. Nothing is copied again.
+- **A single you selected that your library also has on an album or EP moves under that album.** That song is copied again, and its play count on the iPod starts over; plays already sent stay in Navidrome.
 
-- A player unplugged mid-sync is repaired by the dock the next time it's docked, after its plays are read. It used to fail every sync until repaired on a computer. Basic players formatted exFAT aren't repaired yet.
+**Whole albums**
+- An album always shows as one album on the iPod, however its songs are credited: the dock now sets each song's album artist and groups albums by it. Albums with guests on some tracks, compilations ("Various Artists") and "<Artist> Singles" stay whole, and two albums with the same name by different artists ("Home" and "HOME") no longer show as many copies. The Artists menu still lists each song under its own artist.
+- A song selected as a single that your library also has on an album or EP goes on the player under that album, even if the album isn't selected. It never moves to a compilation, soundtrack or live album.
 
+**Unplugged iPods and server hiccups**
+- A player unplugged mid-sync is repaired by the dock the next time it's docked, after its plays are read. It used to fail every sync until repaired on a computer (verified on an iPod nano pulled mid-copy: repaired in seconds, the songs already copied kept). Basic players formatted exFAT aren't repaired yet.
 - A brief server or network failure can no longer change your music. Looking up an album used to carry on after a failure, which could swap songs to another album's copy and back at the next check. Now the check stops with nothing changed and tries again later.
 - Brief outages are retried a few times before a check gives up. Plays and favorites are never sent twice this way.
 
-- A song selected as a single that your library also has on an album or EP now goes on the player under that album, even if the album isn't selected. It never moves to a compilation, soundtrack or live album. A moved song is copied again and its play count on the iPod starts over; plays already sent stay in Navidrome on the single.
+**Full players**
+- Adding a lot of music no longer makes a well-filled iPod show RESTORING. That screen is now only for a new or wiped iPod, and a full one ends it.
+- A full player shows "Player full: n waiting" on DOCK READY. The dock no longer re-plugs a docked one for songs it can't take, or swaps cached songs for ones no player has room for.
+
+**Security**
+- The dock's services run as root, and their code used to sit in your home folder, so anyone who got your login could edit it and become root without your sudo password. The code and its Python environment now live in `/opt/songdock`, owned by root, and the installer copies itself there.
+
+**Tested**
+- Verified on an iPod classic 7th generation (flash-modded, about 460 GB): a first fill of about 4,000 songs over several syncs with a cache smaller than the music, plays reaching Navidrome, lossless songs, album art, menus and Singles albums.
+- Verified on an iPod nano 4th generation: a full rebuild of a wiped iPod, PLAYER FULL, and recovery from being unplugged mid-copy. Not yet tried on hardware: a dock updating itself across the move to `/opt`, plays waiting while Navidrome is down, safe hours stopping a running sync, and `make_room`.
 
 ## 0.7.3
 
