@@ -1,0 +1,29 @@
+# The test suite on every push, and every Monday, against the pygpod the docks
+# install and against the newest pygpod release: a pygpod update that breaks the
+# dock shows up here before any dock gets it (scripts/test_pygpod.sh locally).
+name: tests
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pygpod: [pinned, latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run the tests
+        run: |
+          if [ "${{ matrix.pygpod }}" = pinned ]; then
+            scripts/test_pygpod.sh
+          else
+            scripts/test_pygpod.sh latest
+          fi
