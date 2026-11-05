@@ -526,7 +526,10 @@ def pygpod_saves_art_itself():
     journaled transaction over ArtworkDB and the .ithmb files), reuses freed slots
     and compacts on its own. The compaction below is for 0.0.6 only; under 0.2.3
     it left the thumbnails unwritten (2026-11-05)."""
-    from pygpod.model.artwork_manager import ArtworkManager
+    try:
+        from pygpod.model.artwork_manager import ArtworkManager
+    except ImportError:                       # no pygpod here (tests on a plain Python)
+        return False
     return hasattr(ArtworkManager, "stage")
 
 
