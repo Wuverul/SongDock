@@ -715,6 +715,125 @@ def output_name(track, target):
     return f"{safe_id}.{ext}"
 
 
+def song_identity(e):
+    """What still says "the same song" when Navidrome hands out new IDs: (by its
+    MusicBrainz recording, by its names, by artist and title alone), each with the
+    length. The last also follows a song whose kept copy moved to another edition
+    of its album (2026-11-04: 32 songs on two-edition albums, whose recording IDs
+    can differ too). Plan entries and Navidrome songs both work (their disc fields
+    differ)."""
+    def norm(x):
+        return re.sub(r"\s+", " ", str(x or "")).strip().casefold()
+    length = int(e.get("duration") or 0)
+    mbid = e.get("mbid") or e.get("musicBrainzId")
+    disc = e.get("disc") if "disc" in e else e.get("discNumber")
+    return (("mbid", mbid.lower(), length) if mbid else None,
+            ("name", norm(e.get("artist")), norm(e.get("title")),
+             norm(e.get("folder_album") or e.get("album")), int(e.get("track") or 0),
+             int(disc or 0), length),
+            ("loose", norm(e.get("artist")), norm(e.get("title")), length))
+
+
+def match_new_ids(earlier, targets):
+    """{old id: new id} for songs the plan had that Navidrome now lists under
+    another ID (a re-index, e.g. after an update: 2026-11-04, 3,572 songs). By
+    recording first, then by names; only one-to-one matches, so two songs that
+    look alike are never confused (by any of the three), except copies alike in
+    every named field, which are paired up."""
+    now = {t["id"] for t in targets}
+    before = {e["id"] for e in earlier}
+    gone = {e["id"]: e for e in earlier if e["id"] not in now}
+    new = {t["id"]: t for t in targets if t["id"] not in before}
+    mapping = {}
+    for which in (0, 1, 2):
+        olds, news = {}, {}
+        for i, e in gone.items():
+            if i not in mapping and song_identity(e)[which]:
+                olds.setdefault(song_identity(e)[which], []).append(i)
+        taken = set(mapping.values())
+        for i, t in new.items():
+            if i not in taken and song_identity(t)[which]:
+                news.setdefault(song_identity(t)[which], []).append(i)
+        for key, ids in olds.items():
+            if len(ids) == 1 and len(news.get(key, ())) == 1:
+                mapping[ids[0]] = news[key][0]
+            elif which == 1 and len(ids) == len(news.get(key, ())):
+                # Copies alike in every field (two editions of one album, both selected:
+                # Nightwish's Dark Passion Play, 2026-11-04): any pairing is the same.
+                mapping.update(zip(sorted(ids), sorted(news[key])))
+    return mapping
+
+
+def follow_new_ids(previous, targets, cache_dir, rename_fn=None, dry_run=False):
+    """Songs Navidrome re-numbered keep their cache files (converted, lowered)
+    and, through rename_fn(mapping) (Record.rename_songs), everything
+    the record knows, so nothing is fetched or copied to a player again and no
+    play count is lost. Changes `previous` (the last plan) to the new IDs too.
+    Returns the mapping."""
+    retired_path = os.path.join(cache_dir, "retired.json")
+    try:
+        with open(retired_path) as f:
+            retired = json.load(f)
+    except (OSError, ValueError):
+        retired = {}
+    files = {}                                    # song id -> its cache file name
+    earlier = {}
+    for name, e in retired.items():
+        if e.get("id"):
+            files[e["id"]], earlier[e["id"]] = name, e
+    for e in previous.get("tracks", []) + previous.get("on_player", []):
+        earlier[e["id"]] = e
+        if e.get("file"):
+            files[e["id"]] = e["file"].split("/", 1)[-1]
+    mapping = match_new_ids(list(earlier.values()), targets)
+    now = {t["id"] for t in targets}
+    lost = [e for i, e in earlier.items() if i not in now and i not in mapping]
+    if mapping and lost:
+        # Gone without a match: really left the library, or changed beyond recognition.
+        log.info("%d song(s) gone from Navidrome without a match under a new ID, e.g. %s",
+                 len(lost), "; ".join(f"{e.get('artist')} - {e.get('title')} "
+                                      f"({e.get('album')}, {e.get('duration')} s)" for e in lost[:8]))
+    if not mapping:
+        return {}
+    if dry_run:
+        log.info("  would follow %d songs Navidrome gave new IDs (no fetching or copying)",
+                 len(mapping))
+        return {}
+    tracks_dir = os.path.join(cache_dir, "tracks")
+    moved = 0
+    for old, new in mapping.items():
+        name = files.get(old)
+        if not name:
+            continue
+        path = os.path.join(tracks_dir, name)
+        new_name = re.sub(r"[^A-Za-z0-9_-]", "_", new) + os.path.splitext(name)[1]
+        if os.path.exists(path):
+            os.replace(path, os.path.join(tracks_dir, new_name))   # over a fresh download too
+            moved += 1
+        retired.pop(name, None)
+        e = earlier[old]
+        if e not in previous.get("tracks", []) + previous.get("on_player", []):
+            previous.setdefault("tracks", []).append(e)    # set aside earlier: in use again
+        e["file"] = f"tracks/{new_name}"
+    for e in previous.get("tracks", []) + previous.get("on_player", []) + previous.get("skipped", []):
+        e["id"] = mapping.get(e["id"], e["id"])
+    for pl in previous.get("playlists", []):
+        pl["song_ids"] = [mapping.get(n, n) for n in pl.get("song_ids", [])]
+    write_json_atomic(retired_path, retired)
+    try:                                          # songs found coming back (played_again)
+        with open(os.path.join(cache_dir, "coming_back.json")) as f:
+            back = json.load(f)
+        write_json_atomic(os.path.join(cache_dir, "coming_back.json"),
+                          [mapping.get(k, k) for k in back])
+    except (OSError, ValueError):
+        pass
+    changed = rename_fn(mapping) if rename_fn else 0
+    log.warning("Navidrome gave %d songs new IDs (a server update re-indexing the library?): "
+                "followed them; %d cache files kept, %d record rows updated, nothing fetched "
+                "or copied again", len(mapping), moved, changed or 0)
+    return mapping
+
+
 def label(track):
     return f"{track.get('artist') or 'Unknown'} - {track.get('title') or track['id']}"
 
@@ -1237,7 +1356,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
             on_player=None, on_batch=None, cpu_count=None, on_progress=None,
             player_kinds=None, plays=None, players_full=False, peak_fn=None,
-            lower_fn="auto"):
+            lower_fn="auto", rename_fn=None):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -1259,7 +1378,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     to_copy also counts re-added songs reused from the cache.
     peak_fn(path): an MP3's decoded peak in dBFS (decoded_peak), and
     lower_fn(path, steps): lower it (lower; None = mp3gain isn't installed).
-    Tests pass stand-ins.
+    Tests pass stand-ins. rename_fn(mapping): follow songs Navidrome gave new IDs
+    in the record (Record.rename_songs).
     """
     peak_fn = peak_fn or decoded_peak
     if lower_fn == "auto":
@@ -1290,6 +1410,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     singles_min = cfg["sync"].get("singles_album_min", 4)
     single_albums = one_track_albums(client, targets, previous, album_info, singles_min)
     dock_artists.group_singles(targets, single_albums, singles_min)
+    # Songs Navidrome re-numbered are followed, not fetched again (needs the final
+    # names, which the plan's entries have).
+    renamed = follow_new_ids(previous, targets, cache_dir, rename_fn, dry_run)
+    if renamed:
+        on_player = {renamed.get(k, k): v for k, v in (on_player or {}).items()}
+        plays = {renamed.get(k, k): v for k, v in (plays or {}).items()}
     lossless_on = (bool(previous.get("lossless_playlists")) if player_kinds is None else
                    bool(LOSSLESS_PLAYERS.get(device, set()) & set(player_kinds)))
     lossless, lossless_lists = lossless_songs(
@@ -1675,6 +1801,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "duration": t.get("duration"), "genre": genres.get(t["id"]),
             **({"folder_album": t["folder_album"]} if t.get("folder_album") else {}),
             "source_suffix": t.get("suffix"),
+            **({"mbid": t["musicBrainzId"]} if t.get("musicBrainzId") else {}),
             "converted": bool(format_of(t)),
             "encoding": current_label(t),
             **({"peak": peaks[t["id"]]} if t["id"] in peaks else {}),
@@ -1971,6 +2098,16 @@ def safe_hours_args(window, connected, screen, now=None):
     return ["safehours", "--detail", f"Syncs resume at {end}"]
 
 
+def rename_in_record(mapping):
+    """prepare's rename_fn: songs Navidrome gave new IDs, followed in the record."""
+    from dock_record import Record
+    record = Record()
+    try:
+        return record.rename_songs(mapping)
+    finally:
+        record.close()
+
+
 def played_again(cache_dir):
     """True if songs taken off the last-synced player to make room have just been
     played again (in Navidrome's web or desktop app, user 2026-11-04), so its next
@@ -2251,7 +2388,7 @@ def main(argv=None):
     try:
         summary = prepare(client, cfg, cache_dir, show=show, dry_run=args.dry_run,
                           on_player=on_player, on_progress=on_progress, player_kinds=player_kinds, plays=plays,
-                          players_full=players_full,
+                          players_full=players_full, rename_fn=rename_in_record,
                           on_batch=lambda m: ask_for_sync(m, batch=True))
     except SubsonicError as e:
         if e.network:

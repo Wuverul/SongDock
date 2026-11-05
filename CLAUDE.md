@@ -1417,6 +1417,15 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   script idea: walk MP3 frames, gapless_data = bytes up to the 8th-from-
   last frame, samplecount = frames x 1152 - delay - padding (+1 frame for
   CBR "Info").
+- **Navidrome re-index (2026-11-04):** a Navidrome update can give every song a new ID
+  (3,572 at once; the server owner's upgrade). `dock_prepare.follow_new_ids` runs after
+  the name tidying: songs gone from the last plan are matched to new ones
+  (`match_new_ids`: MusicBrainz recording + length, else artist/title/album/track/disc/
+  length; one-to-one only) and followed: cache files renamed (set-aside ones return),
+  the last plan re-keyed, `Record.rename_songs` (tracks, pending_plays, room_removed,
+  copied incl. its entry JSON, rated_favorites), coming_back.json; the iPod's ID comment
+  follows in `fill_missing_names` (no re-copy). Dry runs only report. Plan entries carry
+  `mbid`. Unmatched ones are logged ("gone ... without a match").
 - **No clipping (user, 2026-11-04; built, not on hardware yet):** loud masters made
   into MP3 decode above 0 dBFS and the player clips them (33 of 40 sampled converted
   songs, up to +3 dB; why the user's ALACs sounded better). `dock_prepare`: every
