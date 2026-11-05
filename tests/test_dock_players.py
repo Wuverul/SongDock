@@ -6,6 +6,7 @@ Run: python3 -m unittest discover -s tests -v
 import contextlib
 import io
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -200,6 +201,7 @@ class SettingsTests(PlayersBase):
     def setUp(self):
         super().setUp()
         self.config = os.path.join(self.dir, "config.toml")
+        self.original = CONFIG
         with open(self.config, "w") as f:
             f.write(CONFIG)
         os.chmod(self.config, 0o600)
@@ -218,11 +220,18 @@ class SettingsTests(PlayersBase):
         with open(self.config, "rb") as f:
             return tomllib.load(f)
 
+    def set_setting(self, section, key, value):
+        import dock_config
+        with open(self.config) as f:
+            text = dock_config.set_value(f.read(), section, key, value)
+        with open(self.config, "w") as f:
+            f.write(text)
+
     def assert_unchanged(self, result, why):
         self.assertFalse(result["ok"])
         self.assertIn(why, result["reason"])
         with open(self.config) as f:
-            self.assertEqual(f.read(), CONFIG)
+            self.assertEqual(f.read(), self.original)
         self.assertTrue(os.path.exists(os.path.join(self.dir, "DockSetup.txt")))
 
     def test_playlists_only_with_a_new_tag(self):
@@ -230,10 +239,11 @@ class SettingsTests(PlayersBase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["done"], ["Playlists tagged #car sync",
                                           "Starred songs don't sync"])
-        self.assertEqual(self.settings()["sync"], {"targets": [], "playlist_tag": "#car"})
+        sync = self.settings()["sync"]
+        self.assertEqual((sync["targets"], sync["playlist_tag"]), ([], "#car"))
         with open(self.config) as f:
             text = f.read()
-        self.assertIn('playlist_tag = "#car"              # tagged playlists', text)
+        self.assertRegex(text, r'playlist_tag = "#car" +# ')       # its comment kept
         self.assertEqual(os.stat(self.config).st_mode & 0o777, 0o600)
         self.assertFalse(os.path.exists(os.path.join(self.dir, "DockSetup.txt")))
         self.assertEqual(self.server.logins, [])                  # no sign-in to test
@@ -260,6 +270,25 @@ class SettingsTests(PlayersBase):
         self.assertEqual(self.settings()["sync"]["artist_names"], [])
         self.assertIn("needs artist names", self.apply("ArtistNames=\n")["reason"])
         self.assertIn("needs artist names", self.apply("ArtistNames=;\n")["reason"])
+
+    def test_artist_aliases_from_the_ipod(self):
+        result = self.apply("ArtistAliases=Beatles = The Beatles; Artist95 \u30a2\u30fc = Artist 95 ;\n")
+        self.assertEqual(result["done"], ["2 artist spelling(s) renamed"])
+        self.assertEqual(self.settings()["sync"]["artist_aliases"],
+                         ["Beatles = The Beatles", "Artist95 \u30a2\u30fc = Artist 95"])
+        self.assertEqual(self.apply("ArtistAliases=none\n")["done"], ["No artist spellings renamed"])
+        self.assertEqual(self.settings()["sync"]["artist_aliases"], [])
+        for bad in ("ArtistAliases=\n", "ArtistAliases=Beatles\n", "ArtistAliases== The Beatles\n",
+                    "ArtistAliases=Beatles =\n"):
+            self.assertIn("other spelling = name", self.apply(bad)["reason"])
+
+    def test_make_room_by_album_from_the_ipod(self):
+        self.assertEqual(self.apply("MakeRoomAlbums=no\n")["done"], ["Making room by song"])
+        self.assertIs(self.settings()["sync"]["make_room_albums"], False)
+        self.assertEqual(self.apply("MakeRoomAlbums=yes\n")["done"],
+                         ["Making room by whole albums"])
+        self.assertIs(self.settings()["sync"]["make_room_albums"], True)
+        self.assertIn("MakeRoomAlbums", self.apply("MakeRoomAlbums=maybe\n")["reason"])
 
     def test_artist_names_quote_safely_in_the_config(self):
         self.apply('ArtistNames=The "Best" \\ Band, Inc.\n')
@@ -371,8 +400,7 @@ class SettingsTests(PlayersBase):
 
     def test_stock_compatibility_back_on_from_a_stock_ipod(self):
         self.record().set_player_kind(NANO, "stock")
-        with open(self.config, "a") as f:
-            f.write('\n[device]\ntype = "rockbox"\n')
+        self.set_setting("device", "type", "rockbox")
         result = self.apply("StockCompatible=yes\n", this=NANO)
         self.assertTrue(result["ok"])
         self.assertIs(result["stock_compatible"], True)
@@ -395,8 +423,7 @@ class SettingsTests(PlayersBase):
         self.assertIn("07:00-10:00", result["reason"])
 
     def test_flac_switch(self):
-        with open(self.config, "a") as f:
-            f.write('\n[device]\ntype = "rockbox"\n')
+        self.set_setting("device", "type", "rockbox")
         result = self.apply("FLAC=no\n")
         self.assertEqual(result["done"], ["FLAC converted to MP3"])
         self.assertIs(self.settings()["device"]["flac"], False)
@@ -432,6 +459,44 @@ class ConfigEditTests(unittest.TestCase):
         self.assertEqual(data["sync"], {"targets": ["playlist:Road ]"], "cache_dir": "x",
                                         "playlist_tag": "#car"})
         self.assertEqual(data["server"]["url"], 'https://a"b')
+
+    def test_the_example_layout(self):
+        # "group.setting = value" lines, settings left at their default commented out.
+        import tomllib
+        import dock_config
+        text = ('# 1\nserver.url = "u"\nsync.safe_hours = "07:00-10:00"\ndevice.write = false\n'
+                '# 3\n# sync.make_room = false\nsync.playlist_tag = "#ipod"   # tag\n'
+                '\n[genres]\nunmatched = ""\n')
+        out = dock_config.set_value(text, "sync", "make_room", True)        # switched on
+        self.assertIn("\nsync.make_room = true\n", out)
+        self.assertNotIn("# sync.make_room", out)
+        out = dock_config.set_value(out, "sync", "playlist_tag", "#car")    # comment kept
+        self.assertIn('sync.playlist_tag = "#car"    # tag', out)
+        out = dock_config.set_value(out, "device", "flac", False)           # after its group
+        self.assertIn("device.write = false\ndevice.flac = false\n", out)
+        out = dock_config.set_value(out, "display", "theme", "dark")        # before the table
+        data = tomllib.loads(out)
+        self.assertEqual(data["display"], {"theme": "dark"})
+        self.assertEqual(data["genres"], {"unmatched": ""})
+        self.assertEqual(data["sync"], {"safe_hours": "07:00-10:00", "make_room": True,
+                                        "playlist_tag": "#car"})
+
+
+class ExampleLayoutSettingsTests(SettingsTests):
+    """Every DockSetup.txt setting again, on a config.toml made from
+    config.example.toml (the installer's copy) rather than the older layout."""
+
+    def setUp(self):
+        super().setUp()
+        with open(os.path.join(os.path.dirname(__file__), "..", "config.example.toml")) as f:
+            text = f.read()
+        for key, value in (("url", "https://old.example.com"), ("username", "jo"),
+                           ("password", "old-secret")):
+            text = re.sub(rf'^server\.{key} = .*$', f'server.{key} = "{value}"', text,
+                          count=1, flags=re.M)
+        self.original = text
+        with open(self.config, "w") as f:
+            f.write(text)
 
 
 if __name__ == "__main__":

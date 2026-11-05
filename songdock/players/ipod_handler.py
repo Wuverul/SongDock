@@ -27,6 +27,7 @@ Play data, and why the order of operations matters:
     it. (CLAUDE.md safety rules.)
 """
 
+import errno
 import gc
 import os
 import shutil
@@ -224,9 +225,16 @@ def model_from_serial(block_device, read_serial=None):
     except Exception as e:
         log_info(f"Couldn't read the iPod's serial number: {e}")
         return None
-    info = lookup_model_by_serial(serial) if serial else None
+    # Each outcome is logged: a silent miss made a guessed model look found
+    # (2026-11-02: a Classic 7G 160 GB written down as a 6G 80 GB).
+    if not serial:
+        log_info("Couldn't read the iPod's serial number (no answer from the iPod)")
+        return None
+    info = lookup_model_by_serial(serial)
     if info and info.model_number and info.model_number != "Unknown":
         return "x" + info.model_number, serial
+    log_info(f"The iPod's serial number ends in {serial[-3:]!r}, which isn't in the model "
+             "table")
     return None
 
 
@@ -246,7 +254,12 @@ def ensure_sysinfo(mount, guid, record, usb_product=None, block_device=None,
         if found:
             model = found[0]
             log_info(f"iPod model {model} worked out from its serial number ({found[1]})")
-    model = model or REPRESENTATIVE_MODELS.get(usb_product)
+    if not model and REPRESENTATIVE_MODELS.get(usb_product):
+        model = REPRESENTATIVE_MODELS[usb_product]
+        log_info(f"iPod model {model} guessed from its USB product ID (0x{usb_product:04x}): "
+                 "the exact model may differ, but every model with this ID gets the same "
+                 "database and covers. To set the real one, change 'ModelNumStr:' in "
+                 f"{sysinfo_path(mount)} (model from Settings > About, e.g. MC297 -> xC297)")
     if not model:
         log_info("Unknown iPod model: SysInfo is empty, the serial number didn't help, "
                  "and this player hasn't been seen before. Add a line "
@@ -330,6 +343,15 @@ def refresh_backup(mount, backup, db):
         elif os.path.isfile(src):
             os.makedirs(os.path.dirname(out), exist_ok=True)
             shutil.copy2(src, out)
+
+
+# The player went away (unplugged, USB reset) or the kernel stopped writes to it
+# after an error: nothing more can be written to it, a restore included.
+UNWRITABLE = (errno.ENODEV, errno.ENXIO, errno.EIO, errno.ESHUTDOWN, errno.EROFS)
+
+
+def player_unwritable(e):
+    return isinstance(e, OSError) and e.errno in UNWRITABLE
 
 
 def restore_backup(mount, backup):
@@ -991,6 +1013,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     record.clear_room_removed(guid, [n for n in room_rows if n in present or n not in keep])
     rules = (dock_room.rules(manifest, cache_dir, record, wall())
              if "make_room_months" in manifest else None)
+    if rules:                                 # an album's date counts its songs' too
+        rules.added = {nid: r.get("added_at") for nid, r in present.items()}
     returning = {n for n in room_rows
                  if n in wanted and n not in present and not (rules and rules.recent(n))}
     new_songs = [t for nid, t in wanted.items() if nid not in present and nid not in returning]
@@ -1003,8 +1027,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                       for nid, r in present.items()
                       if nid in keep and nid not in changed and "added_at" in r
                       and not rules.recent(nid, r["added_at"])]
-        victims = dock_room.pick([file_size(cached(t)) for t in new_songs],
-                                 free - FREE_SPACE_MARGIN + freed, candidates)
+        victims = dock_room.choose(rules, [file_size(cached(t)) for t in new_songs],
+                                   free - FREE_SPACE_MARGIN + freed, candidates, present)
     freed += sum(size_on_player(present[nid]) for nid in victims)
     no_room = swaps_without_room(
         free,
@@ -1296,7 +1320,7 @@ def open_database(mount, work_dir, snapshot=None):
 
 def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
                 write=False, client=None, usb_product=None, step=None, progress=None,
-                block_device=None, next_plan=None, deadline=None):
+                block_device=None, next_plan=None, deadline=None, on_reconciled=None):
     """One dock session for a stock iPod (the sync job's steps 2-5).
 
     2. Snapshot the play data and DB, map plays to songs (reconciling the
@@ -1307,8 +1331,10 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
     4. Make sure SysInfo is complete, back up iTunesDB/ArtworkDB to the Pi.
     5. Open the live DB from the snapshot, merge the play counts into it
        (already queued; the play files go once a save has them), reconcile,
-       apply the staged plan. On any error the backup is restored and the
-       error re-raised.
+       apply the staged plan. On any error the backup is restored (unless
+       the player can't be written any more) and the error re-raised.
+       on_reconciled(song ids) is called once the record matches the
+       player, before copying (the sync job's restore count).
     Then a copy of the record is saved onto the player. Returns a summary.
     """
     import dock_plays
@@ -1366,6 +1392,9 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             report = reconcile(db, record, guid, mount, manifest=manifest)
             if report["reset"]:
                 log_info("Player appears to have been reset: rebuilding it")
+            if on_reconciled:      # what's really on it now, e.g. nothing after a wipe
+                on_reconciled({r["navidrome_id"] for r in record.tracks(guid)}
+                              | {t["id"] for _, t in report["pending"]})
             step(5, "Copying tracks")
             resort = sort_order_outdated(mount)
             if resort:
@@ -1386,9 +1415,21 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
             if reshare:
                 mark_shared_art(mount)
             finish_compaction(mount)
-        except Exception:
-            log_info("Sync failed: restoring the player's database from the backup")
-            restore_backup(mount, backup)
+        except Exception as e:
+            # Unplugged mid-sync (seen 2026-11-03): the restore can't be written either,
+            # and its own error used to replace the real one on FAILED. The iTunesDB
+            # save is atomic, so the player keeps its last saved one, and the next
+            # sync re-adds the files copied since (copy log).
+            if player_unwritable(e):
+                log_info("Sync failed: the player can't be written to (unplugged, or its "
+                         "disk stopped taking writes). It keeps its last saved database; "
+                         "the next sync carries on from there")
+            else:
+                log_info("Sync failed: restoring the player's database from the backup")
+                try:
+                    restore_backup(mount, backup)
+                except Exception as restore_error:
+                    log_info(f"Couldn't restore the backup: {restore_error}")
             raise
         report.pop("pending")
         summary.update(result, reconcile=report, wrote=True)

@@ -7,6 +7,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
 import dock_paths  # noqa: E402,F401
+sys.path.insert(0, os.path.dirname(__file__))
+import isolate_state  # noqa: E402,F401  (before anything reads the dock's state)
 import dock_report  # noqa: E402
 from dock_record import Record  # noqa: E402
 

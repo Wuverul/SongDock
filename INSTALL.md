@@ -11,11 +11,10 @@ exactly what to type.
 - **Waveshare 2.13" e-Paper HAT** (250x122, black and white): **V4** is the
   tested one; **V3** and **V2** are supported too (untested on hardware).
   The version is printed on the back of the screen; for V3 or V2, set
-  `model` in the settings (step 6):
+  it in the settings (step 6):
 
   ```toml
-  [display]
-  model = "v3"        # or "v2"; "v4" is the default
+  display.model = "v3"        # or "v2"; "v4" is the default
   ```
 
   A V2 screen redraws with a full refresh every time (a brief flash on each
@@ -137,17 +136,32 @@ Log back in (`ssh yourname@musicdock.local`) and open the settings file:
 nano ~/.config/musicdock/config.toml
 ```
 
-Fill in the `[server]` section:
+The file is in four parts, from "must set" to "change only if you know you
+need to". Fill in part **1. REQUIRED**:
 
 ```toml
-url = "http://192.168.1.50:4533"     # your Navidrome address
-username = "your-navidrome-username"
-password = "your-navidrome-password"
+server.url = "http://192.168.1.50:4533"     # your Navidrome address
+server.username = "your-navidrome-username"
+server.password = "your-navidrome-password"
+sync.safe_hours = "07:00-10:00"             # no syncing in this daily window, or "off"
+device.write = false                        # leave false for now: step 9 turns it on
 ```
 
-Leave `write = false` for now (step 9 turns it on). Save with **Ctrl-O**, then
-**Enter**, and exit with **Ctrl-X**. The file is readable only by you; the
-password is used to sign each request and never sent as is.
+Safe hours keep the dock from starting a sync when you're about to grab the
+iPod, e.g. before a morning commute (more under "Safe hours" below). Set a
+window that fits your day.
+
+Then look over part **2. CHECK THESE** (what syncs, cache size, the screen's
+version). Parts 3 and 4 can wait: their lines start with `#`, which means the
+dock uses the default shown. To change one, delete the `# ` and edit the value.
+
+Save with **Ctrl-O**, then **Enter**, and exit with **Ctrl-X**. The file is
+readable only by you; the password is used to sign each request and never
+sent as is.
+
+*Settings files from SongDock 0.7 and earlier* group settings under headings
+like `[sync]`. In those, write a setting from this guide without its group:
+`make_room = true` under `[sync]` rather than `sync.make_room = true`.
 
 ## 7. Choose your music
 
@@ -187,7 +201,7 @@ being copied.
 nano ~/.config/musicdock/config.toml
 ```
 
-Change `write = false` to `write = true` in the `[device]` section, save, and
+Change `device.write = false` to `device.write = true` (part 1), save, and
 dock the iPod again. This time it copies your music and playlists. Expect about
 **3 seconds per song on a Pi Zero 2 W** (500 songs in about 25 minutes) or **11 seconds
 on a Pi Zero W** (about an hour and a half). Later syncs only copy what changed.
@@ -204,7 +218,7 @@ and album art.
 - If Navidrome is offline, music still syncs and plays are sent later.
 - An iPod left on the dock syncs again by itself when new music has been
   prepared (it briefly reconnects; playback stops until the sync is done).
-  To turn that off: `auto_resync = false` in the `[device]` settings.
+  To turn that off: `device.auto_resync = false` in the settings.
 - From 7 to 10 AM the dock doesn't sync (see "Safe hours" below). It shows **SAFE
   HOURS** while a player is connected, and the iPod is free to take.
 - Rate a song 4 or 5 stars on the iPod and the next sync favorites it in Navidrome, once.
@@ -219,16 +233,14 @@ and album art.
 **Dark mode** (white on black, nice in a dark case): in the settings file set
 
 ```toml
-[display]
-theme = "dark"       # or "light" (the default)
+display.theme = "dark"       # or "light" (the default)
 ```
 
 **How often the dock checks for new music** (default every 5 minutes): in
 the settings file set, for example,
 
 ```toml
-[sync]
-check_interval_minutes = 15
+sync.check_interval_minutes = 15
 ```
 
 It takes effect a few seconds after you save the file (no restart needed).
@@ -243,17 +255,15 @@ is a twentieth of the run (25 to 500 songs). Set a fixed number, or 0 to
 copy only once everything is converted:
 
 ```toml
-[sync]
-sync_batch_size = "auto"
+sync.sync_batch_size = "auto"
 ```
 
 **Safe hours** (no syncs in a daily window, so a sync doesn't hold the iPod
 on the dock when you leave in the morning). On by default, 7 to 10 AM local
-time; change the window or turn it off:
+time; you set the window in step 6, or turn it off:
 
 ```toml
-[sync]
-safe_hours = "07:00-10:00"         # or e.g. "06:30-08:00", or "off"
+sync.safe_hours = "07:00-10:00"         # or e.g. "06:30-08:00", or "off"
 ```
 
 Or put `SafeHours=06:30-08:00` (or `SafeHours=off`) in `DockSetup.txt` on the
@@ -266,24 +276,31 @@ plugging in again to get the rest.
 **Making room on a full player** (off by default): with this on, new songs that don't
 fit push off the oldest songs, only as many as needed. Songs played, added or in an
 updated playlist within `recent_play_months` are safe, and removed songs come back when
-there's room:
+there's room, or as soon as you play one in Navidrome's web or desktop app (a docked iPod
+syncs to bring it back). `MediaDock.txt` on the iPod lists what was taken off. Whole albums go, dated by their newest song, so one recent play keeps an
+album; `make_room_albums = false` removes songs one by one instead:
 
 ```toml
-[sync]
-make_room = true
-recent_play_months = 3
+sync.make_room = true
+sync.make_room_albums = true
+sync.recent_play_months = 3
 ```
 
 **Names on the player:** a song lists under its album's artist, with guests moved to the
 title. These only change the player, not Navidrome:
 
 ```toml
-[sync]
-primary_artist = true                 # false: keep the credits as they are
-artist_names = ["Now, Now"]           # names with a comma, & or / to keep whole
-compilation_albums = ["Monthly Mix = My Mixes"]   # list these as one artist
-singles_album_min = 4                 # one-track albums before "<Artist> Singles"; 0 = off
+sync.primary_artist = true                 # false: keep the credits as they are
+sync.artist_names = ["Now, Now"]           # names with a comma, & or / to keep whole
+sync.compilation_albums = ["Monthly Mix = My Mixes"]   # list these as one artist
+sync.artist_aliases = ["Beatles = The Beatles"]        # another spelling of one artist
+sync.singles_album_min = 4                 # one-song albums before "<Artist> Singles"
 ```
+
+**Genres:** the iPod's Genres menu sorts every song into one of a built-in
+list of groups (Electronic, Hip-Hop, Soundtracks...). To make your own, copy
+the list from `genres.example.toml` (in `/opt/songdock/app/`) to the end of
+your settings file and edit it; the file explains how.
 
 **Moving the dock to another Wi-Fi network:** put a file named **`wifi.txt`**
 in the iPod's top folder (next to `MediaDock.txt`):
@@ -324,8 +341,7 @@ as-is instead (lossless, no conversion, about 2-3 times larger), turn off
 stock-iPod compatibility in the settings:
 
 ```toml
-[device]
-type = "rockbox"     # copy music as it is on the server (FLAC included)
+device.type = "rockbox"     # copy music as it is on the server (FLAC included)
 ```
 
 The cache is then re-filled in the new format at the next check, and songs
@@ -335,9 +351,8 @@ FLAC); set it back to `"stock_ipod"` to serve them again. If a player can't
 play FLAC (many cheap MP3 players can't), keep the conversion for FLAC only:
 
 ```toml
-[device]
-type = "rockbox"
-flac = false         # FLAC converted to convert_to; other formats as they are
+device.type = "rockbox"
+device.flac = false         # FLAC converted to convert_to; other formats as they are
 ```
 
 `FLAC=no` / `FLAC=yes` in a `DockSetup.txt` does the same from a player.
@@ -400,7 +415,7 @@ iPod's top folder explains every file you can add there (`wifi.txt`,
 `DockSetup.txt`, `MediaDock.txt`) and what the screens mean.
 
 **Changing settings from the iPod:** a `DockSetup.txt` can also hold, for example,
-`PlaylistTag=#car`, `SyncStarred=no` (playlists only), `MakeRoom=yes`, `ArtistNames=`,
+`PlaylistTag=#car`, `SyncStarred=no` (playlists only), `MakeRoom=yes`, `ArtistNames=`, `ArtistAliases=`,
 `AutoUpdate=no`, or `Server=` with `Username=` and `Password=`. `MediaDock README.txt`
 on the iPod lists every option.
 
@@ -442,7 +457,7 @@ journalctl -u 'musicdock-sync@*' -e              # docking sessions
 From 0.7.2 on, the dock updates itself: DOCK READY shows the new version and its install
 time, 4 hours ahead, and it installs once no player is connected and nothing is running.
 Only releases signed by the project install. To only be told about them, set
-`auto_update = false` in the `[sync]` settings. Your settings, cache and the record of
+`sync.auto_update = false` in the settings. Your settings, cache and the record of
 what's on your iPod are kept. Automatic updates are new and haven't yet run for real, so
 check `musicdock-status` after one.
 

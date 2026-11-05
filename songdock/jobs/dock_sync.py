@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dock_paths  # noqa: E402
 
 import argparse
+import errno
 import fcntl
 import glob
 import importlib.util
@@ -422,6 +423,27 @@ class Screen:
 
 
 # ------------------------------------------------------------------ sync ----
+# Errors meaning the player went away mid-sync (unplugged, USB reset), and the
+# kernel making it read-only after a write error.
+GONE = (errno.ENODEV, errno.ENXIO, errno.EIO, errno.ESHUTDOWN)
+
+
+def failure_text(e, device):
+    """FAILED's (what happened, what to do or None). The dock's own errors are
+    written for the screen already; system errors are not ("[Errno 30] Read-only
+    file system: '/media/musicdock/...'", 2026-11-01)."""
+    gone = isinstance(device, BlockDevice) and not os.path.exists(device.path)
+    if not isinstance(e, OSError):
+        return str(e) or type(e).__name__, None
+    if gone or e.errno in GONE:
+        return "Player disconnected", "Plug it in again to finish"
+    if e.errno == errno.EROFS:
+        return "Player stopped saving", "Plug it in again to retry"
+    if e.errno == errno.ENOSPC:
+        return "Out of space", "On the Pi or the player: see the log"
+    return e.strerror or type(e).__name__, "Details: musicdock-status"
+
+
 def run_sync(device, show, work=None, total=None):
     """Run one sync. show(screen, *args, force=False) draws a screen.
 
@@ -440,8 +462,8 @@ def run_sync(device, show, work=None, total=None):
         (concurrent batches: still converting, or its final sync), counting
         every batch of the run; None for an ordinary sync."""
         prep = dock_progress.running_prepare()
-        if not prep:
-            return None
+        if not prep or (RESTORE and prep.get("final")):
+            return None      # a finished run's counts say less than "Restoring n/N"
         if batch.get("run") != prep["run"]:
             base, syncs = dock_progress.copied(prep["run"])
             batch.update(run=prep["run"], base=base, synced=base, syncs=syncs + 1)
@@ -500,7 +522,12 @@ def run_sync(device, show, work=None, total=None):
             list_contents(device.root)
     except Exception as e:
         log.exception("Sync failed")
-        error = str(e) or type(e).__name__
+        error = failure_text(e, device)
+        # The last sync of a finished prepare run failed: the run is over. Kept, its
+        # counts ("Synced n/37") showed on the next sync, e.g. a wiped iPod's restore.
+        prep = dock_progress.running_prepare() if batch.get("run") else None
+        if prep and prep["run"] == batch["run"] and prep.get("final"):
+            dock_progress.clear_run()
 
     # Always unmount if we mounted, even after an error.
     if device.mounted:
@@ -518,7 +545,9 @@ def run_sync(device, show, work=None, total=None):
     # Player is unmounted: now (and only now) it's safe to say so.
     try:
         if error:
-            show("failed", "--reason", error, force=True)
+            reason, todo = error
+            show("failed", "--reason", reason, *(["--detail", todo] if todo else []),
+                 force=True)
         elif summary.get("not_synced"):
             show("notsynced", "--reason", summary["not_synced"], force=True)
         elif summary.get("wifi"):
@@ -743,12 +772,15 @@ def make_ipod_work(cfg, guid, product, write):
         opens = dock_safehours.next_start(window)
         deadline = opens.timestamp() if opens else None
 
+        # Worked out once the handler has reconciled the record with the player:
+        # before that, a wiped iPod's songs were still "present" in the record and
+        # no restore started (2026-11-01: 2068 of 2105).
         RESTORE.clear()
-        if kind == "stock" and writing and not refused:
+
+        def count_restore(present):
             try:
                 import dock_restore
-                present = {r["navidrome_id"] for r in record.tracks(player_guid)}
-                present |= set(record.room_removed(player_guid))
+                present = set(present) | set(record.room_removed(player_guid))
                 info = dock_restore.status(player_guid, present, manifest,
                                            full=bool((record.player(player_guid) or {}).get("full")))
                 if info:
@@ -773,7 +805,8 @@ def make_ipod_work(cfg, guid, product, write):
                 write=writing and not refused, client=client, usb_product=product, step=step,
                 progress=progress, block_device=whole_disk(getattr(device, "path", "")),
                 deadline=deadline,
-                **({"next_plan": lambda plan: next_plan(cache_dir, plan, deadline=deadline)}
+                **({"next_plan": lambda plan: next_plan(cache_dir, plan, deadline=deadline),
+                    "on_reconciled": count_restore}
                    if kind == "stock" else {"kind": kind}))
             if writing:
                 summary["notes"] = size_notes(record, player_guid, device.root, manifest,
@@ -904,7 +937,7 @@ def handle_setup_file(device, write, guid, cfg=None, notes=None):
             if found:
                 result = dock_setup.apply_setup_file(device.root, record, guid, cfg)
             dock_setup.write_marker(device.root, MARKER, record.players(), guid,
-                                    MARKER_TEXT, result, notes)
+                                    MARKER_TEXT, result, notes, record.room_removed_songs(guid))
         finally:
             record.close()
     except Exception as e:

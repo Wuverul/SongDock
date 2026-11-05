@@ -55,6 +55,7 @@ import argparse
 import fcntl
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -609,7 +610,7 @@ def plan_genres(client, cfg, songs, previous, album_info=None):
     if dock_genres.uses_release_types(groups):
         known = previous.get("album_types", {})
         for album_id in sorted({s["albumId"] for s in songs if s.get("albumId")}):
-            if album_id in known:
+            if album_id in known and dock_genres.plausible_types(known[album_id]):
                 album_types[album_id] = known[album_id]
                 continue
             info = album_fields(client, album_id, album_info)
@@ -1003,6 +1004,70 @@ def convert(src, dst, options, duration=None):
     raise PrepareError("conversion failed")
 
 
+# No clipping (user, 2026-11-04: "We should absolutely be encoding in ways that
+# don't clip"). A loud master made into an MP3 decodes above full scale, and the
+# player clips it: 33 of 40 sampled songs did, up to +3 dB (Venjent - Chipshop
+# Chewsday). Every MP3 in the cache is measured once at full level, and lowered
+# without re-encoding (mp3gain: the gain field of each frame, 1.5 dB steps,
+# exact and lossless) just enough not to clip. A whole album gets the same
+# steps, those of its loudest song (user: albums with deliberately quiet parts
+# must keep them), and an album's steps only ever grow, so it stays even. A
+# lowered song's encoding says so ("mp3 v0 -1.5dB"), so players swap it.
+MP3GAIN = "mp3gain"
+GAIN_STEP = 1.50515      # dB per mp3gain step: 2 ** (1/4) in amplitude
+CLIP_CEILING = -0.2      # dBFS: a decoded peak above this would clip on a player
+
+
+def decoded_peak(path):
+    """The highest sample of `path` decoded to floating point, in dBFS (above
+    0 = clipping on a player). Streams: about 3 s for a song on a Pi Zero 2 W."""
+    r = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-i", path,
+                        "-map", "0:a", "-af", "aformat=sample_fmts=flt,astats="
+                        "measure_perchannel=none:measure_overall=Peak_level",
+                        "-f", "null", "-"], capture_output=True, text=True, timeout=600)
+    found = re.findall(r"Peak level dB: (-?[\d.]+|-?inf)", r.stderr)
+    if r.returncode or not found:
+        raise PrepareError(f"couldn't measure the peak: {r.stderr.strip()[-200:]}")
+    return float(found[-1])
+
+
+def steps_needed(peak):
+    """mp3gain steps that bring a song peaking at `peak` dBFS (at full level)
+    under CLIP_CEILING."""
+    return 0 if peak <= CLIP_CEILING else math.ceil((peak - CLIP_CEILING) / GAIN_STEP)
+
+
+def lower(path, steps):
+    """Lower an MP3 by `steps` mp3gain steps, in place (no re-encoding; no
+    tags added)."""
+    r = subprocess.run([MP3GAIN, "-g", str(-steps), "-c", "-s", "s", path],
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode:
+        raise PrepareError(f"mp3gain failed: {(r.stderr or r.stdout).strip()[-200:]}")
+
+
+def gain_label(base, steps):
+    """A file's encoding: "mp3 v0", or "mp3 v0 -1.5dB" when lowered."""
+    return f"{base} -{1.5 * steps:.1f}dB" if steps else base
+
+
+def base_label(label):
+    """The settings part of an encoding: "mp3 v0 -1.5dB" -> "mp3 v0"."""
+    return re.sub(r" -\d+(\.\d+)?dB$", "", label) if label else label
+
+
+def label_steps(label):
+    """mp3gain steps in an encoding: "mp3 v0 -3.0dB" -> 2."""
+    found = re.search(r" -(\d+(\.\d+)?)dB$", label or "")
+    return round(float(found.group(1)) / 1.5) if found else 0
+
+
+def album_key(t):
+    """Which album a song's gain goes with: Navidrome's album, else its name."""
+    return t.get("albumId") or ((t.get("displayAlbumArtist") or t.get("artist") or ""),
+                                t.get("album") or "")
+
+
 def fill_missing_tags(path, t):
     """Give a prepared file Navidrome's title/artist/album/track/disc/year
     where it has none, so the player never falls back to the file name (the
@@ -1171,7 +1236,8 @@ def last_played_at(track, plays):
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
             on_player=None, on_batch=None, cpu_count=None, on_progress=None,
-            player_kinds=None, plays=None, players_full=False):
+            player_kinds=None, plays=None, players_full=False, peak_fn=None,
+            lower_fn="auto"):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -1191,7 +1257,13 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     new tracks is handed over mid-run (only with 2+ CPU cores).
     on_progress(started, total, batches, to_copy): as each track starts;
     to_copy also counts re-added songs reused from the cache.
+    peak_fn(path): an MP3's decoded peak in dBFS (decoded_peak), and
+    lower_fn(path, steps): lower it (lower; None = mp3gain isn't installed).
+    Tests pass stand-ins.
     """
+    peak_fn = peak_fn or decoded_peak
+    if lower_fn == "auto":
+        lower_fn = lower if shutil.which(MP3GAIN) else None
     current = encoding(cfg["device"])
     max_bytes = int(float(cfg["sync"]["max_cache_gb"]) * 1e9)
     tracks_dir = os.path.join(cache_dir, "tracks")
@@ -1209,6 +1281,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         cfg["sync"].get("favorites_playlist", "Favorites"),
         cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info, album_copies)
     unsplit_artists = set()
+    dock_artists.apply_aliases(targets, cfg["sync"].get("artist_aliases", ()))
     if cfg["sync"].get("primary_artist", True):
         dock_artists.tidy(targets, cfg["sync"].get("artist_names", ()), unsplit_artists,
                           cfg["sync"].get("compilation_albums", ()))
@@ -1239,26 +1312,116 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     known_sizes = {t["id"]: t["size"]
                    for t in previous.get("tracks", []) + previous.get("on_player", [])
                    if t.get("size") and t["id"] in by_id
-                   and t.get("encoding") == made_as(by_id[t["id"]])}
+                   and base_label(t.get("encoding")) == made_as(by_id[t["id"]])}
 
     # Cached conversions made with different settings get re-done. Entries
-    # from before encodings were recorded are assumed current.
+    # from before encodings were recorded are assumed current. An MP3's
+    # encoding may carry the steps that keep it from clipping ("mp3 v0 -1.5dB").
     kept = KeptTracks(cache_dir, tracks_dir, clock)
     newly_removed = [n for n in to_remove if n not in kept.items]
-    made_with = {t["id"]: t.get("encoding") for t in previous.get("tracks", [])}
-    made_with.update({e["id"]: e.get("encoding") for e in kept.items.values() if "id" in e})
+    earlier = (previous.get("tracks", []) + previous.get("on_player", [])
+               + [e for e in kept.items.values() if "id" in e])
+    made_with = {e["id"]: e.get("encoding") for e in earlier}
+    # MP3s' decoded peaks at full level, dBFS (each measured once; CLIP_CEILING).
+    peaks = {e["id"]: e["peak"] for e in earlier if e.get("peak") is not None}
     stale = {name for name, t in wanted.items()
              if name in existing and format_of(t)
-             and made_with.get(t["id"]) not in (None, made_as(t))}
+             and base_label(made_with.get(t["id"])) not in (None, made_as(t))}
+
+    def current_label(t):
+        """The encoding of the song's file now, or the one it will be made with."""
+        made = made_with.get(t["id"])
+        return made if made and base_label(made) == made_as(t) else made_as(t)
+
+    def is_mp3(name):
+        return name.lower().endswith(".mp3")
+    if lower_fn is None and any(is_mp3(n) for n in wanted):
+        log.warning("%s isn't installed (run the installer again): MP3s aren't checked "
+                    "for clipping", MP3GAIN)
+    album_steps = {}                 # {album: mp3gain steps for all its MP3s}
+    lowered = {"n": 0}               # MP3s lowered this run (they change players' files)
+
+    def settle_albums():
+        """Each album's steps: what its loudest MP3 needs, and never fewer than
+        its files (here or on players) already have, so an album stays even."""
+        for name, t in wanted.items():
+            if is_mp3(name):
+                need = steps_needed(peaks[t["id"]]) if t["id"] in peaks else 0
+                key = album_key(t)
+                album_steps[key] = max(album_steps.get(key, 0), need,
+                                       label_steps(current_label(t)))
+
+    def align():
+        """Lower cached MP3s to their album's steps (seconds each, no re-encoding)."""
+        changed = 0
+        for name, t in wanted.items():
+            path = os.path.join(tracks_dir, name)
+            if not is_mp3(name) or name in stale or t["id"] not in peaks \
+                    or not os.path.exists(path):
+                continue
+            have, want = label_steps(current_label(t)), album_steps.get(album_key(t), 0)
+            if want <= have:
+                continue
+            tmp = os.path.join(tmp_dir, f"gain-{name}")
+            try:
+                shutil.copy2(path, tmp)
+                lower_fn(tmp, want - have)
+                fsync_file(tmp)
+                os.replace(tmp, path)
+                made_with[t["id"]] = gain_label(made_as(t), want)
+                changed += 1
+            except Exception:
+                log.exception("Couldn't lower %s (next run tries again)", label(t))
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+        if changed:
+            lowered["n"] += changed
+            log.info("Lowered %d MP3(s) so they don't clip (whole albums by the same "
+                     "amount; no re-encoding)", changed)
+
+    # MP3s cached before the clipping check: measured once (about 3 s each).
+    unmeasured = [(name, t) for name, t in wanted.items()
+                  if lower_fn and name in existing and name not in stale and is_mp3(name)
+                  and t["id"] not in peaks]
+    if unmeasured and dry_run:
+        log.info("  would check %d cached tracks for clipping", len(unmeasured))
+    elif unmeasured:
+        log.info("Checking %d cached tracks for clipping", len(unmeasured))
+        measured, measuring = {"n": 0}, threading.Lock()
+
+        def measure(item):
+            name, t = item
+            try:
+                peak = peak_fn(os.path.join(tracks_dir, name))
+            except Exception as e:
+                log.warning("Couldn't check %s for clipping (%s); next run tries again",
+                            label(t), e)
+                return
+            with measuring:      # at full level: undo any steps the file already has
+                peaks[t["id"]] = round(peak + label_steps(current_label(t)) * GAIN_STEP, 2)
+                measured["n"] += 1
+                if show and measured["n"] % 10 == 0:
+                    show("preparing", "--done", str(measured["n"]), "--total",
+                         str(len(unmeasured)), "--detail", f"Checking for clipping: {label(t)}")
+        with ThreadPoolExecutor(resolve_workers(cfg["sync"].get("workers", "auto"))) as pool:
+            list(pool.map(measure, unmeasured))
+        log.info("Clipping check: %d of %d cached tracks would clip",
+                 sum(peaks.get(t["id"], -99) > CLIP_CEILING for _, t in unmeasured),
+                 len(unmeasured))
+    if lower_fn:
+        settle_albums()
     missing = [(name, t) for name, t in wanted.items()
                if name not in existing or name in stale]
 
     # Songs already on every player in their current encoding ("held") can
     # do without a cache file. Fetch songs the player lacks first (playlist
-    # songs before the rest), then mirror held ones while there's room.
+    # songs before the rest), then mirror held ones while there's room. An MP3
+    # never checked for clipping isn't held: it's fetched to be checked.
     on_player = on_player or {}
     held = {name for name, t in wanted.items()
-            if on_player.get(t["id"]) and on_player[t["id"]] <= {None, made_as(t)}}
+            if on_player.get(t["id"]) and on_player[t["id"]] <= {None, current_label(t)}
+            and (not lower_fn or not is_mp3(name) or t["id"] in peaks)}
     missing.sort(key=lambda nt: (nt[0] in held, not any(
         s.startswith("playlist:") for s in sources.get(nt[1]["id"], []))))
 
@@ -1283,6 +1446,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         write_json_atomic(os.path.join(cache_dir, dock_room.DATES_FILE), dates)
     shutil.rmtree(tmp_dir, ignore_errors=True)    # leftovers from a cut-off run
     os.makedirs(tmp_dir)
+    if lower_fn:
+        align()                  # cached MP3s to their album's steps
 
     # Tracks that left every target: kept for the grace period (re-adding
     # one reuses the file), then deleted; sooner if space is short.
@@ -1436,6 +1601,25 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 os.remove(src)
             else:
                 out = src
+            if lower_fn and is_mp3(name):
+                # Measured at full level; lowered to its album's steps, which grow if
+                # this song needs more (album-mates made earlier follow at the end).
+                peak = peak_fn(out)
+                with lock:
+                    peaks[t["id"]] = round(peak, 2)
+                    key = album_key(t)
+                    album_steps[key] = max(album_steps.get(key, 0), steps_needed(peak))
+                    steps = album_steps[key]
+                if steps:
+                    lower_fn(out, steps)
+                    log.info("Lowered %.1f dB so it doesn't clip (%+.2f dBFS at full level)%s: %s",
+                             1.5 * steps, peak, "" if steps == steps_needed(peak)
+                             else ", as its album", label(t))
+                with lock:
+                    made_with[t["id"]] = gain_label(made_as(t), steps)
+            else:
+                with lock:
+                    made_with[t["id"]] = made_as(t)
             try:
                 covers[t["id"]] = shrink_cover(out, cover_cache)
                 if covers[t["id"]] == "none":
@@ -1492,7 +1676,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             **({"folder_album": t["folder_album"]} if t.get("folder_album") else {}),
             "source_suffix": t.get("suffix"),
             "converted": bool(format_of(t)),
-            "encoding": made_as(t),
+            "encoding": current_label(t),
+            **({"peak": peaks[t["id"]]} if t["id"] in peaks else {}),
             "sources": sources.get(t["id"], []),
             **({"cover": covers[t["id"]], "cover_max": COVER_MAX}
                if covers.get(t["id"], "unchecked") != "unchecked" else {}),
@@ -1529,6 +1714,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "targets": cfg["sync"]["targets"], "device": device,
             "playlist_tag": cfg["sync"].get("playlist_tag", ""),
             **({"make_room_months": months} if cfg["sync"].get("make_room", False) else {}),
+            **({"make_room_albums": True} if cfg["sync"].get("make_room", False)
+               and cfg["sync"].get("make_room_albums", True) else {}),
             **({"favorite_rating": cfg["sync"].get("favorite_rating", 4)}
                if cfg["sync"].get("favorite_rating", 4) else {}),
             **({"lossless_playlists": lossless_lists} if lossless_lists else {}),
@@ -1635,6 +1822,9 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             f.result()
     kept.save()
     added = progress["added"]
+    if lower_fn and added:
+        settle_albums()          # a song made this run may have needed more steps
+        align()                  # than album-mates made before it
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -1651,7 +1841,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         log.info("Dropped %d cached tracks that are on the player, to make room", evicted)
     return {"total": len(wanted), "ready": len(manifest["tracks"]) + len(manifest["on_player"]),
             "added": added, "removed": len(newly_removed), "skipped": skipped,
-            "evicted": evicted, "batches": handed["batches"]}
+            "evicted": evicted, "batches": handed["batches"], "lowered": lowered["n"]}
 
 
 def show_plan(manifest):
@@ -1730,9 +1920,14 @@ def update_args():
     return ["--update-note", line] if line else []
 
 
-def pending_args(manifest):
+COMING_BACK = "coming_back.json"   # in the cache: songs last found coming back
+
+
+def pending_args(manifest, cache_dir=None):
     """DOCK READY arguments saying what the next sync will do to the most
-    recently synced player (+adds, -removes), or [] if none synced yet."""
+    recently synced player (+adds, -removes), or [] if none synced yet. With
+    `cache_dir`, songs taken off to make room that have been played lately
+    count as adds: the sync brings them back (dock_room.coming_back)."""
     try:
         import ipod_handler
         from dock_record import Record
@@ -1743,9 +1938,12 @@ def pending_args(manifest):
                 return update_args()
             records = record.tracks(player["guid"])
             counted = ipod_handler.counted_ids(record, player["guid"], records)
+            back = (dock_room.coming_back(manifest, cache_dir, record, player["guid"],
+                                          time.time()) if cache_dir else set())
         finally:
             record.close()
         add, remove = ipod_handler.pending_changes(manifest, counted)
+        add += len(back)
         lossless, other, held = ipod_handler.conversions_ready(
             manifest, records, player.get("swaps_no_room"))
         return ["--pending-add", str(add), "--pending-remove", str(remove),
@@ -1771,6 +1969,38 @@ def safe_hours_args(window, connected, screen, now=None):
         return None
     end = dock_safehours.clock_text(dock_safehours.window_end(window, now))
     return ["safehours", "--detail", f"Syncs resume at {end}"]
+
+
+def played_again(cache_dir):
+    """True if songs taken off the last-synced player to make room have just been
+    played again (in Navidrome's web or desktop app, user 2026-11-04), so its next
+    sync brings them back. Only new ones count, so a docked player isn't asked to
+    sync again every check. Remembered in COMING_BACK."""
+    try:
+        from dock_record import Record
+        record = Record()
+        try:
+            player = record.last_synced_player()
+            back = sorted(dock_room.coming_back(read_manifest(cache_dir), cache_dir, record,
+                                                player["guid"], time.time())) if player else []
+        finally:
+            record.close()
+    except Exception:
+        log.exception("Couldn't check for songs played again (continuing)")
+        return False
+    path = os.path.join(cache_dir, COMING_BACK)
+    try:
+        with open(path) as f:
+            before = set(json.load(f))
+    except (OSError, ValueError):
+        before = set()
+    if set(back) != before:
+        write_json_atomic(path, back)
+    new = set(back) - before
+    if new:
+        log.info("%d song(s) taken off to make room were played again: the next sync "
+                 "brings them back", len(new))
+    return bool(new)
 
 
 def has_pending(idle_args):
@@ -1947,7 +2177,7 @@ def main(argv=None):
         again); the end of the run waits for that sync, then asks."""
         if args.dry_run or args.preview_dir or not cfg["device"].get("auto_resync", True):
             return
-        if not has_pending(["idle"] + pending_args(manifest)):
+        if not has_pending(["idle"] + pending_args(manifest, cache_dir)):
             return
         if shutil.which("systemctl") and sync_running():
             if batch:
@@ -1960,7 +2190,7 @@ def main(argv=None):
             if resync_coming():
                 log.info("The next sync is already on its way")
                 return True
-            if not has_pending(["idle"] + pending_args(manifest)):
+            if not has_pending(["idle"] + pending_args(manifest, cache_dir)):
                 return False
         try:
             import dock_resync
@@ -2040,7 +2270,7 @@ def main(argv=None):
 
     idle = ["idle", "--ready", str(summary["ready"]), "--total", str(summary["total"])]
     if not args.dry_run:
-        idle += pending_args(read_manifest(cache_dir))
+        idle += pending_args(read_manifest(cache_dir), cache_dir)
     pending = list(idle)                    # DOCK READY's arguments: what's left to sync
     if not args.dry_run:
         info = dock_restore.for_last_player(read_manifest(cache_dir))
@@ -2050,7 +2280,12 @@ def main(argv=None):
             idle = dock_restore.screen_args(
                 info, f"Next sync: +{adds:,}" if adds else "Preparing the next part")
     prev_ready = len(previous.get("tracks", [])) + len(previous.get("on_player", []))
-    changed = summary["added"] or summary["removed"] or prev_ready != summary["ready"]
+    # Lowered MP3s count too: a docked iPod needs the new files (2026-11-04: 3,646
+    # songs lowered, 0 added, and the docked Classic wasn't asked to sync).
+    changed = (summary["added"] or summary["removed"] or summary.get("lowered")
+               or prev_ready != summary["ready"])
+    if not args.dry_run and not args.preview_dir and played_again(cache_dir):
+        changed = True           # a docked iPod gets them back now, not at its next dock
     if args.preview_dir:
         if changed:
             show(*idle)

@@ -107,6 +107,7 @@ the name if nothing shows two people (MediaDock.txt lists these).
 This only changes the names on the iPod, not in Navidrome.
 Compilations can list as one artist instead: see CompilationAlbums below.
 A name split by mistake can be kept whole: see ArtistNames below.
+One artist spelled two ways can list as one: see ArtistAliases below.
 When a song leaves all of those, the next sync removes it from the iPod;
 {removal}
 
@@ -160,7 +161,13 @@ Which music syncs:
                          a comma, & or / that the dock would otherwise split.
                          Separate them with ;. This replaces the whole list;
                          =none clears it
-  SyncStarred=no         stop syncing starred songs, e.g. to keep a big
+  ArtistAliases=Beatles = The Beatles
+                         list an artist's other spelling (e.g. a name also
+                         written in another script) under one name: the
+                         spelling, then = and the name to show. Separate
+                         them with ;. This replaces the whole list; =none
+                         clears it
+  SyncStarred=no        stop syncing starred songs, e.g. to keep a big
                          library starred in a desktop app while the iPod
                          gets playlists only; SyncStarred=yes turns it back
                          on (SyncFavorites= means the same)
@@ -199,7 +206,12 @@ FULL. Nothing is removed unless you turn this on:
                       takes. A song's date is its last play, when it reached
                       the player, or when a playlist holding it changed,
                       whichever is newest. Favorites go by plays like the
-                      rest. A removed song returns when there's free room.
+                      rest. A removed song returns when there's free room,
+                      or as soon as it's played again in Navidrome (web or
+                      desktop app). MediaDock.txt lists what was taken off.
+                      Whole albums go: an album's date is its newest song's,
+                      so one recent play keeps it, or brings it back whole.
+  MakeRoomAlbums=no   songs go one by one instead of whole albums
   RecentPlayMonths=3  (the default) songs newer than this are never removed
 
 A song starred as a single that your library also has on an album or EP goes

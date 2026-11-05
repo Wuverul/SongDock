@@ -28,7 +28,9 @@ split. feat./ft./w/ need no evidence.
 
 Spellings that differ only in case or punctuation ("leavv"/"Leavv", "El.
 Train"/"El Train") become the most common one, like the album names in
-dock_prepare.unify_album_names.
+dock_prepare.unify_album_names. Others the user names in [sync] artist_aliases
+(user, 2026-11-04: one artist tagged in two scripts listed twice), before any of
+the above and even with primary_artist off.
 """
 
 import re
@@ -56,6 +58,59 @@ def compilations(entries):
 def same_artist(name):
     """What two spellings of one artist share: no case, no punctuation."""
     return re.sub(r"\W", "", name).casefold() or name.casefold()
+
+
+def aliases(entries):
+    """{spelling as same_artist() sees it: name} from artist_aliases entries
+    "other spelling = name"."""
+    found = {}
+    for entry in entries or ():
+        other, _, name = entry.partition("=")
+        if other.strip() and name.strip():
+            found[same_artist(other.strip())] = name.strip()
+    return found
+
+
+# Between the names of a credit: PARTNERS, or where the guests start.
+SEPARATORS = re.compile(r"(\s*[,;]\s*|\s+•\s+|\s+[&/]\s+"
+                        r"|\s+[(\[]?(?:feat\.?|ft\.?|featuring|w/)\s+)", re.I)
+
+
+def renamed(credit, names):
+    """`credit` with each name `names` (aliases()) lists replaced: the whole
+    credit, or one name in it ("X & Y", "Song feat. X"). Never part of a name."""
+    if not names or not credit:
+        return credit
+    if same_artist(credit) in names:
+        return names[same_artist(credit)]
+    parts = SEPARATORS.split(credit)
+    for i in range(0, len(parts), 2):               # names; separators between them
+        name, close = re.match(r"(.*?)([)\]]*)$", parts[i]).groups()
+        if name and same_artist(name) in names:
+            parts[i] = names[same_artist(name)] + close
+    return "".join(parts)
+
+
+def apply_aliases(songs, entries):
+    """Rename the artists [sync] artist_aliases lists, in each song's artist and
+    album artist (and Navidrome's lists of them, the evidence tidy() reads).
+    Changes the song records in place. Returns how many changed."""
+    names = aliases(entries)
+    if not names:
+        return 0
+    changed = 0
+    for song in songs:
+        before = [song.get(f) for f in ("artist", "displayAlbumArtist", "albumArtist")]
+        for field in ("artist", "displayAlbumArtist", "albumArtist"):
+            if song.get(field):
+                song[field] = renamed(song[field], names)
+        for field in ("artists", "albumArtists"):
+            if song.get(field):
+                song[field] = [{**a, "name": renamed(a.get("name", ""), names)}
+                               for a in song[field]]
+        changed += before != [song.get(f) for f in ("artist", "displayAlbumArtist",
+                                                     "albumArtist")]
+    return changed
 
 
 def without_guests(credit):

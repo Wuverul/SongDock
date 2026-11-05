@@ -76,7 +76,7 @@ else
 fi
 
 # 2. System packages (only the missing ones) -----------------------------------
-PACKAGES="ffmpeg rsync eject dosfstools python3-pil python3-gpiozero python3-lgpio python3-spidev
+PACKAGES="ffmpeg mp3gain rsync eject dosfstools python3-pil python3-gpiozero python3-lgpio python3-spidev
           python3-venv fonts-dejavu-core"
 MISSING=""
 for pkg in $PACKAGES; do

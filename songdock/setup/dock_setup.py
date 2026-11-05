@@ -9,6 +9,7 @@ and the list of known iPods written into its MediaDock.txt.
     LosslessTag=none             no lossless songs on this dock (default #lossless)
     CompilationAlbums=A = B; C   these compilations list as one artist ("none" = off)
     ArtistNames=Now, Now; A & B  these credits are one artist, never split ("none" = off)
+    ArtistAliases=Beatles = The Beatles   list that spelling under this name ("none" = off)
     SyncStarred=no               don't sync starred songs (also SyncFavorites=)
     Server=https://music.example.com      a new Navidrome address (or several,
                                           comma-separated, in the order to try); needs
@@ -30,6 +31,7 @@ and the list of known iPods written into its MediaDock.txt.
     FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
     AutoUpdate=no                new releases are announced, not installed
     MakeRoom=yes                 a full player loses its oldest songs for new ones
+    MakeRoomAlbums=no            with MakeRoom=yes, songs go one by one, not whole albums
     RecentPlayMonths=3           with MakeRoom=yes, how far back songs are safe
                                  from removal (also orders the dock's cache)
 
@@ -63,12 +65,13 @@ GUIDE_FILE = "MediaDock README.txt"     # the manual (dock_guide.py)
 ACTIONS = {"forget": dock_players.forget, "keep": dock_players.keep}
 SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
             "compilationalbums": "CompilationAlbums", "artistnames": "ArtistNames",
+            "artistaliases": "ArtistAliases",
             "syncstarred": "SyncStarred",
             "syncfavorites": "SyncStarred", "server": "Server", "username": "Username",
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
-            "makeroom": "MakeRoom", "autoupdate": "AutoUpdate",
+            "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate",
             "favoriterating": "FavoriteRating", "singlesalbum": "SinglesAlbum"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
@@ -172,6 +175,17 @@ def plan_settings(settings, cfg):
         changes[("sync", "artist_names")] = names
         done.append(f"{len(names)} artist name(s) kept whole" if names
                     else "No extra artist names kept whole")
+    if "ArtistAliases" in settings:
+        value = settings["ArtistAliases"]
+        off = value.lower() in ("none", "off")
+        renames = [] if off else \
+            [" = ".join(p.strip() for p in a.split("=", 1)) for a in value.split(";") if a.strip()]
+        if not off and (not renames or not all(
+                "=" in a and all(p.strip() for p in a.partition("=")[::2]) for a in renames)):
+            raise SetupFileError('ArtistAliases needs "other spelling = name" (or "none")')
+        changes[("sync", "artist_aliases")] = renames
+        done.append(f"{len(renames)} artist spelling(s) renamed" if renames
+                    else "No artist spellings renamed")
     if "SyncStarred" in settings:
         on = yes_no("SyncStarred", settings["SyncStarred"])
         targets = ([t for t in targets if t != "starred"] if not on else
@@ -284,6 +298,11 @@ def plan_settings(settings, cfg):
             done.append("Make room on full players " + ("on" if on else "off"))
         else:
             done.append("Make room already " + ("on" if on else "off"))
+    if "MakeRoomAlbums" in settings:
+        on = yes_no("MakeRoomAlbums", settings["MakeRoomAlbums"])
+        if on != cfg["sync"].get("make_room_albums", True):
+            changes[("sync", "make_room_albums")] = on
+        done.append("Making room by " + ("whole albums" if on else "song"))
     if "RecentPlayMonths" in settings:
         try:
             months = int(settings["RecentPlayMonths"])
@@ -442,11 +461,32 @@ def summary_line(result):
 LAST_RESULT = "Last DockSetup.txt"
 
 
-def marker_text(players, this_guid, intro, result=None, previous="", notes=None):
+ROOM_LISTED = 50       # songs taken off to make room, listed in MediaDock.txt
+
+
+def removed_lines(removed, shown=ROOM_LISTED):
+    """MediaDock.txt's list of songs taken off to make room (user, 2026-11-04:
+    removals logged in a status file). `removed`: Record.room_removed_songs."""
+    if not removed:
+        return []
+    lines = ["", f"Taken off this iPod to make room ({len(removed)}; newest first). They come",
+             "back when there's room, or when played again in Navidrome:"]
+    for r in removed[:shown]:
+        day = datetime.fromtimestamp(r["removed_at"]).strftime("%Y-%m-%d")
+        name = f"{r.get('artist') or '?'} - {r.get('title') or r['navidrome_id']}"
+        lines.append(f"  * {day}  {name}" + (f" ({r['album']})" if r.get("album") else ""))
+    if len(removed) > shown:
+        lines.append(f"  ... and {len(removed) - shown} more (musicdock-status on the dock)")
+    return lines
+
+
+def marker_text(players, this_guid, intro, result=None, previous="", notes=None,
+                removed=None):
     """MediaDock.txt: the opt-in note, the iPods the dock knows, and how to
     use DockSetup.txt. `result`: this sync's DockSetup.txt outcome; without
     one, the last outcome is carried over from `previous` (the old text).
-    `notes`: dock_limits' notes about this player's size."""
+    `notes`: dock_limits' notes about this player's size. `removed`: songs
+    taken off it to make room (Record.room_removed_songs)."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = [intro.rstrip("\n"), "", f"iPods this dock syncs (as of {now}):"]
     for p in players:
@@ -460,6 +500,7 @@ def marker_text(players, this_guid, intro, result=None, previous="", notes=None)
                          f"{dock_players.when(p['last_sync'])}")
     if notes:
         lines += ["", "About this iPod:"] + [f"  * {n}" for n in notes]
+    lines += removed_lines(removed)
     lines += [
         "",
         "Replaced an iPod? Retire the old one with a DockSetup.txt, e.g.",
@@ -478,7 +519,8 @@ def marker_text(players, this_guid, intro, result=None, previous="", notes=None)
     return "\n".join(lines) + "\n"
 
 
-def write_marker(root, marker, players, this_guid, intro, result=None, notes=None):
+def write_marker(root, marker, players, this_guid, intro, result=None, notes=None,
+                 removed=None):
     """Rewrite MediaDock.txt (keeping its existing spelling) with the list."""
     path = find_file(root, marker) or os.path.join(root, marker)
     try:
@@ -486,7 +528,7 @@ def write_marker(root, marker, players, this_guid, intro, result=None, notes=Non
             previous = f.read()
     except OSError:
         previous = ""
-    text = marker_text(players, this_guid, intro, result, previous, notes)
+    text = marker_text(players, this_guid, intro, result, previous, notes, removed)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
         f.flush()

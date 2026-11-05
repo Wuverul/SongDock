@@ -29,10 +29,14 @@ SYNC_FILE = "batch-sync.json"
 
 
 def folder():
+    # A state file set by hand (tests, previews) comes first: the tests run on
+    # the Pi read and changed the dock's real progress (2026-11-04).
+    state = os.environ.get("DOCK_STATE_FILE")
+    if state:
+        return os.path.dirname(state)
     if os.path.isdir("/run/musicdock"):
         return "/run/musicdock"
-    state = os.environ.get("DOCK_STATE_FILE")
-    return os.path.dirname(state) if state else os.path.dirname(dock_record.DEFAULT_PATH)
+    return os.path.dirname(dock_record.DEFAULT_PATH)
 
 
 def _read(name):

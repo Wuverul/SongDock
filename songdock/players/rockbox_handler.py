@@ -358,6 +358,8 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
     room_rows = record.room_removed(guid)
     record.clear_room_removed(guid, [n for n in room_rows if n in present or n not in keep])
     rules = dock_room.rules(manifest, cache_dir, record, now)
+    if rules:                                 # an album's date counts its songs' too
+        rules.added = {nid: r.get("added_at") for nid, r in present.items()}
     returning = {n for n in room_rows
                  if n in wanted and n not in present and not (rules and rules.recent(n))}
     new_songs = [t for nid, t in wanted.items() if nid not in present and nid not in returning]
@@ -366,11 +368,12 @@ def apply_plan(record, guid, mount, manifest, cache_dir, progress=None, playlist
     free = shutil.disk_usage(mount).free
     victims = []
     if rules and not (deadline and wall() >= deadline):
-        victims = dock_room.pick(
-            [ipod_handler.file_size(cached(t)) for t in new_songs],
+        victims = dock_room.choose(
+            rules, [ipod_handler.file_size(cached(t)) for t in new_songs],
             free - FREE_SPACE_MARGIN + freed,
             [(rules.date(nid, r.get("added_at")), nid, on_disk(r)) for nid, r in present.items()
-             if nid in keep and nid not in changed and not rules.recent(nid, r.get("added_at"))])
+             if nid in keep and nid not in changed and not rules.recent(nid, r.get("added_at"))],
+            present)
     freed += sum(on_disk(present[nid]) for nid in victims)
     no_room = ipod_handler.swaps_without_room(
         free,

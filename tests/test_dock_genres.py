@@ -111,12 +111,6 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(g.release_types({"releaseTypes": ["Live"]}), ["live"])
         self.assertEqual(g.release_types({}), [])
 
-    def test_example_config_matches_defaults(self):
-        with open(os.path.join(HERE, "..", "config.example.toml"), "rb") as f:
-            example = tomllib.load(f)["genres"]
-        self.assertEqual(example["groups"], g.DEFAULT_GROUPS)
-        self.assertEqual(example["unmatched"], g.DEFAULT_UNMATCHED)
-
 
 if __name__ == "__main__":
     unittest.main()

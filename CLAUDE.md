@@ -194,6 +194,20 @@ pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
 ## Credentials
 
 - Config lives at `~/.config/musicdock/config.toml` on the Pi, mode `600`.
+- **`config.example.toml` layout (user, 2026-11-04):** four tiers for a person setting
+  up, top to bottom: 1. REQUIRED (`server.*`, `sync.safe_hours` - on by default, the
+  user picks the window - and `device.write`, still false until the first read-only dock
+  checks out), 2. CHECK THESE, 3. OPTIONAL, 4. ADVANCED. Lines are `group.setting =
+  value` (TOML dotted keys) because a `[sync]` table can't be opened twice; tiers 3-4
+  are commented out showing the code's default, so docks follow later defaults. The
+  genre list moved to `genres.example.toml` (a copy in each config froze it). Setting
+  names and groups are unchanged, so older `[section]` configs load as before.
+  `dock_config.set_value` (DockSetup.txt) handles both layouts and switches a
+  `# group.setting = default` line on in place; a pasted `[group]` block in a dotted
+  file gets a hint in the load error. `tests/test_config_example.py` keeps the example
+  equal to `DEFAULTS` (every setting shown, defaults right, lines <= 88 columns);
+  `ExampleLayoutSettingsTests` re-runs every DockSetup test on the example. **A new
+  setting needs a line in the example** (the test fails otherwise).
 - Use Subsonic **token auth** (salted hash), not the plaintext password.
 - Never commit credentials. See `.gitignore` and `config.example.toml`.
 - The dock signs in as the user's own Navidrome account, because play counts
@@ -711,7 +725,13 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   and goes in the manifest's `unsplit_artists`, shown in MediaDock.txt and
   musicdock-status. `artists` can't decide it alone: it often holds a whole
   credit as one name. Spellings differing only in case or punctuation take
-  the most common. `KEEP_NAMES` + `[sync] artist_names` (`DockSetup.txt` `ArtistNames=`, separated by `;`, replaces the list; 2026-10-31) are never split;
+  the most common. **`[sync] artist_aliases`** (user, 2026-11-04; `DockSetup.txt`
+  `ArtistAliases=`, `;`-separated, replaces the list): `"other spelling = name"`, for an
+  artist tagged two ways that the case/punctuation rule can't join (on the Classic: one
+  artist also written in Japanese, listed twice). `apply_aliases` runs first, even with
+  `primary_artist = false`: whole names only (case/punctuation ignored), alone or as one
+  name of a credit, in artist, album artist and Navidrome's `artists`/`albumArtists`.
+  Names only, no re-copy. `KEEP_NAMES` + `[sync] artist_names` (`DockSetup.txt` `ArtistNames=`, separated by `;`, replaces the list; 2026-10-31) are never split;
   `primary_artist = false` turns it all off. **`[sync] compilation_albums`** (user,
   2026-10-30; `DockSetup.txt` `CompilationAlbums=`): albums whose name
   contains the words list as one artist, ahead of the rules above, e.g.
@@ -789,6 +809,16 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   "Restoring 12,341/40,000: artist - title" and PREPARE & SYNC gets "On
   iPod n/N" (`--restored/--restore-total`). The prepare job keeps the
   pending check on DOCK READY's arguments (`pending`), not the screen's.
+  **The sync counts it after reconcile (2026-11-04):** `sync_player(on_reconciled=)`
+  passes the songs really on the player; before, a wiped iPod still looked full in the
+  record and no restore started. A restore shows SYNCING over a finished (`final`) run.
+- **A failed sync (2026-11-04):** a run's failed last sync ends the run (else its
+  "Synced n/37" showed on the next sync for `FINAL_FOR`). No restore from backup when the
+  player can't be written (`ipod_handler.UNWRITABLE`: unplugged, or made read-only after
+  an error; seen 2026-11-03, when the restore's own error replaced the real one); a
+  failed restore never hides the error. FAILED shows `dock_sync.failure_text`: what
+  happened + what to do (`--detail`, small line), e.g. "Player disconnected" / "Plug it
+  in again to finish"; the dock's own messages pass through.
 - `dock_wifiprefer.py` (2026-10-26, user request, after the dock sat on
   the far fallback network for ~14 h at 0.15 MB/s): NetworkManager joins
   the best saved network but never leaves a working one. Root timer
@@ -828,7 +858,11 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   a 208 MB tmpfs and the handler keeps `FREE_SPACE_MARGIN` (200 MB) free on
   a player, so the handler tests' fake iPods (in /tmp) need /tmp nearly
   empty: a stray 10 MB file there made 40 of them fail as "player full"
-  (2026-10-26).
+  (2026-10-26). **Tests never touch a live dock's state (2026-11-04):** they used
+  to read and rewrite /run/musicdock's progress files on the Pi (a real prepare
+  run failed 4 sync tests). `tests/isolate_state.py` sets `DOCK_STATE_FILE` to a
+  temp folder, and `dock_progress.folder()` puts it first; a new test module that
+  runs prepare/sync code must import it (after `dock_paths`).
 
 ## Development workflow
 
@@ -977,7 +1011,19 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   once their date is recent. Format swaps never push songs off. Dates live in
   cache/song_dates.json, not the plan; no file = nothing removed. Playlist dates
   are when the dock saw the song list change: Navidrome's `changed` moves on
-  every read of a smart playlist. Not on hardware yet.
+  every read of a smart playlist. Not on hardware yet. **By album (user, 2026-11-01;
+  built 2026-11-04):** `[sync] make_room_albums` (default true; `MakeRoomAlbums=`;
+  the plan carries `make_room_albums` only with `make_room`): a song's date is its
+  album's (newest of the album's songs in the plan, `Rules.date`; `Rules.added` from
+  the record's `added_at`), only whole albums go (`dock_room.choose` groups for
+  `pick`; an album with any song not allowed to go stays), and a recent play brings a
+  removed album back whole. Album = `dock_room.album_key`: album artist + `folder_album`
+  or `album`, case ignored, so "<Artist> Singles" songs stay apart. **Logged and brought back (user,
+  2026-11-04):** MediaDock.txt lists songs taken off (`Record.room_removed_songs`,
+  `dock_setup.removed_lines`). A song taken off that's played again in Navidrome's own
+  apps (its `played` date, via the dates file) is "coming back" (`dock_room.coming_back`):
+  +adds on DOCK READY, and `dock_prepare.played_again` (only newly recent songs,
+  cache/coming_back.json) makes the run ask a docked iPod to sync.
 - **Songs too big for the cache (2026-10-26, user: "people do some crazy
   things"):** a run stops at the first song that doesn't fit, so one that
   can't fit even in an emptied cache would block everything after it
@@ -1371,6 +1417,22 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   script idea: walk MP3 frames, gapless_data = bytes up to the 8th-from-
   last frame, samplecount = frames x 1152 - delay - padding (+1 frame for
   CBR "Info").
+- **No clipping (user, 2026-11-04; built, not on hardware yet):** loud masters made
+  into MP3 decode above 0 dBFS and the player clips them (33 of 40 sampled converted
+  songs, up to +3 dB; why the user's ALACs sounded better). `dock_prepare`: every
+  cached MP3 (converted or copied) is measured once (`decoded_peak`, ffmpeg astats on a
+  float decode, ~3 s on the Zero 2 W; plan field `peak` = at full level), then lowered
+  with **mp3gain** (`lower`: frame gain, exact 1.5 dB steps `GAIN_STEP`, no re-encoding,
+  ~60 ms; `-s s` writes no tag) to `CLIP_CEILING` (-0.2 dBFS). **One amount per album
+  (user's rule):** `album_key` (Navidrome albumId), steps = its loudest MP3's need,
+  never decreasing (`settle_albums`, `align` before and after a run's conversions).
+  The encoding label carries it ("mp3 v0 -1.5dB": `gain_label`/`base_label`/
+  `label_steps`); settings changes compare `base_label`, and the full label makes
+  players swap. An unchecked MP3 isn't "held" (fetched to be checked). Without mp3gain
+  (older install) a warning and no lowering. Not covered: `convert_to = "aac"` (no
+  aacgain), AAC copied as-is. Tried and rejected: re-encoding with ffmpeg `volume`
+  (~2x conversion time), a -14 LUFS target (ebur128 true peak is as slow as encoding,
+  and it isn't what the user wanted).
 - **ffmpeg's built-in AAC encoder produces audible high-frequency artifacts**
   (user heard them on the Nano; measured 8-15 noise bursts per 28s vs 1 for
   Apple's encoder, and decoded peaks up to +3 dBFS on loud masters). The Pi
@@ -1381,4 +1443,8 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 - Don't draw on the panel inside a long-running process: the Waveshare driver
   holds the GPIO pins (and a busy-looping thread) until the process exits,
   which blocks other jobs ("GPIO busy") and slows conversion. `Screen` and
-  `dock_boot` draw via short-lived `dock_status.py` child processes.
+  `dock_boot` draw via short-lived `dock_status.py` child processes. Their exit
+  sometimes logged a "GPIO busy" traceback anyway, with nothing else drawing:
+  gpiozero's exit hook re-claims each pin and the kernel can answer EBUSY.
+  Harmless; `release_pins` (registered after the driver's import, so it runs
+  first) closes them quietly with one retry (2026-11-04).

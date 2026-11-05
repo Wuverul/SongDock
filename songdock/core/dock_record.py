@@ -383,6 +383,16 @@ class Record:
         rows = self.db.execute("SELECT * FROM room_removed WHERE guid = ?", (guid,))
         return {r["navidrome_id"]: dict(r) for r in rows}
 
+    def room_removed_songs(self, guid):
+        """Songs taken off this player to make room, newest first: [{navidrome_id,
+        artist, title, album, removed_at}] (names from the track's last record)."""
+        rows = self.db.execute(
+            "SELECT r.navidrome_id, r.removed_at, t.artist, t.title, t.album FROM room_removed r "
+            "LEFT JOIN tracks t ON t.rowid = (SELECT rowid FROM tracks WHERE guid = r.guid "
+            "AND navidrome_id = r.navidrome_id ORDER BY changed_at DESC LIMIT 1) "
+            "WHERE r.guid = ? ORDER BY r.removed_at DESC, t.artist, t.title", (guid,))
+        return [dict(r) for r in rows]
+
     def clear_room_removed(self, guid, song_ids):
         with self.db:
             self.db.executemany("DELETE FROM room_removed WHERE guid = ? AND navidrome_id = ?",

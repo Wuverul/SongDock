@@ -143,7 +143,9 @@ Everything here changes only what's on the player, unless it says otherwise.
   Various Artists album the first name in its credit, with anyone else moved to
   the title as "(feat. X)". A name split by mistake can be kept whole with
   `artist_names`, or `ArtistNames=` in a `DockSetup.txt`. `compilation_albums`
-  lists chosen compilations as one artist. `primary_artist = false` turns this off.
+  lists chosen compilations as one artist. One artist spelled two ways (e.g. also in
+  another script) lists once with `artist_aliases`, or `ArtistAliases=` in a
+  `DockSetup.txt`. `primary_artist = false` turns the rest off.
 - **Singles in one place:** an artist with 4 or more one-track albums gets them as
   one album, "<Artist> Singles", each song keeping its own art. Songs kept from a
   longer album don't count. `singles_album_min` (or `SinglesAlbum=` in a
@@ -158,11 +160,20 @@ Everything here changes only what's on the player, unless it says otherwise.
   commute. A sync running when the window opens stops early, leaving nothing missing,
   and a docked iPod syncs afterwards. Other players need plugging in again. Set
   `safe_hours`, or `"off"`.
+- **No clipping:** loud masters made into MP3 decode above full scale, which a player clips
+  into distortion. Every MP3 is measured, and lowered just enough not to clip, in 1.5 dB
+  steps that don't re-encode it (mp3gain). A whole album goes down by the same amount, its
+  loudest song's, so quiet and loud moments keep their balance. Albums that don't clip
+  are left as they are. ALAC and songs copied as-is (FLAC on Rockbox, AAC) aren't changed.
 - **When a player fills up:** new songs wait, and the screen shows PLAYER FULL. Nothing
   is removed unless you set `make_room = true` (off by default). Then the oldest songs
   make way, only as many as needed, oldest by last play, arrival on the player, or a
   change to a playlist holding them. Nothing newer than `recent_play_months` (default 3)
-  goes. Removed songs come back, with their iPod counts, when there's room.
+  goes. Removed songs come back, with their iPod counts, when there's room, or as soon
+  as you play them in Navidrome's web or desktop app. `MediaDock.txt` on the iPod lists
+  what was taken off. Whole
+  albums go and come back together, dated by their newest song
+  (`make_room_albums = false` for song by song).
 
 ## Which Raspberry Pi
 
@@ -205,7 +216,7 @@ Zero W: about 20 days of conversion, then ~40 hours of copying.
 **Have a Pwnagotchi you no longer use?** It's usually the same hardware:
 a Pi Zero W or Zero 2 W with a Waveshare 2.13" e-Paper HAT, so it can
 become a SongDock. Check the version printed on the back of the screen:
-**V4** is the tested one; **V3** and **V2** work too (set `[display] model`;
+**V4** is the tested one; **V3** and **V2** work too (set `display.model`;
 untested on real screens so far), and a V2 does a full refresh - a brief
 flash - on every update.
 
@@ -237,7 +248,7 @@ whole job:
 ![PREPARE & SYNC: converting 32/73, synced 25/87](docs/screen-prepsync.png)
 
 Every screen shows the time it was drawn, the Wi-Fi signal, and (when
-idle) the dock's IP address. With dark mode on (`[display] theme = "dark"`,
+idle) the dock's IP address. With dark mode on (`display.theme = "dark"`,
 for a dark case):
 
 ![SYNCING in dark mode](docs/screen-syncing-dark.png)
@@ -465,4 +476,5 @@ with no warranty. The libraries it installs keep their own licenses (below).
 - Tags and album art: [mutagen](https://github.com/quodlibet/mutagen) (GPL-2.0-or-later),
   [Pillow](https://python-pillow.org/)
 - E-ink display driver: Waveshare (MIT), bundled in `vendor/`; GPIO via gpiozero (BSD)
-- Conversion: ffmpeg with LAME (run as a separate program)
+- Conversion: ffmpeg with LAME, and mp3gain to lower MP3s without re-encoding (both run as
+  separate programs)

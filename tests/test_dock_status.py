@@ -12,6 +12,8 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
 import dock_paths  # noqa: E402,F401
+sys.path.insert(0, os.path.dirname(__file__))
+import isolate_state  # noqa: E402,F401  (before anything reads the dock's state)
 
 try:
     import dock_status
@@ -463,6 +465,37 @@ class V2PanelTests(unittest.TestCase):
             with mock.patch.object(dock_status, "display_settings", return_value=setting):
                 self.assertEqual(dock_status.panel_model(), model)
 
+
+
+@unittest.skipIf(dock_status is None, "Pillow not installed (pip install pillow)")
+class ReleasePinsTests(unittest.TestCase):
+    """The panel's pins are closed at exit before gpiozero tries, quietly."""
+
+    class Pin:
+        def __init__(self, fails=0):
+            self.fails, self.closed, self.tries = fails, False, 0
+
+        def close(self):
+            self.tries += 1
+            if self.tries <= self.fails:
+                raise RuntimeError("'GPIO busy'")
+            self.closed = True
+
+    def test_busy_pins_get_a_second_try_and_never_raise(self):
+        impl = mock.Mock(GPIO_RST_PIN=self.Pin(), GPIO_DC_PIN=self.Pin(fails=1),
+                         GPIO_PWR_PIN=self.Pin(fails=5), GPIO_BUSY_PIN=self.Pin())
+        impl.GPIO_BUSY_PIN.closed = True                     # already closed: left alone
+        with mock.patch.dict(sys.modules, {"waveshare_epd.epdconfig":
+                                           mock.Mock(implementation=impl)}):
+            dock_status.release_pins(retry_after=0)
+        self.assertEqual((impl.GPIO_RST_PIN.tries, impl.GPIO_RST_PIN.closed), (1, True))
+        self.assertEqual((impl.GPIO_DC_PIN.tries, impl.GPIO_DC_PIN.closed), (2, True))
+        self.assertEqual((impl.GPIO_PWR_PIN.tries, impl.GPIO_PWR_PIN.closed), (2, False))
+        self.assertEqual(impl.GPIO_BUSY_PIN.tries, 0)
+
+    def test_no_driver_loaded_is_fine(self):
+        with mock.patch.dict(sys.modules, {"waveshare_epd.epdconfig": None}):
+            dock_status.release_pins()
 
 
 if __name__ == "__main__":

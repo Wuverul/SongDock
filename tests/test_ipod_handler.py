@@ -14,6 +14,8 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
 import dock_paths  # noqa: E402,F401
 sys.path.insert(0, os.path.dirname(__file__))
+import isolate_state  # noqa: E402,F401  (before anything reads the dock's state)
+sys.path.insert(0, os.path.dirname(__file__))
 import dock_room  # noqa: E402
 import ipod_fixtures as fx  # noqa: E402
 import ipod_handler as h  # noqa: E402
@@ -830,6 +832,45 @@ class HandlerTests(unittest.TestCase):
         summary = self.apply_with_room(self.room_plan(songs + [new]), 0)     # no dates
         self.assertEqual((summary["removed"], summary["no_space"]), (0, 1))
 
+    def album_setup(self, spec):
+        """Songs n0, n1, ... on the player from (album, play age in days) pairs."""
+        self.rec.upsert_player(G, model="xB903")
+        self.now = 1_800_000_000
+        songs = [self.song(f"n{i}", f"Song {i}", album=album, track=i)
+                 for i, (album, _) in enumerate(spec)]
+        self.apply(self.manifest(songs))
+        self.rec.db.execute("UPDATE tracks SET added_at = 1000")
+        self.rec.db.commit()
+        self.write_dates({s["id"]: self.now - age * 86400 for s, (_, age) in zip(songs, spec)})
+        return songs
+
+    def test_whole_albums_go_dated_by_their_newest_song(self):
+        # n0 is the oldest song, but its album has n1 (300 days): B (200) is newer, so
+        # by song n0 would go; by album, all of A does.
+        songs = self.album_setup([("A", 400), ("A", 300), ("B", 200)])
+        new = self.song("new", "New", album="C", track=9)
+        summary = self.apply_with_room(dict(self.room_plan(songs + [new]),
+                                            make_room_albums=True), 0)
+        self.assertEqual((summary["removed"], summary["no_space"]), (2, 0))
+        self.assertEqual(self.on_player_ids(), ["n2", "new"])
+
+    def test_one_recent_play_keeps_an_album(self):
+        songs = self.album_setup([("A", 400), ("A", 10), ("B", 200)])
+        new = self.song("new", "New", album="C", track=9)
+        self.apply_with_room(dict(self.room_plan(songs + [new]), make_room_albums=True), 0)
+        self.assertEqual(self.on_player_ids(), ["n0", "n1", "new"])     # B went instead
+
+    def test_a_recent_play_brings_a_removed_album_back_whole(self):
+        songs = self.album_setup([("A", 400), ("A", 300), ("B", 200)])
+        new = self.song("new", "New", album="C", track=9)
+        plan = dict(self.room_plan(songs + [new]), make_room_albums=True)
+        self.apply_with_room(plan, 0)                                    # A made room
+        self.write_dates({"n0": self.now - 86400, "n1": self.now - 300 * 86400,
+                          "n2": self.now - 200 * 86400})                 # n0 played elsewhere
+        self.apply_with_room(plan, 1)
+        # By song, n1 would only return into free room: n0 would take it, n2 would stay.
+        self.assertEqual(self.on_player_ids(), ["n0", "n1", "new"])
+
     def test_removed_song_stays_off_quietly_then_returns_with_its_counts(self):
         songs = self.room_setup([400, 300])
         db = self.db()
@@ -1146,6 +1187,21 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(h.ensure_sysinfo(self.mount, G, self.rec, usb_product=0x1263,
                                           block_device="/dev/sda", read_serial=broken),
                          "xB903")
+
+    def test_a_guessed_model_says_so(self):
+        # 2026-11-02: a Classic 7G 160 GB was written down as xB029 with nothing in the
+        # log to show the serial number hadn't matched.
+        for serial, said in (("8K12345XXX", "ends in 'XXX'"), (None, "Couldn't read")):
+            open(h.sysinfo_path(self.mount), "w").close()
+            self.rec.db.execute("DELETE FROM players")
+            with mock.patch.object(h, "log_info") as log:
+                model = h.ensure_sysinfo(self.mount, G, self.rec, usb_product=0x1261,
+                                         block_device="/dev/sda",
+                                         read_serial=lambda dev, s=serial: s)
+            lines = " | ".join(c.args[0] for c in log.call_args_list)
+            self.assertEqual(model, "xB029")
+            self.assertIn(said, lines)
+            self.assertIn("guessed from its USB product ID (0x1261)", lines)
 
     def test_unknown_model_is_a_clear_error(self):
         open(h.sysinfo_path(self.mount), "w").close()

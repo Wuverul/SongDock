@@ -25,7 +25,7 @@ MAX_ERRORS = 10
 SHARED_SETTINGS = {
     "device": ("type", "convert_to", "mp3_quality", "flac", "write", "auto_resync"),
     "sync": ("max_cache_gb", "workers", "sync_batch_size", "check_interval_minutes",
-             "removal_grace_days", "recent_play_months", "make_room", "favorite_rating", "singles_album_min", "auto_update",
+             "removal_grace_days", "recent_play_months", "make_room", "make_room_albums", "favorite_rating", "singles_album_min", "auto_update",
              "safe_hours", "primary_artist"),
     "display": ("model", "theme", "invert"),
 }
@@ -166,7 +166,7 @@ def plan_lines(manifest, cache_dir):
     if not manifest:
         return ["No plan yet"]
     planned = [e for e, _ in dock_limits.planned_songs(manifest)]
-    formats = collections.Counter(e.get("encoding") or "?" for e in planned)
+    formats = collections.Counter(re.sub(r" -[\d.]+dB$", "", e.get("encoding") or "?") for e in planned)
     sources = collections.Counter((e.get("source_suffix") or "?").lower() for e in planned)
     total = dock_limits.plan_bytes(manifest)
     reasons = collections.Counter(re.sub(r"[\d.]+", "n", str(s.get("reason"))[:60])

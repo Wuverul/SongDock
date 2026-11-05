@@ -3,6 +3,7 @@
 Run from the project folder:  python3 -m unittest discover -s tests -v
 """
 
+import errno
 import logging
 import json
 import os
@@ -14,6 +15,8 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
 import dock_paths  # noqa: E402,F401
+sys.path.insert(0, os.path.dirname(__file__))
+import isolate_state  # noqa: E402,F401  (before anything reads the dock's state)
 import dock_sync  # noqa: E402
 from dock_sync import FakeDevice, SyncError, run_sync  # noqa: E402
 
@@ -152,6 +155,31 @@ class WorkTests(unittest.TestCase):
         self.assertIn("unmount", self.events)
         self.assertEqual(self.shown[-1], ("failed", ("--reason", "Player is full")))
 
+    def test_unplugged_player_says_so_and_what_to_do(self):
+        # 2026-11-03: FAILED said "[Errno 2] No such file or directory: '/media/...'".
+        dev = RecordingDevice(self.tmp.name, self.events)
+
+        def work(device, step):
+            raise OSError(errno.ENODEV, "No such device")
+        self.assertFalse(run_sync(dev, self.show, work=work))
+        self.assertEqual(self.shown[-1], ("failed", ("--reason", "Player disconnected",
+                                                     "--detail", "Plug it in again to finish")))
+
+    def test_failure_text(self):
+        dev = FakeDevice(self.tmp.name)
+        text = dock_sync.failure_text
+        self.assertEqual(text(OSError(errno.EROFS, "Read-only file system", "/media/x"), dev),
+                         ("Player stopped saving", "Plug it in again to retry"))
+        self.assertEqual(text(OSError(errno.EIO, "Input/output error"), dev)[0],
+                         "Player disconnected")
+        self.assertEqual(text(OSError(errno.EACCES, "Permission denied", "/media/x"), dev),
+                         ("Permission denied", "Details: musicdock-status"))
+        self.assertEqual(text(SyncError("Can't identify the player"), dev),
+                         ("Can't identify the player", None))      # already readable
+        unplugged = dock_sync.BlockDevice(os.path.join(self.tmp.name, "sda1"))
+        self.assertEqual(text(OSError(errno.ENOENT, "No such file", "/media/x"), unplugged)[0],
+                         "Player disconnected")                    # its device is gone
+
     def test_whole_disk(self):
         self.assertEqual(dock_sync.whole_disk("/dev/sda1"), "/dev/sda")
         self.assertEqual(dock_sync.whole_disk("/dev/sdb"), "/dev/sdb")
@@ -286,6 +314,7 @@ class OptInTests(unittest.TestCase):
         steps = []
 
         def sync_player(*a, **kw):
+            kw["on_reconciled"](set())            # the handler, once it has reconciled
             kw["progress"](0, 600, {"artist": "A", "title": "T"})
             return {"added": 1, "paused": True}
         with mock.patch("dock_record.Record", return_value=record), \
@@ -299,6 +328,32 @@ class OptInTests(unittest.TestCase):
         self.assertEqual(steps, ["Restoring 1/600: A - T"])
         self.assertTrue(summary["paused"])
         later.assert_not_called()                 # a fake device: nothing to re-plug
+
+    def test_restore_is_counted_from_what_the_handler_found(self):
+        # The record still listed a wiped iPod's 600 songs; the handler found none.
+        self.ipod(marker="MediaDock.txt")
+        with open(os.path.join(self.root, "manifest.json"), "w") as f:
+            json.dump({"tracks": [{"id": f"s{i}"} for i in range(600)]}, f)
+        cfg = {"sync": {"cache_dir": self.root},
+               "server": {"url": "https://x", "username": "u", "password": "p"}}
+        record = mock.Mock()
+        record.player.return_value = {"guid": "G"}
+        record.tracks.return_value = [{"navidrome_id": f"s{i}"} for i in range(600)]
+        record.room_removed.return_value = {}
+        dev = FakeDevice(self.root)
+        dev.make_writable = mock.Mock()
+        found = []
+
+        def sync_player(*a, **kw):
+            kw["on_reconciled"](set())
+            found.append(dict(dock_sync.RESTORE))
+            return {"added": 0}
+        with mock.patch("dock_record.Record", return_value=record), \
+                mock.patch("ipod_handler.sync_player", side_effect=sync_player), \
+                mock.patch("dock_restore.state_path",
+                           return_value=os.path.join(self.root, "restore.json")):
+            dock_sync.make_ipod_work(cfg, "G", 0x1263, True)(dev, lambda *a, **k: None)
+        self.assertEqual(found, [{"have": 0, "total": 600}])
 
     def test_the_player_type_reaches_the_screens(self):
         self.ipod(marker="MediaDock.txt")
@@ -544,8 +599,10 @@ class PrepareAndSyncScreenTests(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root = tmp.name
-        os.environ["DOCK_STATE_FILE"] = os.path.join(self.root, "state", "s.json")
-        self.addCleanup(os.environ.pop, "DOCK_STATE_FILE")
+        env = mock.patch.dict(os.environ,
+                              {"DOCK_STATE_FILE": os.path.join(self.root, "state", "s.json")})
+        env.start()
+        self.addCleanup(env.stop)            # back to isolate_state's folder, not unset
         import dock_progress
         self.dp = dock_progress
 
@@ -611,6 +668,45 @@ class PrepareAndSyncScreenTests(unittest.TestCase):
         last = self.sync(added=10)                                      # the follow-up
         self.assertEqual(last[-1][0], "safe")
         self.assertIsNone(self.dp.running_prepare())
+
+    def test_a_failed_last_sync_ends_its_run(self):
+        # 2026-11-01: an iPod pulled during a run's last sync; the next sync (a wiped
+        # iPod's restore) showed that run's "Synced n/37".
+        self.dp.write_prepare(run=666, done=37, total=37, batches=1)
+        self.dp.mark_final()
+
+        def work(device, step):
+            raise OSError(errno.ENODEV, "No such device")
+        run_sync(RecordingDevice(self.root, []), lambda *a, **k: None, work=work)
+        self.assertIsNone(self.dp.running_prepare())
+        self.assertFalse(any(s[0] == "prepsync" for s in self.sync()))
+
+    def test_a_failed_batch_sync_keeps_a_run_still_converting(self):
+        self.dp.write_prepare(run=777, done=10, total=60, batches=1)   # this process: alive
+
+        def work(device, step):
+            raise OSError(errno.ENODEV, "No such device")
+        run_sync(RecordingDevice(self.root, []), lambda *a, **k: None, work=work)
+        self.assertIsNotNone(self.dp.running_prepare())                 # the next batch joins it
+
+    def test_a_restore_shows_over_a_finished_run(self):
+        self.dp.write_prepare(run=888, done=37, total=37, batches=1)
+        self.dp.mark_final()
+        shown = []
+
+        def work(device, step):
+            dock_sync.RESTORE.update(have=0, total=2105)               # as count_restore does
+            step(5, "Restoring 1/2,105: A - T", part_done=0, part_total=2105)
+            return {"added": 1}
+        try:
+            run_sync(RecordingDevice(self.root, []),
+                     lambda s, *a, force=False: shown.append((s,) + a), work=work)
+        finally:
+            dock_sync.RESTORE.clear()
+        copying = [s for s in shown if "Restoring 1/2,105: A - T" in s]
+        self.assertEqual(copying[0][0], "syncing")                      # not the run's counts
+        self.assertEqual(shown[-1][0], "safe")
+        self.assertIsNone(self.dp.running_prepare())                    # its last sync: done
 
     def test_final_mark_expires(self):
         self.dp.write_prepare(run=444, done=60, total=60, batches=2)

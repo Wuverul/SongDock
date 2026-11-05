@@ -5,10 +5,13 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
 import dock_paths  # noqa: E402,F401
+sys.path.insert(0, os.path.dirname(__file__))
+import isolate_state  # noqa: E402,F401  (before anything reads the dock's state)
 import dock_prepare  # noqa: E402
 import dock_resync  # noqa: E402
 
@@ -152,7 +155,10 @@ class ResyncTests(unittest.TestCase):
         self.assertEqual(self.authorized(real), "1")
 
     def test_in_safe_hours_the_resync_waits_for_the_end(self):
-        with mock.patch.object(dock_resync, "safe_hours_window", return_value=(0, 1439)), \
+        # A window around now, at any hour: (0, 1439) wasn't open at 23:59.
+        now = datetime.now().hour * 60 + datetime.now().minute
+        window = ((now - 60) % 1440, (now + 60) % 1440)
+        with mock.patch.object(dock_resync, "safe_hours_window", return_value=window), \
                 mock.patch("dock_safehours.schedule_after") as later, \
                 mock.patch.object(dock_resync, "resync") as now, \
                 mock.patch.object(dock_resync, "REQUEST", self.request):

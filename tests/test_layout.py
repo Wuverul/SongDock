@@ -50,7 +50,7 @@ class LayoutTests(unittest.TestCase):
     def test_paths_the_code_relies_on(self):
         self.assertEqual(dock_paths.ROOT, ROOT)
         for rel in ("VERSION", "vendor", "pi/install.sh", "pi/release_signers",
-                    "config.example.toml"):
+                    "config.example.toml", "genres.example.toml"):
             self.assertTrue(os.path.exists(os.path.join(dock_paths.ROOT, rel)), rel)
         for name in ("dock_status.py", "dock_resync.py", "dock_update.py"):
             self.assertTrue(os.path.isfile(dock_paths.script(name)))

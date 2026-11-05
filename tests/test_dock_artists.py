@@ -243,5 +243,51 @@ class TidyTests(unittest.TestCase):
         self.assertEqual(songs[0]["artist"], "Mine, Yours")
 
 
+class AliasTests(unittest.TestCase):
+    """[sync] artist_aliases: one artist spelled two ways lists once (user, 2026-11-04)."""
+    ALIASES = ["Artist95 \u30a2\u30fc\u30c6\u30a3\u30b9\u30c895 = Artist 95"]
+
+    def song(self, artist, album_artist=None, **kw):
+        return {"id": artist, "artist": artist, "title": "T",
+                **({"displayAlbumArtist": album_artist} if album_artist else {}), **kw}
+
+    def test_whole_names_and_album_artists_are_renamed(self):
+        other = "Artist95 \u30a2\u30fc\u30c6\u30a3\u30b9\u30c895"
+        songs = [self.song(other, other, artists=[{"id": "x", "name": other}]),
+                 self.song("Artist 95", "Artist 95")]
+        self.assertEqual(a.apply_aliases(songs, self.ALIASES), 1)
+        self.assertEqual(songs[0]["artist"], "Artist 95")
+        self.assertEqual(songs[0]["displayAlbumArtist"], "Artist 95")
+        self.assertEqual(songs[0]["artists"], [{"id": "x", "name": "Artist 95"}])
+        self.assertEqual(a.group_singles(
+            [dict(self.song("Artist 95"), id=str(i), albumId=str(i)) for i in range(2)]
+            + [dict(songs[0], albumId="9")], {"0": 1, "1": 1, "9": 1}, minimum=3), 3)
+
+    def test_case_and_punctuation_dont_matter(self):
+        songs = [self.song("beatles"), self.song("Beatles!")]
+        a.apply_aliases(songs, ["Beatles = The Beatles"])
+        self.assertEqual([s["artist"] for s in songs], ["The Beatles", "The Beatles"])
+
+    def test_a_name_inside_a_credit_but_never_part_of_a_name(self):
+        songs = [self.song("Beatles & Someone"), self.song("Someone feat. Beatles"),
+                 self.song("Someone (feat. Beatles)"), self.song("Beatles Tribute Band"),
+                 self.song("The Beatles")]
+        a.apply_aliases(songs, ["Beatles = The Beatles"])
+        self.assertEqual([s["artist"] for s in songs],
+                         ["The Beatles & Someone", "Someone feat. The Beatles",
+                          "Someone (feat. The Beatles)", "Beatles Tribute Band", "The Beatles"])
+
+    def test_renamed_credits_then_split_as_usual(self):
+        songs = [self.song("Beatles feat. Someone"), self.song("The Beatles")]
+        a.apply_aliases(songs, ["Beatles = The Beatles"])
+        a.tidy(songs)
+        self.assertEqual((songs[0]["artist"], songs[0]["title"]), ("The Beatles", "T (feat. Someone)"))
+
+    def test_nothing_listed_changes_nothing(self):
+        songs = [self.song("Beatles")]
+        self.assertEqual(a.apply_aliases(songs, []), 0)
+        self.assertEqual(a.aliases(["no equals sign", " = x", "x = "]), {})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,11 +27,11 @@ class GuideTests(unittest.TestCase):
                                          playlist_tag="#car", removal_grace_days=0))
         for needle in ("MediaDock.txt", "wifi.txt", "SSID=", "Password=", "Hidden=yes",
                        "DockSetup.txt", "Forget=all others", "Keep=",
-                       "PlaylistTag=", "LosslessTag=none", "CompilationAlbums=", "ArtistNames=", "SyncStarred=no", "Server=", "Username=",
+                       "PlaylistTag=", "LosslessTag=none", "CompilationAlbums=", "ArtistNames=", "ArtistAliases=", "SyncStarred=no", "Server=", "Username=",
                        "NewLibrary=yes", "StockCompatible=no", "StockCompatible=yes", "FLAC=no",
                        "comment contains #car", "the playlist \"Road Trip\"",
                        "\"Favorites\"", "deleted right away", "SAFE TO REMOVE",
-                       "SafeHours=07:00-10:00", "RecentPlayMonths=3", "MakeRoom=yes", "AutoUpdate=no", "FavoriteRating=5", "SinglesAlbum=6", "UPDATING", "PLAYER FULL", "RESTORING", "SAFE HOURS"):
+                       "SafeHours=07:00-10:00", "RecentPlayMonths=3", "MakeRoom=yes", "MakeRoomAlbums=no", "AutoUpdate=no", "FavoriteRating=5", "SinglesAlbum=6", "UPDATING", "PLAYER FULL", "RESTORING", "SAFE HOURS"):
             self.assertIn(needle, text)
         self.assertLessEqual(max(len(line) for line in text.splitlines()), 80)
 

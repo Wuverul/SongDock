@@ -1,232 +1,156 @@
-# SongDock settings. The installer copies this to
-# ~/.config/musicdock/config.toml on the Pi (readable only by you); edit that
-# copy with:  nano ~/.config/musicdock/config.toml
-# Changes take effect at the next check (every check_interval_minutes, 5 by
-# default) or the next dock.
+# SongDock settings
+#
+# Edit on the Pi with:  nano ~/.config/musicdock/config.toml
+# (Ctrl-O, Enter to save; Ctrl-X to exit). Changes apply at the next check
+# (every 5 minutes) or the next time a player is docked.
+#
+# How to read this file:
+#   - Each line is  group.setting = value
+#   - A line starting with # is switched off: the dock uses the default shown.
+#     To change one, delete the "# " at the start and edit the value.
+#   - Text in quotes stays in quotes; true/false and numbers don't.
+#
+# Sections, in order:
+#   1. REQUIRED       set these before the first sync
+#   2. CHECK THESE    defaults most people keep, but look them over
+#   3. OPTIONAL       extra features, all with sensible defaults
+#   4. ADVANCED       change only if you know you need to
 
-[server]
-url = "http://192.168.1.50:4533"   # your Navidrome address, as reachable from the dock.
-                                   # https needs a properly signed certificate. Several
-                                   # addresses for the same server, in the order to try:
-                                   # ["http://192.168.1.50:4533", "https://music.example.com"]
-username = "your-navidrome-username"
-password = "your-navidrome-password"  # only used to sign requests; never sent as is
 
-[sync]
-targets = ["starred"]              # what to sync: "starred" and/or "playlist:<name>",
-                                   # e.g. ["starred", "playlist:Road Trip"]. A song in
-                                   # several lists is stored and copied once.
-favorites_playlist = "Favorites"   # player playlist made from "starred" ("" = none)
-playlist_tag = "#ipod"             # also sync any playlist whose Navidrome comment has
-                                   # this tag (any case). "" = off. Remove the tag to unsync.
-lossless_tag = "#lossless"         # songs in a playlist with this tag in its comment sync as
-                                   # ALAC (FLAC on Rockbox) if the server's copy is lossless;
-                                   # about 3x the space. "" = off, e.g. for a small iPod. Ignored
-                                   # until the dock has synced an iPod (or, on a Rockbox-only
-                                   # dock with flac = false, a Rockbox player).
-primary_artist = true              # one artist per song: the album's, else the first in the
-                                   # credit ("A & B" -> A), others as "(feat. B)" in the title.
-                                   # On the player only.
-artist_names = []                  # credits never to split, e.g. ["Now, Now"]; common ones
-                                   # are already known. Also ArtistNames= in DockSetup.txt.
-compilation_albums = []            # compilations to list as one artist, the songs' artists going
-                                   # to their titles. Any album whose name contains the words:
-                                   # ["Now That's What I Call Music",
-                                   #  "Chillhop Essentials = Chillhop Releases"] (= names the artist)
-cache_dir = "~/musicdock/cache"
-max_cache_gb = 20                  # music cached on the dock (about 2 MB per minute);
-                                   # up to ~35 on a 64 GB card. Also stops at 80% full.
-workers = "auto"                   # parallel conversions: "auto" = CPU cores - 1 (min 1)
-removal_grace_days = 7             # 0-30: keep tracks that left every list cached this
-                                   # long (re-adding is instant); deleted oldest-first
-                                   # sooner if the SD card drops below 25% free
-make_room = false                  # true: when new songs don't fit, a player loses its
-                                   # oldest songs, only as many as needed. false: nothing
-                                   # is removed; new songs wait and the screen says PLAYER FULL.
-recent_play_months = 3             # 0-120: with make_room, songs played, added or in a
-                                   # playlist updated within this long are never removed.
-                                   # Also decides which cached copies go first when the
-                                   # dock's cache is full (those songs stay on players).
-singles_album_min = 4              # an artist with this many one-track albums gets them as one
-                                   # album, "<Artist> Singles", each song keeping its own art.
-                                   # Only the player's names change. 0 = off.
-favorite_rating = 4                # (Rockbox players use a Keep playlist instead) songs newly rated this many stars or more on a stock
-                                   # iPod get favorited in Navidrome, once. 0 = never.
-auto_update = true                 # install new signed releases: announced for 4 hours,
-                                   # then installed once no player is connected.
-                                   # false: only says an update is available.
-check_interval_minutes = 5         # how often the dock checks Navidrome for new music
-                                   # and sends waiting plays (1-1440). A docked iPod syncs
-                                   # right after a check finds something. Takes effect by
-                                   # itself within a few seconds of saving this file.
-sync_batch_size = "auto"           # while converting, hand new tracks to a docked iPod in
-                                   # batches as the rest still convert (Pi with 2+ cores,
-                                   # e.g. Zero 2 W; a Zero W converts first anyway). "auto":
-                                   # 1/20 of the run, 25 to 500 tracks each. A number = that
-                                   # many; 0 = sync only once everything is converted.
-safe_hours = "07:00-10:00"         # no syncs in this daily window (local time), so you
-                                   # can grab the iPod in the morning. An iPod docked then
-                                   # just charges; a sync running when it starts finishes
-                                   # early. Either way it syncs afterwards if still docked.
-                                   # "off" = no safe hours.
+# =====================================================================
+# 1. REQUIRED: set these before the first sync
+# =====================================================================
 
-[device]
-type = "stock_ipod"                # stock_ipod: music converted for stock iPods (MP3/ALAC);
-                                   # Rockbox players get the same files. "rockbox": copy
-                                   # music as-is, FLAC included, for a Rockbox-only dock
-                                   # (stock iPods are then refused).
-flac = true                        # only with type = "rockbox": false converts FLAC to
-                                   # convert_to too, for players that can't play FLAC
-                                   # (cheap MP3 players); other formats stay as they are.
-                                   # A basic player in the dock's list converts Ogg, Opus
-                                   # and FLAC whatever this says.
-convert_to = "mp3"                 # stock iPod can't play FLAC. mp3 = LAME V0 (recommended);
-                                   # alac = lossless, ~3x larger; aac = ffmpeg's encoder (artifacts)
-mp3_quality = "v0"                 # v0 = variable, best (~260k avg); or constant "320k", "256k".
-                                   # Changing it re-converts the cache on the next prepare run.
-aac_bitrate = "256k"               # only used by convert_to = "aac"
-write = false                      # false: read-only check (plays still logged);
-                                   # true: full sync - copy tracks, playlists, removals
-auto_resync = true                 # an iPod left docked syncs again by itself when new
-                                   # music is ready (interrupts playback while docked)
+# Your Navidrome server: its address as the dock can reach it, and your own
+# account (plays are counted per account). The password is only used to sign
+# requests, never sent as is. https needs a properly signed certificate.
+# Several addresses for the same server, tried in order, also work:
+# ["http://192.168.1.50:4533", "https://music.example.com"]
+server.url = "http://192.168.1.50:4533"
+server.username = "your-navidrome-username"
+server.password = "your-navidrome-password"
 
-[display]
-theme = "light"                    # "light" (black on white) or "dark" (white on black,
-                                   # e.g. for a dark case). E-ink holds either colour
-                                   # without power: no extra wear. (Older configs used
-                                   # invert = true for dark; that still works when no
-                                   # theme is set.)
-model = "v4"                       # Waveshare 2.13" e-Paper HAT version, printed on the
-                                   # back of the screen: "v4" (tested), "v3" or "v2".
-                                   # A V2 does a full refresh (brief flash) every update.
+# Safe hours: a daily window when the dock doesn't sync, so you can grab the
+# iPod (say, for a morning commute) without waiting for a sync to finish. A
+# player docked then just charges. Set it to fit your day, local time, or
+# "off" for none.
+sync.safe_hours = "07:00-10:00"
 
-[genres]
-# The iPod's Genres menu. Navidrome gives songs several genre tags, and the
-# iPod showed every combination as its own genre. Instead, each song goes in
-# one of the groups below; only the iPod's copy changes, never Navidrome.
-# Order is priority: a song goes in the FIRST group with a keyword matching
-# any of its tags. Keywords match whole words, ignoring case and punctuation
-# ("rock" matches "alternative rock"; "pop" doesn't match "electropop").
-# "release:live" matches the album's release type in Navidrome, and
-# "album:chillhop" words in the album's name. Then each album takes the
-# group most of its songs got. Preview the result with:
-#   ~/musicdock/venv/bin/python ~/musicdock/app/dock_prepare.py --genres
-unmatched = ""                     # songs no group matches: "" = their tag that the
-                                   # most albums carry; or one name, e.g. "Other"
+# Music is only copied once this is true. Leave it false for the first dock:
+# the dock then only reads the iPod's plays, so you can check everything works.
+# Turn it on once section 2 looks right.
+device.write = false
 
-[[genres.groups]]
-name = "Live Recordings"
-match = ["release:live", "live"]
 
-[[genres.groups]]
-name = "Soundtracks"
-match = ["release:soundtrack", "soundtrack", "score", "ost",
-         "video game music", "musical", "show tunes"]
+# =====================================================================
+# 2. CHECK THESE: defaults most people keep, but look them over
+# =====================================================================
 
-[[genres.groups]]
-name = "Holiday"
-match = ["christmas", "holiday", "xmas"]
+# What goes on the iPod: your starred songs ("starred"), and any playlist
+# whose comment in Navidrome contains the tag below. To add a playlist by name
+# instead: ["starred", "playlist:Road Trip"]. Use [] with a tag for playlists only.
+sync.targets = ["starred"]
+sync.playlist_tag = "#ipod"          # "" = don't look for tagged playlists
 
-[[genres.groups]]
-name = "Children's"
-match = ["children", "kids", "nursery", "lullaby"]
+# The iPod playlist made from your starred songs ("" = none).
+sync.favorites_playlist = "Favorites"
 
-[[genres.groups]]
-name = "Spoken Word"
-match = ["spoken word", "comedy", "audiobook", "podcast", "poetry",
-         "speech", "non music"]
+# How much music the dock keeps on its SD card, in GB. About 2 MB per minute
+# of music. Up to ~35 on a 64 GB card; the dock also stops at 80% full.
+sync.max_cache_gb = 20
 
-[[genres.groups]]
-name = "Chiptune"
-match = ["chiptune", "chipstep", "bitpop", "8 bit"]
+# The screen: its version is printed on the back ("v4", "v3" or "v2"), and
+# "light" (black on white) or "dark" (white on black).
+display.model = "v4"
+display.theme = "light"
 
-[[genres.groups]]
-name = "Breakcore"
-match = ["breakcore", "dariacore", "digital hardcore", "speedcore",
-         "mashcore"]
 
-[[genres.groups]]
-name = "DnB"
-match = ["drum and bass", "drum n bass", "dnb", "jungle", "liquid funk",
-         "neurofunk"]
+# =====================================================================
+# 3. OPTIONAL: extra features. Delete the "# " to change one.
+# =====================================================================
 
-[[genres.groups]]
-name = "Lofi / Chill"
-match = ["album:chillhop", "album:lofi", "album:lo fi", "lo fi", "lofi",
-         "chill", "chillout", "chillhop", "trip hop", "new age"]
+# --- Lossless songs ---
+# Songs in a playlist with this tag in its comment go on the iPod lossless
+# (ALAC; FLAC on Rockbox) when Navidrome has them lossless. About 3x the
+# space: "" turns it off, e.g. for a small iPod.
+# sync.lossless_tag = "#lossless"
 
-[[genres.groups]]
-name = "Hip-Hop"
-match = ["hip hop", "hiphop", "boom bap", "rap", "trap", "grime", "drill"]
+# --- Favorites from the iPod ---
+# A song you rate this many stars on the iPod gets starred in Navidrome, once
+# (0 = never). Rockbox players use their Keep playlist instead.
+# sync.favorite_rating = 4
 
-[[genres.groups]]
-name = "Indie Rock"
-match = ["indie rock"]
+# --- When the iPod is full ---
+# Normally new songs wait and the screen says PLAYER FULL. With make_room,
+# the oldest music on the iPod makes way, only as much as needed.
+# sync.make_room = false
+#   Remove whole albums (an album's age is its newest song's), or song by song.
+# sync.make_room_albums = true
+#   Never remove music played, added or in a changed playlist within this
+#   many months. Also decides what leaves the dock's cache first when it's full.
+# sync.recent_play_months = 3
 
-[[genres.groups]]
-name = "Indie Pop"
-match = ["indie pop", "dream pop", "bedroom pop", "indietronica",
-         "art pop", "alternative pop"]
+# --- Artist and album names on the iPod (Navidrome is never changed) ---
+# One artist per song: the album's artist, with guests moved to the title
+# ("Song (feat. B)"). false = keep the names exactly as tagged.
+# sync.primary_artist = true
+#   Names with a comma, & or / that are one artist, never to be split,
+#   e.g. ["Now, Now", "Simon & Garfunkel"].
+# sync.artist_names = []
+#   One artist spelled two ways, listed under one name, as "other spelling =
+#   name", e.g. ["Beatles = The Beatles"].
+# sync.artist_aliases = []
+#   Compilations to list as one artist: albums whose name contains the words,
+#   optionally "= the name to show", e.g. ["Now That's What I Call Music",
+#   "Monthly Mix = My Mixes"].
+# sync.compilation_albums = []
+#   An artist with this many one-song albums gets them as one album,
+#   "<Artist> Singles" (0 = off).
+# sync.singles_album_min = 4
 
-[[genres.groups]]
-name = "Metal"
-match = ["metal", "metalcore", "deathcore", "grindcore", "djent"]
+# --- Updates and automatic syncing ---
+# Install new SongDock releases by themselves (announced on screen 4 hours
+# ahead, installed once no player is connected). false = only announce them.
+# sync.auto_update = true
+# An iPod left docked syncs again by itself when new music is ready
+# (playback stops while it syncs).
+# device.auto_resync = true
+# How often the dock checks Navidrome for new music, in minutes (1-1440).
+# sync.check_interval_minutes = 5
 
-[[genres.groups]]
-name = "Country"
-match = ["country", "bluegrass", "americana", "honky tonk"]
+# --- Genres ---
+# The iPod's Genres menu uses a built-in list of groups. To make your own,
+# see genres.example.toml next to this file.
 
-[[genres.groups]]
-name = "Folk"
-match = ["folk", "singer songwriter", "acoustic"]
 
-[[genres.groups]]
-name = "Rock"
-match = ["rock", "punk", "grunge", "emo", "post hardcore", "screamo",
-         "shoegaze"]
+# =====================================================================
+# 4. ADVANCED: change only if you know you need to
+# =====================================================================
 
-[[genres.groups]]
-name = "Electronic"
-match = ["electronic", "electronica", "edm", "house", "techno", "trance",
-         "dubstep", "brostep", "riddim", "electro", "complextro",
-         "breaks", "dance", "rave", "eurodance", "hardcore", "footwork",
-         "synthwave", "future bass", "idm"]
+# Music format for stock iPods: "mp3" (recommended), "alac" (lossless, ~3x
+# larger) or "aac" (not recommended: ffmpeg's AAC has audible artifacts).
+# device.convert_to = "mp3"
+# MP3 quality: "v0" (variable, best) or a constant rate like "320k".
+# Changing it converts the whole cache again.
+# device.mp3_quality = "v0"
+# AAC rate, only with convert_to = "aac".
+# device.aac_bitrate = "256k"
 
-[[genres.groups]]
-name = "Pop"
-match = ["pop", "electropop", "hyperpop"]
+# A dock for Rockbox players only: "rockbox" copies music as it is on the
+# server, FLAC included. Stock iPods are then refused.
+# device.type = "stock_ipod"
+#   Only with type = "rockbox": false converts FLAC too, for players that
+#   can't play it.
+# device.flac = true
 
-[[genres.groups]]
-name = "R&B / Soul"
-match = ["r&b", "rnb", "rhythm and blues", "soul", "funk", "motown",
-         "disco"]
-
-[[genres.groups]]
-name = "Jazz"
-match = ["jazz", "bebop", "swing", "big band", "bossa nova"]
-
-[[genres.groups]]
-name = "Blues"
-match = ["blues"]
-
-[[genres.groups]]
-name = "Classical"
-match = ["classical", "orchestral", "symphony", "opera", "baroque",
-         "chamber music", "choral", "neoclassical"]
-
-[[genres.groups]]
-name = "Reggae"
-match = ["reggae", "ska", "dub", "dancehall", "rocksteady"]
-
-[[genres.groups]]
-name = "Latin"
-match = ["latin", "reggaeton", "salsa", "bachata", "cumbia", "samba",
-         "tango"]
-
-[[genres.groups]]
-name = "Gospel & Christian"
-match = ["gospel", "christian", "worship"]
-
-[[genres.groups]]
-name = "World"
-match = ["world", "afrobeat", "afrobeats", "celtic", "flamenco"]
+# Days to keep music that left every list cached on the dock, so adding it
+# back is instant (0-30). Deleted sooner if the SD card gets full.
+# sync.removal_grace_days = 7
+# Where the cache lives.
+# sync.cache_dir = "~/musicdock/cache"
+# Conversions at once: "auto" = CPU cores - 1.
+# sync.workers = "auto"
+# While converting a big batch, hand finished songs to a docked iPod this many
+# at a time: "auto" (a twentieth of the batch, 25-500), a number, or 0 = only
+# once everything is converted.
+# sync.sync_batch_size = "auto"

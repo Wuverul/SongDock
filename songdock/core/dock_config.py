@@ -21,8 +21,8 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
              "playlist_tag": "#ipod", "lossless_tag": "#lossless",
-             "primary_artist": True, "artist_names": [], "compilation_albums": [], "workers": "auto", "removal_grace_days": 7,
-             "recent_play_months": 3, "singles_album_min": 4, "make_room": False, "favorite_rating": 4, "auto_update": True,
+             "primary_artist": True, "artist_names": [], "compilation_albums": [], "artist_aliases": [], "workers": "auto", "removal_grace_days": 7,
+             "recent_play_months": 3, "singles_album_min": 4, "make_room": False, "make_room_albums": True, "favorite_rating": 4, "auto_update": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -69,7 +69,13 @@ def load(path=None):
         raise ConfigError(f"No config at {path}. Copy config.example.toml there "
                           f"and run: chmod 600 {path}") from None
     except tomllib.TOMLDecodeError as e:
-        raise ConfigError(f"{path}: {e}") from None
+        hint = ""
+        if "twice" in str(e):
+            # A [sync]-style block pasted into a file of "sync.setting = ..." lines.
+            hint = (". Write each setting as group.setting = value (e.g. "
+                    "sync.make_room = true) without a [group] heading, or keep all of a "
+                    "group's settings under its one heading")
+        raise ConfigError(f"{path}: {e}{hint}") from None
 
     if os.stat(path).st_mode & 0o077:
         log.warning("%s is readable by other users; run: chmod 600 %s", path, path)
@@ -119,6 +125,12 @@ def load(path=None):
             isinstance(a, str) and a.partition("=")[0].strip() for a in albums):
         raise ConfigError(f'{path}: compilation_albums must be a list like '
                           '["Chillhop Essentials = Chillhop Releases", "Now That\'s What I Call Music"]')
+    renames = cfg["sync"]["artist_aliases"]
+    if not isinstance(renames, list) or not all(
+            isinstance(a, str) and all(p.strip() for p in a.partition("=")[::2])
+            for a in renames):
+        raise ConfigError(f'{path}: artist_aliases must be a list like '
+                          '["Beatles = The Beatles"] (other spelling = name)')
     lossless = cfg["sync"]["lossless_tag"]
     if not isinstance(lossless, str) or any(c.isspace() for c in lossless):
         raise ConfigError(f'{path}: lossless_tag must be one word, e.g. "#lossless" ("" = off)')
@@ -178,6 +190,8 @@ def load(path=None):
         raise ConfigError(f"{path}: singles_album_min must be 0 (off) or a whole number from 2 to 100")
     if not isinstance(cfg["sync"]["make_room"], bool):
         raise ConfigError(f"{path}: make_room must be true or false")
+    if not isinstance(cfg["sync"]["make_room_albums"], bool):
+        raise ConfigError(f"{path}: make_room_albums must be true or false")
     if not isinstance(cfg["sync"]["auto_update"], bool):
         raise ConfigError(f"{path}: auto_update must be true or false")
     w = cfg["sync"]["workers"]
@@ -255,22 +269,52 @@ def _value_end(text, start):
     return i
 
 
+def _put_value(text, value_start, literal):
+    """`text` with the value at value_start replaced, keeping a trailing
+    comment's column."""
+    stop = _value_end(text, value_start)
+    rest = text[stop:]
+    pad = (stop - value_start) - len(literal)
+    if pad > 0 and re.match(r"[ \t]+#", rest):
+        literal += " " * pad
+    return text[:value_start] + literal + rest
+
+
 def set_value(text, section, key, value):
-    """`text` (a config.toml) with [section] key set to `value`."""
+    """`text` (a config.toml) with [section] key set to `value`. Two layouts:
+    "section.key = value" lines before any table (config.example.toml since
+    2026-11-04; a "# section.key = default" line is switched on in place), or
+    [section] tables (older configs)."""
     literal = toml_literal(value)
+    first_table = re.search(r"^[ \t]*\[", text, re.M)
+    root_end = first_table.start() if first_table else len(text)
+    dotted = rf"{re.escape(section)}\.{re.escape(key)}[ \t]*=[ \t]*"
+    line = re.compile(rf"^[ \t]*{dotted}", re.M).search(text, 0, root_end)
+    if line:
+        return _put_value(text, line.end(), literal)
+    off = re.compile(rf"^#[ \t]*{dotted}", re.M).search(text, 0, root_end)
+    if off:                                       # "# sync.make_room = false"
+        text = text[:off.start()] + f"{section}.{key} = " + text[off.end():]
+        return _put_value(text, off.start() + len(f"{section}.{key} = "), literal)
     head = re.search(rf"^\[{re.escape(section)}\][ \t]*(#.*)?$", text, re.M)
+    if not head and re.search(r"^[ \t]*[A-Za-z0-9_]+\.[A-Za-z0-9_]+[ \t]*=", text[:root_end], re.M):
+        # Dotted layout without this setting: after the group's last line, else
+        # before any table (a line after one would belong to it).
+        same = list(re.finditer(rf"^[ \t]*{re.escape(section)}\.[A-Za-z0-9_]+[ \t]*=[ \t]*",
+                                text[:root_end], re.M))
+        at = _value_end(text, same[-1].end()) if same else root_end
+        at = text.find("\n", at) + 1 if same and "\n" in text[at:] else at
+        new = f"{section}.{key} = {literal}\n"
+        if at and text[at - 1] != "\n":
+            new = "\n" + new
+        return text[:at] + new + text[at:]
     if not head:
         return text.rstrip("\n") + f"\n\n[{section}]\n{key} = {literal}\n"
     nxt = re.search(r"^\[", text[head.end():], re.M)
     end = head.end() + nxt.start() if nxt else len(text)
     line = re.compile(rf"^[ \t]*{re.escape(key)}[ \t]*=[ \t]*", re.M).search(text, head.end(), end)
     if line:
-        stop = _value_end(text, line.end())
-        rest = text[stop:]
-        pad = (stop - line.end()) - len(literal)       # keep a trailing comment's column
-        if pad > 0 and re.match(r"[ \t]+#", rest):
-            literal += " " * pad
-        return text[:line.end()] + literal + rest
+        return _put_value(text, line.end(), literal)
     return text[:head.end()] + f"\n{key} = {literal}" + text[head.end():]
 
 

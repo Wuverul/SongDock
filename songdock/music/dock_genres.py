@@ -118,6 +118,14 @@ def release_types(album):
     return [t.strip().lower() for joined in types for t in (joined or "").split(";") if t.strip()]
 
 
+def plausible_types(types):
+    """False for a release-type list saved before release_types() handled one
+    joined string, which was read letter by letter: ["a", "l", "b", "u", "m"].
+    Such an entry is read again from Navidrome."""
+    return isinstance(types, list) and all(
+        isinstance(t, str) and len(t) > 1 and ";" not in t for t in types)
+
+
 def tidy(tag):
     """'drum and bass' -> 'Drum and Bass' (Navidrome's tags are often lower case)."""
     words = tag.split()

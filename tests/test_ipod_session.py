@@ -3,6 +3,7 @@
 Run: ~/musicdock/venv/bin/python -m unittest discover -s tests -v
 """
 
+import errno
 import hashlib
 import logging
 import os
@@ -14,6 +15,8 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
 import dock_paths  # noqa: E402,F401
+sys.path.insert(0, os.path.dirname(__file__))
+import isolate_state  # noqa: E402,F401  (before anything reads the dock's state)
 sys.path.insert(0, os.path.dirname(__file__))
 import ipod_fixtures as fx  # noqa: E402
 import ipod_handler as h  # noqa: E402
@@ -122,6 +125,33 @@ class SessionTests(unittest.TestCase):
         self.assertEqual([t.title for t in after.tracks], before)
         self.assertEqual(self.rec.unsent_count(), (1, 0))         # play kept, matched
         self.assertTrue(os.path.exists(os.path.join(h.itunes_dir(self.mount), "Play Counts")))
+
+    def test_unplugged_player_isnt_restored_and_keeps_its_error(self):
+        # 2026-11-03: unplugged mid-copy, the restore failed too, and its error
+        # (Extras.itdb not found) replaced the real one on FAILED.
+        gone = OSError(errno.ENODEV, "No such device")
+        with mock.patch.object(h, "apply_plan", side_effect=gone), \
+                mock.patch.object(h, "restore_backup") as restore:
+            with self.assertRaises(OSError) as raised:
+                self.session(write=True)
+        restore.assert_not_called()
+        self.assertIs(raised.exception, gone)
+        self.assertEqual(self.rec.unsent_count(), (1, 0))         # play kept
+
+    def test_a_failed_restore_doesnt_hide_the_error(self):
+        with mock.patch.object(h, "apply_plan", side_effect=ValueError("the real one")), \
+                mock.patch.object(h, "restore_backup", side_effect=FileNotFoundError("x")):
+            with self.assertRaisesRegex(ValueError, "the real one"):
+                self.session(write=True)
+
+    def test_restore_count_sees_the_player_as_it_is(self):
+        # 2026-11-01: a wiped Nano's songs were still "present" in the record when
+        # the restore was worked out, so none started. Counted after reconcile.
+        self.rec.add_track(G, 999, ipod_path=":iPod_Control:Music:F00:GONE.mp3",
+                           navidrome_id="nav-wiped", artist="A", album="B", title="C")
+        seen = []
+        self.session(write=True, on_reconciled=seen.append)
+        self.assertEqual(seen, [{"nav-bloom"}])                   # adopted; the wiped one isn't
 
     def test_failure_after_an_hourly_save_goes_back_to_that_save(self):
         import pygpod

@@ -1,11 +1,17 @@
 """Tests for the "next sync" counts on DOCK READY. Run: python3 -m unittest discover -s tests -v"""
 
+import json
 import os
 import sys
+import tempfile
+import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "songdock"))
 import dock_paths  # noqa: E402,F401
+sys.path.insert(0, os.path.dirname(__file__))
+import isolate_state  # noqa: E402,F401  (before anything reads the dock's state)
 import ipod_handler  # noqa: E402
 
 
@@ -137,6 +143,138 @@ class RoomDatesTests(unittest.TestCase):
         self.assertEqual(dock_room.pick([15], 0, old), ["y", "z"])
         self.assertEqual(dock_room.pick([100], 0, old), [])
         self.assertEqual(dock_room.pick([10, 100], 0, old), ["y"])
+
+
+class RoomByAlbumTests(unittest.TestCase):
+    """Make Room by album (user, 2026-11-01): whole albums go, dated by their newest song."""
+
+    def plan(self):
+        def t(nid, album, **kw):
+            return {"id": nid, "album": album, "album_artist": "Artist", **kw}
+        return {"make_room_albums": True,
+                "tracks": [t("a1", "A"), t("a2", "A"), t("b1", "B"),
+                           t("s1", "Artist Singles", folder_album="One"),
+                           t("s2", "Artist Singles", folder_album="Two"), {"id": "x"}],
+                "on_player": [t("a3", "a")]}           # case doesn't split an album
+
+    def rules(self, dates, months=1, now=100 * 86400):
+        import dock_room
+        return dock_room.Rules({"songs": dates}, {}, months, now, dock_room.albums(self.plan()))
+
+    def test_an_albums_date_is_its_newest_song(self):
+        rules = self.rules({"a1": 10, "a3": 50 * 86400, "b1": 20})
+        self.assertEqual(rules.date("a1"), 50 * 86400)          # a3 is on the same album
+        self.assertEqual(rules.date("b1"), 20)
+        rules.added = {"b1": 90 * 86400}                        # just reached the player
+        self.assertTrue(rules.recent("b1"))
+        self.assertFalse(rules.recent("a2"))
+
+    def test_singles_and_songs_without_an_album_stay_apart(self):
+        rules = self.rules({"s2": 99 * 86400})
+        self.assertTrue(rules.recent("s2"))
+        self.assertFalse(rules.recent("s1"))                    # its own release
+        self.assertFalse(rules.recent("x"))
+
+    def test_only_whole_albums_go_and_only_enough(self):
+        import dock_room
+        rules = self.rules({})
+        on_player = {"a1", "a2", "a3", "b1", "s1"}
+        candidates = [(30, "a1", 10), (5, "a2", 10), (30, "a3", 10), (20, "b1", 10),
+                      (1, "s1", 10)]
+        self.assertEqual(dock_room.choose(rules, [10], 0, candidates, on_player), ["s1"])
+        self.assertEqual(sorted(dock_room.choose(rules, [15], 0, candidates, on_player)),
+                         ["b1", "s1"])
+        self.assertEqual(sorted(dock_room.choose(rules, [25], 0, candidates, on_player)),
+                         ["a1", "a2", "a3", "b1", "s1"])                 # A goes whole
+        self.assertEqual(dock_room.choose(rules, [60], 0, candidates, on_player), [])
+
+    def test_an_album_with_a_song_that_cant_go_stays_whole(self):
+        import dock_room
+        rules = self.rules({})
+        candidates = [(5, "a1", 10), (5, "a2", 10), (20, "b1", 10)]     # a3 isn't allowed
+        self.assertEqual(dock_room.choose(rules, [10], 0, candidates, {"a1", "a2", "a3", "b1"}),
+                         ["b1"])
+
+    def test_off_it_goes_song_by_song(self):
+        import dock_room
+        rules = dock_room.Rules({"songs": {}}, {}, 1, 0)
+        candidates = [(5, "a1", 10), (5, "a2", 10)]
+        self.assertEqual(dock_room.choose(rules, [10], 0, candidates, {"a1", "a2"}), ["a1"])
+
+
+class RoomRemovedTests(unittest.TestCase):
+    """Songs taken off to make room: listed in MediaDock.txt, and brought back
+    when played again in Navidrome's own apps (user, 2026-11-04)."""
+
+    def setUp(self):
+        import dock_record
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = tmp.name
+        self.rec = dock_record.Record(os.path.join(self.dir, "dock.db"))
+        self.addCleanup(self.rec.close)
+        self.rec.upsert_player("G", model="xB903")
+        self.rec.mark_synced("G")
+        self.now = 1_800_000_000
+        for i, (nid, album) in enumerate((("a1", "A"), ("a2", "A"), ("b1", "B"))):
+            self.rec.add_track("G", 100 + i, ipod_path=f":x{i}", navidrome_id=nid,
+                               artist="Artist", album=album, title=f"Song {nid}")
+            self.rec.mark_removed("G", 100 + i, "made room for new songs")
+            self.rec.save_room_removed("G", nid)
+        self.manifest = {"make_room_months": 3, "make_room_albums": True, "tracks": [
+            {"id": n, "album": a, "album_artist": "Artist"}
+            for n, a in (("a1", "A"), ("a2", "A"), ("b1", "B"))]}
+
+    def dates(self, songs):
+        import dock_room
+        with open(os.path.join(self.dir, dock_room.DATES_FILE), "w") as f:
+            json.dump({"playlists": {}, "songs": songs}, f)
+
+    def test_listed_newest_first_with_names(self):
+        import dock_setup
+        songs = self.rec.room_removed_songs("G")
+        self.assertEqual({s["navidrome_id"] for s in songs}, {"a1", "a2", "b1"})
+        self.assertEqual(songs[0]["title"][:5], "Song ")
+        text = dock_setup.marker_text([], "G", "Intro\n", removed=songs)
+        self.assertIn("Taken off this iPod to make room (3; newest first)", text)
+        self.assertIn("Artist - Song b1 (B)", text)
+        self.assertNotIn("Taken off", dock_setup.marker_text([], "G", "Intro\n"))
+        many = [dict(songs[0], navidrome_id=str(i)) for i in range(60)]
+        self.assertIn("... and 10 more", dock_setup.marker_text([], "G", "I\n", removed=many))
+
+    def test_a_song_played_again_brings_its_whole_album_back(self):
+        import dock_room
+        self.dates({"a1": self.now - 400 * 86400, "a2": self.now - 86400,   # played yesterday
+                    "b1": self.now - 400 * 86400})
+        self.assertEqual(dock_room.coming_back(self.manifest, self.dir, self.rec, "G", self.now),
+                         {"a1", "a2"})
+        plain = dict(self.manifest)
+        del plain["make_room_albums"]                                        # song by song
+        self.assertEqual(dock_room.coming_back(plain, self.dir, self.rec, "G", self.now), {"a2"})
+
+    def test_nothing_comes_back_with_make_room_off_or_no_recent_play(self):
+        import dock_room
+        self.dates({"a1": self.now - 400 * 86400})
+        self.assertEqual(dock_room.coming_back(self.manifest, self.dir, self.rec, "G", self.now),
+                         set())
+        off = {"tracks": self.manifest["tracks"]}
+        self.dates({"a1": self.now})
+        self.assertEqual(dock_room.coming_back(off, self.dir, self.rec, "G", self.now), set())
+
+    def test_only_new_plays_ask_for_a_sync(self):
+        import dock_prepare
+        with open(os.path.join(self.dir, "manifest.json"), "w") as f:
+            json.dump(self.manifest, f)
+        now = time.time()
+        self.dates({"a1": now - 400 * 86400, "a2": now - 400 * 86400, "b1": now - 400 * 86400})
+        with mock.patch("dock_record.Record", return_value=self.rec), \
+                mock.patch.object(self.rec, "close"):
+            self.assertFalse(dock_prepare.played_again(self.dir))
+            self.dates({"a1": now - 400 * 86400, "a2": now - 400 * 86400, "b1": now - 60})
+            self.assertTrue(dock_prepare.played_again(self.dir))          # b1 played
+            self.assertFalse(dock_prepare.played_again(self.dir))         # already asked
+            args = dock_prepare.pending_args(self.manifest, self.dir)
+        self.assertEqual(dict(zip(args[::2], args[1::2]))["--pending-add"], "1")
 
 
 @unittest.skipIf(dock_status is None, "needs Pillow (dock_status)")

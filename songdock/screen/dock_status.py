@@ -49,6 +49,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dock_paths  # noqa: E402
 
 import argparse
+import atexit
 import contextlib
 import fcntl
 import json
@@ -463,12 +464,13 @@ def render(screen, args):
 
     elif screen == "failed":
         header(f"{warn}SYNC FAILED", inverted=True)
-        lines([
-            ("Safe to remove", body_f),
-            (fit(args.reason or "Unknown error", body_f), body_f),
-            (f"No plays lost \u00b7 {now}" if has_glyphs     # on the player or
-             else f"No plays lost - {now}", small_f),       # queued on the Pi
-        ])
+        rows = [("Safe to remove", body_f),
+                (fit(args.reason or "Unknown error", body_f), body_f)]
+        if args.detail:                                      # what to do about it
+            rows.append((fit(args.detail, small_f), small_f))
+        rows.append((f"No plays lost \u00b7 {now}" if has_glyphs     # on the player or
+                     else f"No plays lost - {now}", small_f))       # queued on the Pi
+        lines(rows)
 
     elif screen == "starting":
         # Boot progress (dock_boot.py). Until the clock is set from the
@@ -619,6 +621,9 @@ class Panel:
             sys.path.insert(0, EPD_LIB)
             epd = importlib.import_module(
                 f"waveshare_epd.{PANEL_DRIVERS[self.model]}").EPD()
+            # After the driver's import, which registered gpiozero's own exit hook:
+            # exit hooks run last-registered first, so this one runs before it.
+            atexit.register(release_pins)
         self.epd = epd
         self.partial_ok = self.model != "v2"
 
@@ -648,6 +653,30 @@ class Panel:
 
     def sleep(self):
         self.epd.sleep()
+
+
+PANEL_PINS = ("GPIO_RST_PIN", "GPIO_DC_PIN", "GPIO_PWR_PIN", "GPIO_BUSY_PIN")
+
+
+def release_pins(retry_after=0.1):
+    """Close the panel driver's GPIO pins as the process exits, before gpiozero does.
+    gpiozero's close claims each pin again as an input, and now and then the kernel
+    answers "GPIO busy" though nothing else holds it: a page of traceback in the
+    journal after a draw that worked (6 times, 2026-11-01 to 11-04, a prepare job's
+    draw alone among them). Each pin gets a second try here; one still busy is left
+    alone, since the kernel frees every pin when the process ends."""
+    impl = getattr(sys.modules.get("waveshare_epd.epdconfig"), "implementation", None)
+    for name in PANEL_PINS:
+        device = getattr(impl, name, None)
+        if device is None or getattr(device, "closed", True):
+            continue
+        for attempt in (1, 2):
+            try:
+                device.close()
+                break
+            except Exception:
+                if attempt == 1:
+                    time.sleep(retry_after)
 
 
 def open_panel():

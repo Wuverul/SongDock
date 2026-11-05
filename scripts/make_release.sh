@@ -18,7 +18,7 @@ python3 -m unittest discover -s tests -q
 echo "== Assembling $OUT"
 rm -rf "$OUT" "$TARBALL"
 mkdir -p "$OUT"
-cp README.md INSTALL.md LICENSE CHANGELOG.md config.example.toml "$OUT/"
+cp README.md INSTALL.md LICENSE CHANGELOG.md config.example.toml genres.example.toml "$OUT/"
 mkdir -p "$OUT/scripts" && cp scripts/status.sh "$OUT/scripts/"
 cp -R songdock "$OUT/songdock"            # all the code
 mkdir -p "$OUT/pi"
