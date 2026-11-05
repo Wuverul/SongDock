@@ -571,6 +571,32 @@ def unify_album_names(client, songs, album_info):
                 s["album"] = name
 
 
+def separate_album_names(songs):
+    """Albums of different artists whose names differ only in case ("Home" by
+    Blackmill, "HOME" by SIAMÉS) get their artist in the name on the player:
+    "Home (Blackmill)", "HOME (SIAMÉS)". Picking the second on the iPod played the
+    first's songs (user, 2026-11-05): the firmware finds an album's songs by name,
+    ignoring case. Names only (no re-copy). Returns how many songs were renamed."""
+    by_name = {}
+    for s in songs:
+        if s.get("album"):
+            by_name.setdefault(s["album"].casefold(), []).append(s)
+    renamed = 0
+    for same in by_name.values():
+        artists = {s.get("displayAlbumArtist") or s.get("albumArtist") or s.get("artist")
+                   for s in same}
+        if len(artists) < 2:
+            continue
+        for s in same:
+            who = s.get("displayAlbumArtist") or s.get("albumArtist") or s.get("artist")
+            s["album"] = f"{s['album']} ({who})"
+            renamed += 1
+    if renamed:
+        log.info("%d song(s) on albums sharing a name with another artist's: artist added "
+                 "to the album name on the player", renamed)
+    return renamed
+
+
 def unify_album_artists(songs):
     """Give every song of one Navidrome album the same album artist, the one most
     of its songs carry (else its first song's artist): the iPod makes an album of
@@ -1410,6 +1436,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     singles_min = cfg["sync"].get("singles_album_min", 4)
     single_albums = one_track_albums(client, targets, previous, album_info, singles_min)
     dock_artists.group_singles(targets, single_albums, singles_min)
+    separate_album_names(targets)        # after every other name change
     # Songs Navidrome re-numbered are followed, not fetched again (needs the final
     # names, which the plan's entries have).
     renamed = follow_new_ids(previous, targets, cache_dir, rename_fn, dry_run)

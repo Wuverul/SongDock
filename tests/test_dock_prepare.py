@@ -1908,5 +1908,21 @@ class NoClippingTests(unittest.TestCase):
         self.assertEqual(plan(peaks_known=False), (set(), {"a1", "b1"}))
 
 
+class AlbumNameTests(unittest.TestCase):
+    def test_albums_differing_only_in_case_get_their_artist(self):
+        songs = [{"id": "1", "album": "Home", "artist": "Blackmill", "displayAlbumArtist": "Blackmill"},
+                 {"id": "2", "album": "HOME", "artist": "SIAMÉS", "displayAlbumArtist": "SIAMÉS"},
+                 {"id": "3", "album": "HOME", "artist": "Guest", "displayAlbumArtist": "SIAMÉS"},
+                 {"id": "4", "album": "Other", "artist": "Blackmill"}]
+        self.assertEqual(dock_prepare.separate_album_names(songs), 3)
+        self.assertEqual([s["album"] for s in songs],
+                         ["Home (Blackmill)", "HOME (SIAMÉS)", "HOME (SIAMÉS)", "Other"])
+
+    def test_one_artists_editions_are_left_alone(self):
+        songs = [{"id": "1", "album": "Dark Passion Play", "artist": "Nightwish"},
+                 {"id": "2", "album": "Dark Passion Play", "artist": "Nightwish"}]
+        self.assertEqual(dock_prepare.separate_album_names(songs), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
