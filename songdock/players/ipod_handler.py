@@ -355,9 +355,16 @@ def player_unwritable(e):
 
 
 def restore_backup(mount, backup):
-    """Put a backup's iTunesDB/ArtworkDB back (after a failed write)."""
+    """Put a backup's iTunesDB/ArtworkDB back (after a failed write). With a pygpod
+    that saves album art as one transaction (pygpod_saves_art_itself), the ArtworkDB
+    on the player always fits its .ithmb files, and the backup's may not (a commit
+    may have compacted them): it stays. Tracks of the restored iTunesDB then show
+    their covers, or none for one removed in the failed save, never a wrong one."""
     undo_compaction(mount)            # the backup's ArtworkDB points into the old art
+    art_stays = pygpod_saves_art_itself()
     for parts in BACKED_UP:
+        if art_stays and parts[-1] == "ArtworkDB":
+            continue
         src = os.path.join(backup, *parts)
         out = os.path.join(mount, *parts)
         if os.path.isdir(src):
@@ -536,10 +543,36 @@ def mark_sort_order(mount):
 COMPACT_WASTE = 0.25
 
 
+def pygpod_saves_art_itself():
+    """True for pygpod 0.1.0 and later: its ArtworkManager saves crash-safely (a
+    journaled transaction over ArtworkDB and the .ithmb files), reuses freed slots
+    and compacts on its own. The compaction below is for 0.0.6 only; under 0.2.3
+    it left the thumbnails unwritten (2026-11-05)."""
+    from pygpod.model.artwork_manager import ArtworkManager
+    return hasattr(ArtworkManager, "stage")
+
+
+def recover_pygpod_save(mount):
+    """pygpod 0.1.0+ journals its saves (album art); one cut short is finished or
+    undone when pygpod opens a database. The dock reads the database itself, so it
+    does that step first. Returns what was done, or None."""
+    try:
+        from pygpod.db.transaction import recover
+    except ImportError:                       # pygpod 0.0.x: no journal
+        return None
+    done = recover(mount)
+    if done:
+        log_info(f"Finished pygpod's save interrupted last time ({done})")
+    return done
+
+
 def install_artwork_compaction():
     """Replace pygpod's .ithmb compaction (see COMPACT_WASTE). Applied once
-    per process; checked_save calls it before every save."""
+    per process; checked_save calls it before every save. Not with a pygpod
+    that does this itself (pygpod_saves_art_itself)."""
     from pygpod.model import artwork_manager as am
+    if pygpod_saves_art_itself():
+        return
     if getattr(am.ArtworkManager._rebuild_ithmb, "_musicdock", False):
         return
 
@@ -1350,6 +1383,8 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
                "added": 0, "removed": 0, "wrote": False}
 
     step(2, "Reading plays")
+    if write:
+        recover_pygpod_save(mount)           # before anything reads the database
     shutil.rmtree(work_dir, ignore_errors=True)
     copied = snapshot_play_data(mount, work_dir)
     name = None                        # the name given to the iPod (DockSetup.txt uses it)
