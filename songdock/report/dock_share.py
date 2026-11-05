@@ -166,7 +166,7 @@ def plan_lines(manifest, cache_dir):
     if not manifest:
         return ["No plan yet"]
     planned = [e for e, _ in dock_limits.planned_songs(manifest)]
-    formats = collections.Counter(e.get("encoding") or "?" for e in planned)
+    formats = collections.Counter(re.sub(r" -[\d.]+dB$", "", e.get("encoding") or "?") for e in planned)
     sources = collections.Counter((e.get("source_suffix") or "?").lower() for e in planned)
     total = dock_limits.plan_bytes(manifest)
     reasons = collections.Counter(re.sub(r"[\d.]+", "n", str(s.get("reason"))[:60])

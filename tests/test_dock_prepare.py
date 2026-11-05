@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s tests -v
 """
 
 import json
+import re
 import logging
 import os
 import sys
@@ -125,6 +126,7 @@ class PrepareTests(unittest.TestCase):
     def run_prepare(self, server, cfg=None, **kw):
         kw.setdefault("disk_usage", ROOMY)
         kw.setdefault("player_kinds", {"stock"})
+        kw.setdefault("lower_fn", None)      # the clipping tests pass their own
         return prepare(server, cfg or config(), self.cache,
                        convert_fn=fake_convert, **kw)
 
@@ -1396,7 +1398,8 @@ class ShrinkCoverTests(unittest.TestCase):
             mpath = os.path.join(cache, "manifest.json")
 
             def run():
-                prepare(server, config(), cache, convert_fn=fake_convert, disk_usage=ROOMY)
+                prepare(server, config(), cache, convert_fn=fake_convert, disk_usage=ROOMY,
+                        lower_fn=None)
                 with open(mpath) as f:
                     return json.load(f)
 
@@ -1467,7 +1470,7 @@ class WorkerTests(unittest.TestCase):
                 cfg = config()
                 cfg["sync"]["workers"] = workers
                 server = FakeServer(songs=songs)
-                summary = prepare(server, cfg, cache, convert_fn=fake_convert,
+                summary = prepare(server, cfg, cache, convert_fn=fake_convert, lower_fn=None,
                                   disk_usage=ROOMY)
                 with open(os.path.join(cache, "manifest.json")) as f:
                     ids = [t["id"] for t in json.load(f)["tracks"]]
@@ -1732,17 +1735,142 @@ class MissingTagTests(unittest.TestCase):
     def test_converted_ogg_gets_navidrome_tags_and_old_ones_are_repaired(self):
         server = FakeServer(songs=[song("f", "ogg", title="FERAL", artist="LEASHES",
                                         album="FERAL", track=3)])
-        prepare(server, config(), self.cache, convert_fn=self.untagged_convert,
+        prepare(server, config(), self.cache, convert_fn=self.untagged_convert, lower_fn=None,
                 disk_usage=ROOMY)
         self.assertEqual(self.tags("f.mp3"),
                          ({"TIT2": "FERAL", "TPE1": "LEASHES", "TALB": "FERAL",
                            "TRCK": "3"}, (2, 3, 0)))
         from mutagen.id3 import ID3
         ID3(os.path.join(self.cache, "tracks", "f.mp3")).delete()   # an old untagged copy
-        prepare(server, config(), self.cache, convert_fn=self.untagged_convert,
+        prepare(server, config(), self.cache, convert_fn=self.untagged_convert, lower_fn=None,
                 disk_usage=ROOMY)
         self.assertEqual(server.downloads, ["f"])                   # no re-download
         self.assertEqual(self.tags("f.mp3")[0]["TIT2"], "FERAL")
+
+
+class NoClippingTests(unittest.TestCase):
+    """MP3s lowered just enough not to clip, a whole album by the same steps
+    (user, 2026-11-04). Peaks and mp3gain are stand-ins: {song id: peak at full
+    level}; lowering appends a marker to the fake file."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.cache = tmp.name
+        self.peaks, self.lowered = {}, []
+
+    @staticmethod
+    def song_of(path):
+        """tracks/a1.mp3, tmp/gain-a1.mp3, tmp/src-a1.mp3.mp3 -> a1"""
+        return re.sub(r"^(gain|src)-", "", os.path.basename(path)).split(".")[0]
+
+    def peak(self, path):
+        nid = self.song_of(path)
+        steps = open(path, "rb").read().count(b"|lowered")
+        return self.peaks[nid] - steps * dock_prepare.GAIN_STEP
+
+    def lower(self, path, steps):
+        self.lowered.append((self.song_of(path), steps))
+        with open(path, "ab") as f:
+            f.write(b"|lowered" * steps)
+
+    def run_prepare(self, server, convert=fake_convert):
+        return prepare(server, config(), self.cache, convert_fn=convert, disk_usage=ROOMY,
+                       player_kinds={"stock"}, peak_fn=self.peak, lower_fn=self.lower)
+
+    def encodings(self):
+        with open(os.path.join(self.cache, "manifest.json")) as f:
+            return {t["id"]: t["encoding"] for t in json.load(f)["tracks"]}
+
+    def test_labels(self):
+        self.assertEqual(dock_prepare.steps_needed(-3.0), 0)
+        self.assertEqual(dock_prepare.steps_needed(-0.2), 0)
+        self.assertEqual(dock_prepare.steps_needed(0.8), 1)       # KID AGAIN
+        self.assertEqual(dock_prepare.steps_needed(2.98), 3)      # Chipshop Chewsday
+        self.assertEqual(dock_prepare.gain_label("mp3 v0", 2), "mp3 v0 -3.0dB")
+        self.assertEqual(dock_prepare.base_label("mp3 v0 -3.0dB"), "mp3 v0")
+        self.assertEqual(dock_prepare.label_steps("mp3 v0 -4.5dB"), 3)
+        self.assertEqual(dock_prepare.label_steps("alac 16"), 0)
+
+    def test_a_whole_album_goes_down_by_its_loudest_songs_steps(self):
+        self.peaks = {"a1": -3.0, "a2": 0.8, "a3": 2.9, "b1": -1.0}
+        server = FakeServer(songs=[song("a1", albumId="A"), song("a2", albumId="A"),
+                                   song("a3", albumId="A"), song("b1", albumId="B")])
+        self.run_prepare(server)
+        self.assertEqual(self.encodings(), {"a1": "mp3 v0 -4.5dB", "a2": "mp3 v0 -4.5dB",
+                                            "a3": "mp3 v0 -4.5dB", "b1": "mp3 v0"})
+        for nid in ("a1", "a2", "a3"):              # every file ends 3 steps down
+            path = os.path.join(self.cache, "tracks", f"{nid}.mp3")
+            self.assertEqual(open(path, "rb").read().count(b"|lowered"), 3)
+            self.assertLessEqual(self.peak(path), dock_prepare.CLIP_CEILING)
+
+    def test_mp3s_cached_before_the_check_are_lowered_without_converting_again(self):
+        self.peaks = {"a1": 0.8, "a2": -2.0}
+        server = FakeServer(songs=[song("a1", albumId="A"), song("a2", albumId="A")])
+        prepare(server, config(), self.cache, convert_fn=fake_convert, disk_usage=ROOMY,
+                player_kinds={"stock"}, lower_fn=None)          # an older dock
+        self.assertEqual(self.encodings(), {"a1": "mp3 v0", "a2": "mp3 v0"})
+        converted = []
+
+        def convert(*a, **kw):
+            converted.append(a[0])
+            fake_convert(*a, **kw)
+        summary = self.run_prepare(server, convert)
+        self.assertEqual(converted, [])                          # no re-encoding
+        self.assertEqual(summary["lowered"], 2)    # what makes the run ask a docked iPod to sync
+        self.assertEqual(sorted(self.lowered), [("a1", 1), ("a2", 1)])
+        self.assertEqual(self.encodings(), {"a1": "mp3 v0 -1.5dB", "a2": "mp3 v0 -1.5dB"})
+        self.lowered = []
+        self.run_prepare(server)                                  # measured once
+        self.assertEqual(self.lowered, [])
+
+    def test_an_albums_steps_never_go_back_up(self):
+        # Its loudest song leaving doesn't make the rest louder again (no swaps,
+        # and the album stays even with what's on the players).
+        self.peaks = {"a1": 2.9, "a2": -1.0}
+        server = FakeServer(songs=[song("a1", albumId="A"), song("a2", albumId="A")])
+        self.run_prepare(server)
+        server.songs = [song("a2", albumId="A")]
+        self.run_prepare(server)
+        self.assertEqual(self.encodings(), {"a2": "mp3 v0 -4.5dB"})
+
+    def test_a_louder_song_added_later_lowers_its_album_mates_too(self):
+        self.peaks = {"a1": 0.8, "a2": 2.9}
+        server = FakeServer(songs=[song("a1", albumId="A")])
+        self.run_prepare(server)
+        self.assertEqual(self.encodings(), {"a1": "mp3 v0 -1.5dB"})
+        server.songs.append(song("a2", albumId="A"))
+        self.run_prepare(server)
+        self.assertEqual(self.encodings(), {"a1": "mp3 v0 -4.5dB", "a2": "mp3 v0 -4.5dB"})
+
+    def test_lossless_and_other_formats_are_left_alone(self):
+        self.peaks = {"m": 2.0}
+        server = FakeServer(songs=[song("m", suffix="mp3", albumId="A"),
+                                   song("o", suffix="m4a", albumId="A")])
+        self.run_prepare(server)
+        self.assertEqual(self.encodings(), {"m": "original -3.0dB", "o": "original"})
+
+    def test_an_unchecked_mp3_on_the_player_still_needs_a_cache_file(self):
+        # With no room, songs on every player stay uncached ("held"), unless they
+        # were never checked for clipping: then they wait to be fetched and checked.
+        server = FakeServer(songs=[song("a1", albumId="A"), song("b1", albumId="B")])
+
+        def plan(peaks_known):
+            if os.path.exists(os.path.join(self.cache, "manifest.json")):
+                os.remove(os.path.join(self.cache, "manifest.json"))
+            if peaks_known:
+                with open(os.path.join(self.cache, "manifest.json"), "w") as f:
+                    json.dump({"tracks": [], "on_player": [
+                        {"id": "a1", "encoding": "mp3 v0", "peak": -3.0},
+                        {"id": "b1", "encoding": "mp3 v0", "peak": -3.0}]}, f)
+            prepare(server, config(max_gb=0.0000001), self.cache, convert_fn=fake_convert,
+                    disk_usage=ROOMY, player_kinds={"stock"}, peak_fn=self.peak,
+                    lower_fn=self.lower, on_player={"a1": {"mp3 v0"}, "b1": {"mp3 v0"}})
+            with open(os.path.join(self.cache, "manifest.json")) as f:
+                m = json.load(f)
+            return ({t["id"] for t in m["on_player"]}, {t["id"] for t in m["skipped"]})
+        self.assertEqual(plan(peaks_known=True), ({"a1", "b1"}, set()))
+        self.assertEqual(plan(peaks_known=False), (set(), {"a1", "b1"}))
 
 
 if __name__ == "__main__":

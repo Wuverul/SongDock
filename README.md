@@ -158,6 +158,11 @@ Everything here changes only what's on the player, unless it says otherwise.
   commute. A sync running when the window opens stops early, leaving nothing missing,
   and a docked iPod syncs afterwards. Other players need plugging in again. Set
   `safe_hours`, or `"off"`.
+- **No clipping:** loud masters made into MP3 decode above full scale, which a player clips
+  into distortion. Every MP3 is measured, and lowered just enough not to clip, in 1.5 dB
+  steps that don't re-encode it (mp3gain). A whole album goes down by the same amount, its
+  loudest song's, so quiet and loud moments keep their balance. Albums that don't clip
+  are left as they are. ALAC and songs copied as-is (FLAC on Rockbox, AAC) aren't changed.
 - **When a player fills up:** new songs wait, and the screen shows PLAYER FULL. Nothing
   is removed unless you set `make_room = true` (off by default). Then the oldest songs
   make way, only as many as needed, oldest by last play, arrival on the player, or a
@@ -317,10 +322,10 @@ waiting to be sent stay queued.
 2. Find the newest version on the
    [releases page](https://github.com/Wuverul/SongDock/releases). Read its notes
    in `CHANGELOG.md`: they say if the next sync will change anything on your iPod.
-3. On the Pi, download and install it, putting that version in place of `0.7.4`:
+3. On the Pi, download and install it, putting that version in place of `0.7.5`:
 
    ```sh
-   VERSION=0.7.4
+   VERSION=0.7.5
    curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
    tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
    cd ~/musicdock/songdock && sudo ./pi/install.sh
@@ -465,4 +470,5 @@ with no warranty. The libraries it installs keep their own licenses (below).
 - Tags and album art: [mutagen](https://github.com/quodlibet/mutagen) (GPL-2.0-or-later),
   [Pillow](https://python-pillow.org/)
 - E-ink display driver: Waveshare (MIT), bundled in `vendor/`; GPIO via gpiozero (BSD)
-- Conversion: ffmpeg with LAME (run as a separate program)
+- Conversion: ffmpeg with LAME, and mp3gain to lower MP3s without re-encoding (both run as
+  separate programs)
