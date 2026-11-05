@@ -656,6 +656,24 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   (`idle`, `safe`, `failed`) only if connectivity changed, keeping its original
   time (`--at`). Every draw saves its content args, `drawn_at`, and `wifi_on`
   in the state file for this.
+- **Updating pygpod (2026-11-05; its author asked us to keep up, after 0.0.6 -> 0.2.3):**
+  the docks install the version pinned in `pi/requirements.txt` (install.sh runs
+  `pip install -r`, so changing the pin moves every dock at its next install/update).
+  `scripts/test_pygpod.sh [latest|<version>]` runs the whole suite against a version in a
+  throwaway venv (the Mac then runs the iPod tests too); `.github/workflows/tests.yml`
+  does pinned + latest on every push and weekly, so a breaking release shows up first.
+  To move: run it against the new version, compare on copies of real databases (the
+  Pi's backups: `/var/lib/musicdock/backups/<GUID>/<time>/`; re-save unchanged must be
+  byte-identical, new tracks' fields diffed), change the pin, deploy, sync a real iPod.
+  The dock writes the iTunesDB itself (ipod_db) and uses pygpod for new tracks' mhits,
+  play-count parsing, cover thumbnails (ArtworkManager) and model tables; private names
+  it relies on: `_write_record`, `_parse_mhit`, `_read_scsi_serial`, ArtworkManager
+  internals (0.0.6 compaction patch, skipped on 0.1+). **0.2.3 vs 0.0.6 on the real
+  Nano/Classic databases:** reading and unchanged saves identical, cover formats and
+  play counts identical; new tracks gain gapless data (pregap/postgap/sample count) and
+  a correct date added (0.0.6 wrote UTC as local time: 8 h off). On 0.1+: no compaction
+  patch (it left thumbnails unwritten), pygpod's `recover()` runs before a write sync,
+  and a failed sync keeps the player's ArtworkDB (`restore_backup`).
 - **pygpod on the Pi** lives in a venv: `/opt/songdock/venv`, root's (until 2026-11-02 `~/musicdock/venv`; created with
   `--system-site-packages` to use apt's Pillow/gpiozero; `pip install
   pygpod==0.0.6 mutagen==1.47.0`). Raspberry Pi OS blocks system-wide pip.
