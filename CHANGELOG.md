@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.5
+
+Loud songs no longer clip.
+
+**To update:** docks on 0.7.2 or later install this by themselves; from an older version, install it by hand as in the README ("Updating"). Your settings, cache and the record of what's on your players are kept.
+
+- **Loud songs played with crackle and distortion.** Converting a loud master to MP3 pushes its peaks past the highest level a player can output, and the iPod clips them. In the developer's library 84% of converted songs did. Now every MP3 the dock holds is measured once and lowered just enough that it doesn't clip. A whole album is lowered by the same amount, its loudest song's, so its quiet and loud parts keep their balance. Albums that don't clip are left as they are.
+- **No quality is lost.** Lowering uses mp3gain, which changes each MP3's stored gain instead of re-encoding it, in exact steps of 1.5 dB. Lowered songs play a little quieter, usually 1.5 to 4.5 dB.
+- **What to expect after updating:** the first check measures every MP3 in the dock's cache (about 3 seconds a song on a Pi Zero 2 W, several hours for a big library on a Pi Zero W), then lowers the albums that need it. Your iPod then receives the lowered files once, at its next syncs: probably most of its music, at the usual copying speed. Play counts and ratings are kept. DOCK READY shows them as format changes until then.
+- The installer adds the `mp3gain` package (from Debian, for every Pi).
+- Not affected: ALAC songs (they can't clip) and AAC files.
+
 ## 0.7.4
 
 Albums that stay whole, a dock that recovers from an unplugged iPod, and code that only root can change.
