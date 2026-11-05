@@ -144,6 +144,25 @@ class HandlerTests(unittest.TestCase):
         dbids = {t.dbid for t in self.db().tracks}
         self.assertTrue(all(i.fields["song_id"] in dbids for i in images))
 
+    @unittest.skipUnless(h.pygpod_saves_art_itself(), "pygpod 0.1+ (transactional art saves)")
+    def test_failed_sync_keeps_covers_matching_their_files(self):
+        # pygpod 0.1+ commits ArtworkDB and .ithmb files together; restoring the old
+        # ArtworkDB over compacted files would mix covers up, so it stays.
+        songs = self.covered(8)
+        self.apply(self.manifest(songs))
+        backups = os.path.join(self.tmp, "backups")
+        os.makedirs(backups)
+        backup = h.backup_player(self.mount, backups)
+        db = self.db()
+        for t in list(db.tracks)[:5]:
+            db.remove_track(t, delete_file=False)
+        h.checked_save(db, G)
+        after = self.art()
+        h.restore_backup(self.mount, backup)                               # a later failure
+        self.assertEqual(self.art(), after)                  # every cover still its own bytes
+        self.assertEqual(len(self.db().tracks), 8)           # the old iTunesDB is back
+
+    @unittest.skipIf(h.pygpod_saves_art_itself(), "pygpod 0.0.x's art saves (the dock's own compaction)")
     def test_failed_sync_puts_the_old_art_files_back(self):
         songs = self.covered(8)
         self.apply(self.manifest(songs))
@@ -161,6 +180,7 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual(self.ithmb_sizes(), sizes)
         self.assertEqual(self.art(), before)
 
+    @unittest.skipIf(h.pygpod_saves_art_itself(), "pygpod 0.0.x's art saves (the dock's own compaction)")
     def test_crash_mid_compaction_keeps_the_matching_files(self):
         songs = self.covered(8)
         self.apply(self.manifest(songs))
