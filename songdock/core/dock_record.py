@@ -383,6 +383,26 @@ class Record:
         rows = self.db.execute("SELECT * FROM room_removed WHERE guid = ?", (guid,))
         return {r["navidrome_id"]: dict(r) for r in rows}
 
+    def rename_songs(self, mapping):
+        """Songs that Navidrome gave new IDs ({old: new}; a re-index after a server
+        update, 2026-11-04) keep everything the record knows: tracks on players,
+        unsent plays, songs taken off to make room, the copy log, rated favorites.
+        One transaction. Returns how many rows changed."""
+        pairs = [(new, old) for old, new in mapping.items() if new not in mapping]
+        changed = 0
+        with self.db:
+            for table in ("tracks", "pending_plays", "room_removed", "copied", "rated_favorites"):
+                changed += self.db.executemany(
+                    f"UPDATE OR REPLACE {table} SET navidrome_id = ? WHERE navidrome_id = ?",
+                    pairs).rowcount
+            for rowid, entry in self.db.execute("SELECT rowid, entry FROM copied").fetchall():
+                e = json.loads(entry)
+                if e.get("id") in mapping:
+                    e["id"] = mapping[e["id"]]
+                    self.db.execute("UPDATE copied SET entry = ? WHERE rowid = ?",
+                                    (json.dumps(e), rowid))
+        return changed
+
     def clear_room_removed(self, guid, song_ids):
         with self.db:
             self.db.executemany("DELETE FROM room_removed WHERE guid = ? AND navidrome_id = ?",

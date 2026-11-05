@@ -881,6 +881,12 @@ def fill_missing_names(track, t):
     if album_artist and getattr(track, "albumartist", None) != album_artist:
         track.albumartist = album_artist
         changed.add("albumartist")
+    # The Navidrome ID kept on the track, for re-adopting it if the record is lost,
+    # follows an ID Navidrome changed (dock_prepare.follow_new_ids).
+    if t.get("id") and (track.comment or "").startswith(NAVIDROME_TAG) \
+            and track.comment != NAVIDROME_TAG + t["id"]:
+        track.comment = NAVIDROME_TAG + t["id"]
+        changed.add("id")
     return changed
 
 
@@ -1024,7 +1030,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
             continue
         t = planned[nid]
         fields = fill_missing_names(on_player[int(r["dbid"])], t)
-        if fields - {"genre"}:
+        if fields - {"genre", "id"}:
             log_info(f"Updated names from Navidrome: {t.get('artist')} - "
                      f"{t.get('title')} ({t.get('album')})")
         renamed += bool(fields)
