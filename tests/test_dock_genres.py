@@ -111,6 +111,17 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(g.release_types({"releaseTypes": ["Live"]}), ["live"])
         self.assertEqual(g.release_types({}), [])
 
+    def test_release_types_spelled_out_by_navidrome(self):
+        # as Navidrome sent them for three real albums, 2026-11-06
+        for sent, want in (
+                (["a;l;b;u;m;;; ;c;o;m;p;i;l;a;t;i;o;n", " ", ";", "a", "b", "c"],
+                 ["album", "compilation"]),
+                (["a;l;b;u;m", "album"], ["album"]),
+                ([" ", ";", "e", "i", "m", "p", "r", "x"], [])):
+            got = g.release_types({"releaseTypes": sent})
+            self.assertEqual(got, want)
+            self.assertTrue(g.plausible_types(got))    # kept, not looked up every run
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -111,11 +111,23 @@ def song_tags(song):
 
 def release_types(album):
     """An album's release types, lower case. Navidrome sends a list, or for
-    some albums one string such as "album;compilation", or a list holding those."""
+    some albums one string such as "album;compilation", or a list holding those.
+    Some albums come from Navidrome spelled out letter by letter (seen 2026-11-06:
+    "a;l;b;u;m;;; ;c;o;m;p;i;l;a;t;i;o;n" beside stray letters): those words are
+    put back together, and single letters dropped."""
     types = album.get("releaseTypes") or []
     if isinstance(types, str):
         types = [types]
-    return [t.strip().lower() for joined in types for t in (joined or "").split(";") if t.strip()]
+    found = []
+    for joined in types:
+        parts = (joined or "").split(";")
+        if len(parts) > 2 and all(len(p) <= 1 for p in parts):
+            parts = "".join(p or ";" for p in parts).split(";")   # one letter per part
+        for t in parts:
+            t = t.strip().lower()
+            if len(t) > 1 and t not in found:
+                found.append(t)
+    return found
 
 
 def plausible_types(types):
