@@ -328,10 +328,10 @@ waiting to be sent stay queued.
 2. Find the newest version on the
    [releases page](https://github.com/Wuverul/SongDock/releases). Read its notes
    in `CHANGELOG.md`: they say if the next sync will change anything on your iPod.
-3. On the Pi, download and install it, putting that version in place of `0.7.5`:
+3. On the Pi, download and install it, putting that version in place of `0.7.6`:
 
    ```sh
-   VERSION=0.7.5
+   VERSION=0.7.6
    curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
    tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
    cd ~/musicdock/songdock && sudo ./pi/install.sh
