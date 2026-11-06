@@ -102,6 +102,28 @@ class AlbumArtistTests(unittest.TestCase):
         self.assertEqual(a.compilations(["Now That's Music", "Mix = Mixes"]),
                          {"now that's music": "Now That's Music", "mix": "Mixes"})
 
+    def test_guests_in_the_album_artist_are_guests_too(self):
+        # femtanyl's singles credited "femtanyl feat. X" listed as artists of their own,
+        # with femtanyl as a guest on its own song (user, 2026-11-06)
+        records = [{"id": "1", "artist": "femtanyl feat. takihasdied", "title": "LOVESICK",
+                    "displayAlbumArtist": "femtanyl feat. takihasdied"},
+                   {"id": "2", "artist": "MAILPUP feat. femtanyl & sixwing", "title": "PUPPYPLAY!",
+                    "displayAlbumArtist": "MAILPUP feat. femtanyl & sixwing"},
+                   {"id": "3", "artist": "femtanyl", "title": "P3T",
+                    "displayAlbumArtist": "femtanyl"}]
+        a.tidy(records)
+        self.assertEqual([(r["artist"], r["title"], r["displayAlbumArtist"]) for r in records],
+                         [("femtanyl", "LOVESICK (feat. takihasdied)", "femtanyl"),
+                          ("MAILPUP", "PUPPYPLAY! (feat. femtanyl & sixwing)", "MAILPUP"),
+                          ("femtanyl", "P3T", "femtanyl")])
+        self.assertEqual(a.tidy(records), 0)
+
+    def test_the_albums_own_credit_isnt_a_guest(self):
+        # Navidrome listed "Chase" and "Status and Bou" apart, the album as one name
+        self.assertEqual(a.split_credit("Chase & Status and Bou feat. IRah", is_list=True,
+                                        album_main="Chase & Status and Bou"),
+                         ("Chase & Status and Bou", "IRah"))
+
     def test_a_band_with_and_in_its_name_survives_on_its_album(self):
         self.assertEqual(self.tidied(artist="Above & Beyond",
                                      displayAlbumArtist="Above & Beyond"),

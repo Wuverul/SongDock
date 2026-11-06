@@ -144,6 +144,8 @@ def split_credit(credit, keep=KEEP_NAMES, album_main=None, is_list=True):
     names = names_in(name, keep, is_list) if name else [credit.strip()]
     if album_main:
         main = same_artist(album_main)
+        if same_artist(name) == main:           # the album's own credit, split or not
+            names = [album_main]
         return album_main, ", ".join([n for n in names if same_artist(n) != main]
                                      + guests) or None
     return names[0], ", ".join(names[1:] + guests) or None
@@ -159,7 +161,8 @@ def title_with_guests(title, guests):
 
 
 def _album_artist(song):
-    return song.get("displayAlbumArtist") or song.get("albumArtist") or ""
+    """The album's artist without any feat. part ("X feat. Y" is X's album)."""
+    return without_guests(song.get("displayAlbumArtist") or song.get("albumArtist") or "")[0]
 
 
 def tidy(songs, extra_names=(), unproven=None, compilation_albums=()):
@@ -211,8 +214,13 @@ def tidy(songs, extra_names=(), unproven=None, compilation_albums=()):
         main, guests = split[song["id"]]
         artist = best[same_artist(main)]
         title = title_with_guests(song.get("title"), guests)
-        if artist != song["artist"] or title != song.get("title"):
+        album_artist = song.get("displayAlbumArtist") or song.get("albumArtist")
+        new_album_artist = _album_artist(song) if album_artist else album_artist
+        if (artist, title, new_album_artist) != (song["artist"], song.get("title"),
+                                                 album_artist):
             song["artist"], song["title"] = artist, title
+            if new_album_artist != album_artist:
+                song["displayAlbumArtist"] = new_album_artist  # its guests are in titles
             changed += 1
     return changed
 

@@ -741,7 +741,9 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   to the title ("(feat. X)", unless the title names them, e.g. a remix).
   **Rule (user's final call, same day; replaces an equal-partners exception
   for "Porter Robinson & Madeon"):** the album's artist, first name if it has
-  several; on compilations (album artist contains "Various") the first name
+  several, without any feat. part (2026-11-06: "femtanyl feat. X" singles were
+  their own listing; the album artist field loses it too, and the album's own
+  credit is never a guest); on compilations (album artist contains "Various") the first name
   in the track's credit. "Chillhop Music" is treated as an artist. `feat.`/
   `ft.`/`featuring`/`w/` always separate. A comma, `&` or `/` separates only
   with evidence: Navidrome's `artists` names a part separately or has `;`,
