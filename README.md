@@ -65,6 +65,12 @@ music in the background, so syncs are quick.
   so far with a USB flash drive standing in for one, not with a real
   player.
 
+  **Rockbox and other music players are provided as is.** Stock-firmware
+  iPods are what SongDock is built and tested for. Support for the others
+  is kept simple (mostly copying music into a folder) and kept working,
+  and bug reports are welcome, but it isn't tested on real players and
+  may not get new features.
+
   On stock firmware, an unsupported iPod gets **SYNC FAILED** with its
   model name, before anything on it is changed. Rockbox support has been
   tried with a USB flash drive set up like a Rockbox player, but not yet
