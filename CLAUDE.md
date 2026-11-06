@@ -587,7 +587,13 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   `ipod_db.sort_order`, marker version 2), artists by album/disc/track,
   genres by artist/album/disc/track - before pygpod's sort. A marker
   (`iPod_Control/musicdock/sort-order`) makes the next write sync re-save
-  once so existing players get corrected lists.
+  once so existing players get corrected lists. **Names differing only in case still
+  merge (proven on the Classic 2026-11-05):** with "Home" on album ID 309 and "HOME" on 234
+  (mhit 0x120, written by ipod_db; pygpod doesn't parse that field), separate mhia entries
+  and different album artists, the iPod listed two albums but played both as one (1-14
+  Blackmill, 15-23 SIAMÉS): the firmware matches an album's tracks by name, ignoring case.
+  `dock_prepare.separate_album_names` gives such albums "<name> (<album artist>)" on the
+  player; with that the Classic keeps them apart (16:02 sync).
 - **Supported players (2026-10-19, user: Classic, Video and Nano only; no
   touch/shuffle):** `ipod_handler.SIGNED_GENERATIONS` (Classic 1-3, Nano
   3G/4G: hash58 required) and `UNSIGNED_GENERATIONS` (Video 5G/5.5G, Nano
