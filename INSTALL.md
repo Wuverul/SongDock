@@ -98,10 +98,10 @@ ssh yourname@musicdock.local
 Type `yes` the first time, then your Pi password. Everything below is typed
 **on the Pi**. Find the newest version on the
 [releases page](https://github.com/Wuverul/SongDock/releases) and put it in place
-of `0.7.5`:
+of `0.7.6`:
 
 ```sh
-VERSION=0.7.5
+VERSION=0.7.6
 curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
 mkdir -p ~/musicdock
 tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
@@ -449,7 +449,7 @@ check `musicdock-status` after one.
 To update by hand, unplug the iPod and run this on the Pi, with the newest version:
 
 ```sh
-VERSION=0.7.5
+VERSION=0.7.6
 curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
 tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
 cd ~/musicdock/songdock && sudo ./pi/install.sh

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.6
+
+Survives a Navidrome update, and uses a current pygpod.
+
+**To update:** docks on 0.7.2 or later install this by themselves; from an older version, install it by hand as in the README ("Updating"). Your settings, cache and the record of what's on your players are kept.
+
+- **A Navidrome update no longer makes the dock start over.** An update can re-index the library and give every song a new ID. The dock then saw all your songs leave and arrive again: it re-downloaded and converted everything, and its next sync would have removed every song from a docked iPod and copied it back, losing the iPod's play counts. Now it recognizes each song under its new ID (by MusicBrainz recording, otherwise by artist, title, album, track and length) and keeps its converted file, its place on your iPods, their play counts and any plays waiting to be sent. Nothing is downloaded or copied again; the next sync only updates the ID stored on each iPod track.
+- **pygpod 0.2.3** (was 0.0.6), the library the dock uses for new tracks and album art on stock iPods. New songs get gapless playback data, "date added" on the iPod is right (it was hours off), and album-art saves can't be left half-written. The installer updates it.
+- **Two albums whose names differ only in case** ("Home" by Blackmill, "HOME" by SIAMÉS) played as one album on the iPod, whatever their album artists. They now show with their artist added: "Home (Blackmill)", "HOME (SIAMÉS)". Other albums keep their names.
+- Tried on an iPod classic; pygpod 0.2.3 hasn't been on an iPod nano yet.
+
 ## 0.7.5
 
 Loud songs no longer clip.
