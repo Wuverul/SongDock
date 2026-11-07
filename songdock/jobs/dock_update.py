@@ -41,6 +41,8 @@ import time
 import tomllib
 import urllib.request
 
+import dock_log
+
 HERE = dock_paths.ROOT                   # the installed folder, swapped whole
 log = logging.getLogger("dock_update")
 
@@ -100,8 +102,9 @@ def save_state(state, path=None):
     os.replace(tmp, path)
 
 
-def note(state, now=None):
-    """The line for DOCK READY, or None."""
+def note(state, now=None, connected=None):
+    """The line for DOCK READY, or None. connected: whether a player is plugged in
+    (looked up if not given)."""
     version = state.get("version")
     if not version:
         return None
@@ -109,8 +112,9 @@ def note(state, now=None):
     if not after:
         return f"Update {version} available"
     now = time.time() if now is None else now
-    if now >= after:
-        return f"Update {version}: when unplugged"
+    if now >= after:                  # "when unplugged" with nothing plugged in misled
+        connected = player_connected() if connected is None else connected
+        return f"Update {version}: " + ("when unplugged" if connected else "installing soon")
     return "Update {} at {}".format(version, time.strftime("%-I:%M %p", time.localtime(after)))
 
 
@@ -411,7 +415,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Install new SongDock releases")
     p.add_argument("--check", action="store_true", help="only print the latest release")
     args = p.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    dock_log.setup()
     if args.check:
         version, package, signature = fetch_latest()
         print(f"This is {version_text(current_version() or (0, 0, 0))}; latest is "

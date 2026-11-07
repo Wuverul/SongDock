@@ -33,6 +33,7 @@ import subprocess
 import sys
 import time
 
+import dock_log
 import dock_wifi
 
 log = logging.getLogger("dock_wifiprefer")
@@ -154,7 +155,7 @@ def check(wifi=None, state_path=STATE, now=None, busy=sync_running, settle=time.
 
 
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    dock_log.setup()
     check()
     return 0
 

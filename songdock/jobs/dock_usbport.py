@@ -36,6 +36,8 @@ import subprocess
 import sys
 import time
 
+import dock_log
+
 log = logging.getLogger("dock_usbport")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -128,7 +130,7 @@ def check(state_path=STATE, now=None, read_log=read_kernel_log, show=show_screen
 
 
 def main():
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    dock_log.setup()
     check()
     return 0
 

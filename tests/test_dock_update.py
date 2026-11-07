@@ -102,7 +102,10 @@ class UpdateTests(unittest.TestCase):
         when = NOW + 5 * HOUR
         self.assertEqual(self.go(now=when, blocked=lambda: "a player is connected"), "blocked")
         self.assertEqual(self.version_here(), (0, 7, 1))
-        self.assertEqual(u.note(self.st(), when), "Update 0.8.0: when unplugged")
+        self.assertEqual(u.note(self.st(), when, connected=True), "Update 0.8.0: when unplugged")
+        # past its time with nothing plugged in it waits for a job, not a player (2026-11-06)
+        self.assertEqual(u.note(self.st(), when, connected=False),
+                         "Update 0.8.0: installing soon")
         self.assertEqual(self.go(now=when + 900), "installed")
 
     def test_bad_signature_is_refused_for_good(self):
