@@ -159,7 +159,7 @@ class IpodSectionTests(unittest.TestCase):
         manifest = {"tracks": [{"id": "a"}, {"id": "c"}, {"id": "d"}], "skipped": []}
         lines, facts = dock_report.ipod_section(self.path, manifest)
         text = "\n".join(lines)
-        self.assertIn("...1234 (xB903)", text)
+        self.assertRegex(text, r"\.\.\.1234 \((iPod Nano 4th Gen, )?model MB903")
         self.assertIn("2 tracks", text)
         self.assertIn("+2 -1 tracks", text)
         self.assertIn("1 waiting to send, 1 unmatched", text)

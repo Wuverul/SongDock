@@ -128,6 +128,31 @@ class SetupFileTests(PlayersBase):
         self.assertEqual(self.forgotten(), set())
         self.assertTrue(os.path.exists(os.path.join(self.dir, "DockSetup.txt")))
 
+    def test_model_line_checked_first_then_set(self):
+        import ipod_handler
+        self.write("Model=MC297\nForget=Sam's iPod\n")
+        with mock.patch.object(ipod_handler, "model_change", return_value=("xC297", None)), \
+                mock.patch.object(ipod_handler, "set_model",
+                                  return_value="model set to MC297") as set_model:
+            result = self.apply()
+        self.assertTrue(result["ok"])
+        self.assertIn("model set to MC297", result["done"])
+        set_model.assert_called_once()
+        self.assertEqual(self.forgotten(), {FRIEND})
+
+    def test_a_refused_model_changes_nothing(self):
+        import ipod_handler
+        self.write("Forget=Sam's iPod\nModel=MB903\n")
+        with mock.patch.object(ipod_handler, "model_change",
+                               return_value=(None, "would change how")), \
+                mock.patch.object(ipod_handler, "set_model") as set_model:
+            result = self.apply()
+        self.assertEqual((result["ok"], result["reason"]), (False, "would change how"))
+        set_model.assert_not_called()
+        self.assertEqual(self.forgotten(), set())
+        self.write("Model=MC297\nmodel=MC293\n")
+        self.assertEqual(self.apply()["reason"], "Model is given twice")
+
     def test_cant_forget_the_ipod_being_synced(self):
         self.write("Forget=Jo's iPod (classic)\n")
         self.assertEqual(self.apply()["reason"], "Can't forget the iPod being synced")

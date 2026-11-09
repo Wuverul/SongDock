@@ -104,7 +104,11 @@ def parse_setup_file(text):
         if not m:
             raise SetupFileError(f"Line {n} isn't Setting=value")
         key = m.group(1).lower()
-        if key in ACTIONS:
+        if key == "model":                    # this iPod's model (ipod_handler.set_model)
+            if any(action == "model" for action, _ in steps):
+                raise SetupFileError("Model is given twice")
+            steps.append((key, m.group(2)))
+        elif key in ACTIONS:
             steps.append((key, m.group(2)))
         elif key in SETTINGS:
             name = SETTINGS[key]
@@ -399,14 +403,21 @@ def apply_setup_file(root, record, guid, cfg=None, config_path=None, connect=Non
 
     # Check every line before changing anything.
     players = record.players()
+    model = None
     for action, value in steps:
+        if action == "model":
+            import ipod_handler
+            model, why = ipod_handler.model_change(root, record, guid, value)
+            if why:
+                return refuse(why)
+            continue
         found, why = dock_players.match(players, value, guid)
         if not why and action == "forget" and any(p["guid"] == guid for p in found):
             why = "Can't forget the iPod being synced"
         if why:
             return refuse(why)
     if changes.get(("device", "type")) == "rockbox":
-        why = stock_blocker(record, players, steps, guid)
+        why = stock_blocker(record, players, [st for st in steps if st[0] != "model"], guid)
         if why:
             return refuse(why)
     if login:
@@ -423,6 +434,10 @@ def apply_setup_file(root, record, guid, cfg=None, config_path=None, connect=Non
             log.error("Couldn't change config.toml: %s", e)
             return refuse("Couldn't save the settings (see the log)")
     for action, value in steps:
+        if action == "model":
+            import ipod_handler
+            done.append(ipod_handler.set_model(root, record, guid, model))
+            continue
         msgs, _ = ACTIONS[action](record, record.players(), value, guid)
         done += msgs
     for msg in done:
@@ -498,6 +513,8 @@ def marker_text(players, this_guid, intro, result=None, previous="", notes=None,
         else:
             lines.append(f"      {p['present']} tracks, last synced "
                          f"{dock_players.when(p['last_sync'])}")
+        if this and p.get("kind") in (None, "stock") and p.get("model"):
+            lines.append(f"      {dock_players.model_text(p['model'], p.get('model_source'))}")
     if notes:
         lines += ["", "About this iPod:"] + [f"  * {n}" for n in notes]
     lines += removed_lines(removed)

@@ -795,6 +795,14 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   ~15-17k ALAC songs). Shown as warnings in the sync log, an "About this
   iPod" section in MediaDock.txt (`marker_text(notes=)`), and
   musicdock-status Problems.
+  **Limits by model (user, 2026-11-09):** `MODEL_SONGS` (iFlash's compatibility table,
+  the user's source of truth: ~20,000 for the 30 GB Videos, ~50,000 for bigger Videos and
+  every Classic; nanos not listed) scales the warning/cutoff (90% / 94%: 45,000/47,000 or
+  18,000/18,800); unlisted models keep 45,000/47,000. `players.model_source` (sysinfo /
+  serial / guess / manual) says where the model came from; a USB-ID guess stays "guess"
+  in MediaDock.txt and musicdock-status (`dock_players.model_text`) until `Model=` in
+  DockSetup.txt (`ipod_handler.model_change` / `set_model`) sets it, only to a model with
+  the same signature, database version, music folders and cover formats.
 - `dock_safehours.py` (2026-10-26, user request: "grab your iPod before a
   morning commute"): `[sync] safe_hours`, **default "07:00-10:00"** (user's
   choice; existing configs without the key get it too), "off" (or "") =

@@ -402,12 +402,16 @@ below is either untested on hardware or not built.
   `MediaDock.txt` on it.
 - **The iPod's model can be guessed wrong** after a restore wipes the file
   that names it, since every iPod classic looks the same over USB: a 7th
-  generation showed as a 6th generation 80 GB. It's only a label (classics
-  share the same database format and cover sizes); it's right if the file
-  still names the model.
+  generation showed as a 6th generation 80 GB. `MediaDock.txt` shows the model
+  and says when it's a guess; `Model=MC297` in a `DockSetup.txt` corrects it (only
+  to a model whose database is written the same way). It matters for how many
+  songs the dock puts on the iPod (below).
 - **Very large libraries:** the dock adds at most 47,000 songs to a stock
-  iPod (they're reported to fail at about 50,000), and `musicdock-status`
-  (and `MediaDock.txt` on the iPod) warn from 20,000. The iPod's database was measured fine at 40,000 songs on a
+  iPod that handles about 50,000 (every classic, the bigger iPod videos), and
+  18,800 to one that handles about 20,000 (the 30 GB iPod videos), going by
+  [iFlash's table](https://www.iflash.xyz/store/iflash-compatibility/); the
+  real limit depends on the iPod and its songs. `musicdock-status` (and
+  `MediaDock.txt` on the iPod) warn from 20,000, and near the model's limit. The iPod's database was measured fine at 40,000 songs on a
   Pi Zero 2 W; album art and the music preparation haven't been measured at
   that size yet.
 - **Navidrome only, one library per dock.** Other Subsonic-compatible

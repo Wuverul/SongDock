@@ -462,6 +462,14 @@ class HandlerTests(unittest.TestCase):
         self.assertEqual((summary["added"], summary["not_added_limit"]), (3, 2))
         self.assertEqual(len(self.db().tracks), 3)
 
+    def test_the_limit_follows_the_ipods_model(self):
+        import dock_limits
+        self.rec.upsert_player(G, model="xA002")
+        songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
+        with mock.patch.dict(dock_limits.MODEL_SONGS, {"A002": 3}):   # stops at 3 x 0.94
+            summary = self.apply(self.manifest(songs))
+        self.assertEqual((summary["added"], summary["not_added_limit"]), (3, 2))
+
     def test_unsaved_tracks_are_capped(self):
         songs = [self.song(f"n{i}", f"Song {i}") for i in range(5)]
         with mock.patch.object(h, "SAVE_AFTER", 2):
@@ -1222,6 +1230,34 @@ class HandlerTests(unittest.TestCase):
             self.assertEqual(model, "xB029")
             self.assertIn(said, lines)
             self.assertIn("guessed from its USB product ID (0x1261)", lines)
+
+    def test_where_the_model_came_from_is_kept(self):
+        open(h.sysinfo_path(self.mount), "w").close()
+        h.ensure_sysinfo(self.mount, G, self.rec, usb_product=0x1261)      # a Classic: guessed
+        self.assertEqual(self.rec.player(G)["model_source"], "guess")
+        h.ensure_sysinfo(self.mount, G, self.rec, usb_product=0x1261)      # now in SysInfo
+        self.assertEqual(self.rec.player(G)["model_source"], "guess")   # still a guess
+        self.rec.db.execute("DELETE FROM players")
+        h.ensure_sysinfo(self.mount, G, self.rec)                          # SysInfo, unknown dock
+        self.assertEqual(self.rec.player(G)["model_source"], "sysinfo")
+
+    def test_model_corrected_by_hand_within_its_family(self):
+        open(h.sysinfo_path(self.mount), "w").write(f"ModelNumStr: xB029\nFirewireGuid: 0x{G}\n")
+        self.rec.upsert_player(G, model="xB029", source="guess")
+        self.assertEqual(h.model_change(self.mount, self.rec, G, "MC297"), ("xC297", None))
+        for wanted, why in (("MB903", "would change how"),        # a nano: other database
+                            ("MZ999", "isn't an iPod model"),
+                            ("160GB", "isn't a model number")):
+            model, reason = h.model_change(self.mount, self.rec, G, wanted)
+            self.assertIsNone(model)
+            self.assertIn(why, reason)
+        self.assertIn("MC297", h.set_model(self.mount, self.rec, G, "xC297"))
+        self.assertEqual(h.read_sysinfo(self.mount)[0],
+                         {"ModelNumStr": "xC297", "FirewireGuid": f"0x{G}"})
+        self.assertEqual((self.rec.player(G)["model"], self.rec.player(G)["model_source"]),
+                         ("xC297", "manual"))
+        self.assertEqual(h.ensure_sysinfo(self.mount, G, self.rec), "xC297")
+        self.assertEqual(self.rec.player(G)["model_source"], "manual")
 
     def test_unknown_model_is_a_clear_error(self):
         open(h.sysinfo_path(self.mount), "w").close()

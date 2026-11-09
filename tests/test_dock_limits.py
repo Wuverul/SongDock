@@ -25,6 +25,21 @@ class LimitTests(unittest.TestCase):
         self.assertIn("limit reached", lim.library_note(47_000))
         self.assertIn("slowdowns or crashes", lim.library_note(47_000, stock=False))
 
+    def test_each_model_has_its_own_limit(self):
+        # iFlash's table (user, 2026-11-09): ~20,000 songs for the 30 GB Videos, ~50,000
+        # for the bigger Videos and every Classic; others keep 45,000/47,000
+        self.assertEqual(lim.song_limits("xA002"), (18_000, 18_800))     # Video 30 GB
+        for model in ("MC297", "xC297", "PC297", "C297", "xB029"):         # Classics
+            self.assertEqual(lim.song_limits(model), (45_000, 47_000))
+        for model in ("xB903", None, "", "xZ999"):                         # nano, unknown
+            self.assertEqual(lim.song_limits(model), (45_000, 47_000))
+        self.assertIn("close to the limit", lim.library_note(18_000, model="xA444"))
+        self.assertIn("no more than 18,800", lim.library_note(18_800, model="xA444"))
+        self.assertIsNone(lim.library_note(18_000, model="xC297"))
+        self.assertEqual(lim.player_notes(19_000, 0, None, MP3, model="xA664"),
+                         ["19,000 songs: limit reached - the dock adds no more than "
+                          "18,800 to this iPod"])
+
     def test_the_larger_of_on_the_player_and_planned_counts(self):
         self.assertEqual(lim.player_notes(1_455, 21_000, None, MP3),
                          ["Large library (21,000 songs): syncs may be slower"])

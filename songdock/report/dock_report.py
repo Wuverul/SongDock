@@ -284,7 +284,10 @@ def ipod_section(record_path, manifest, now=None):
             "THEN queued_at END) FROM pending_plays").fetchone()
     finally:
         db.close()
-    lines = [f"iPod ...{p['guid'][-4:]} ({p['model'] or 'model ?'}): last synced "
+    import dock_players
+    model = dock_players.model_text(
+        p["model"], p["model_source"] if "model_source" in p.keys() else None)
+    lines = [f"iPod ...{p['guid'][-4:]} ({model}): last synced "
              f"{when(p['last_sync'])} ({ago(p['last_sync'], now)}), {len(set(present))} tracks"]
     if manifest:
         add, remove = ipod_handler.pending_changes(manifest, present + set_aside)
@@ -305,7 +308,7 @@ def ipod_section(record_path, manifest, now=None):
     keys = p.keys()
     player = {"on_player": len(set(present)),
               "capacity": p["capacity"] if "capacity" in keys else None,
-              "kind": p["kind"] if "kind" in keys else None}
+              "kind": p["kind"] if "kind" in keys else None, "model": p["model"]}
     return lines, {"plays_waiting": waiting or 0, "oldest_waiting": oldest,
                    "player": player}
 
@@ -499,7 +502,8 @@ def main(argv=None):
         pl = facts["player"]
         facts["size_notes"] = dock_limits.player_notes(
             pl["on_player"], len(dock_restore.targets(manifest)), pl["capacity"], cfg,
-            pl["kind"], dock_limits.plan_bytes(manifest), dock_limits.alac_bytes(manifest))
+            pl["kind"], dock_limits.plan_bytes(manifest), dock_limits.alac_bytes(manifest),
+            model=pl.get("model"))
     import dock_update
     update = dock_update.load_state()
     if update.get("version"):

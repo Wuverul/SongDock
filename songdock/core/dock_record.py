@@ -147,6 +147,7 @@ class Record:
         self._add_column("players", "capacity INTEGER")          # dock_limits (2026-10-26)
         self._add_column("players", "swaps_no_room INTEGER")     # format swaps held back (2026-10-30)
         self._add_column("players", "full INTEGER")              # last sync ran out of room (2026-10-30)
+        self._add_column("players", "model_source TEXT")         # sysinfo/serial/guess/manual (2026-11-09)
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
             # login user) so the prepare job can write it too.
@@ -179,13 +180,17 @@ class Record:
         row = self.db.execute("SELECT * FROM players WHERE guid = ?", (guid,)).fetchone()
         return dict(row) if row else None
 
-    def upsert_player(self, guid, model=None):
+    def upsert_player(self, guid, model=None, source=None):
+        """source: where the model came from: "sysinfo", "serial", "guess" (from the
+        USB product ID: the family is right, the exact model may not be) or "manual"
+        (Model= in DockSetup.txt)."""
         now = int(time.time())
         with self.db:
             self.db.execute(
-                "INSERT INTO players (guid, model, first_seen) VALUES (?, ?, ?) "
-                "ON CONFLICT(guid) DO UPDATE SET model = COALESCE(excluded.model, model)",
-                (guid, model, now))
+                "INSERT INTO players (guid, model, first_seen, model_source) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(guid) DO UPDATE SET model = COALESCE(excluded.model, model), "
+                "model_source = COALESCE(excluded.model_source, model_source)",
+                (guid, model, now, source))
 
     def last_synced_player(self):
         row = self.db.execute("SELECT * FROM players WHERE last_sync IS NOT NULL "

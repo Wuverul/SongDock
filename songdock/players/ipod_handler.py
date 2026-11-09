@@ -30,6 +30,7 @@ Play data, and why the order of operations matters:
 import errno
 import gc
 import os
+import re
 import shutil
 import time
 import types
@@ -249,17 +250,22 @@ def ensure_sysinfo(mount, guid, record, usb_product=None, block_device=None,
     values, lines = read_sysinfo(mount)
     known = record.player(guid) or {}
     model = values.get("ModelNumStr") or known.get("model")
+    # Where it came from, for MediaDock.txt and musicdock-status: a guess written to
+    # SysInfo stays a guess until Model= corrects it.
+    source = (known.get("model_source") if model and model == known.get("model")
+              else "sysinfo" if model else None)
     if not model and block_device:
         found = model_from_serial(block_device, read_serial)
         if found:
-            model = found[0]
+            model, source = found[0], "serial"
             log_info(f"iPod model {model} worked out from its serial number ({found[1]})")
     if not model and REPRESENTATIVE_MODELS.get(usb_product):
-        model = REPRESENTATIVE_MODELS[usb_product]
+        model, source = REPRESENTATIVE_MODELS[usb_product], "guess"
         log_info(f"iPod model {model} guessed from its USB product ID (0x{usb_product:04x}): "
                  "the exact model may differ, but every model with this ID gets the same "
                  "database and covers. To set the real one, change 'ModelNumStr:' in "
-                 f"{sysinfo_path(mount)} (model from Settings > About, e.g. MC297 -> xC297)")
+                 f"{sysinfo_path(mount)} (model from Settings > About, e.g. MC297 -> xC297), "
+                 "or put Model=MC297 in a DockSetup.txt")
     if not model:
         log_info("Unknown iPod model: SysInfo is empty, the serial number didn't help, "
                  "and this player hasn't been seen before. Add a line "
@@ -278,8 +284,65 @@ def ensure_sysinfo(mount, guid, record, usb_product=None, block_device=None,
             f.write("\n".join(lines + add) + "\n")
             f.flush()
             os.fsync(f.fileno())
-    record.upsert_player(guid, model=model)
+    record.upsert_player(guid, model=model, source=source)
     return model
+
+
+def _model_traits(model):
+    """What a model decides about the database the dock writes: signature, database
+    version, music folders, cover formats. Two models with the same traits get the
+    same database, so one can be corrected to the other."""
+    from pygpod.device.models import get_checksum_type, get_db_version, lookup_model
+    info = lookup_model(model)
+    gen = info.generation
+    try:
+        from pygpod.device.artwork_formats import get_cover_art_formats
+        covers = repr(get_cover_art_formats(gen))
+    except ImportError:              # pygpod 0.0.x: no table, so only the same generation
+        covers = gen.name
+    return gen.name, (get_checksum_type(gen), get_db_version(gen), info.musicdirs, covers)
+
+
+def model_change(mount, record, guid, wanted):
+    """('x<model>', None) for Model=<wanted> in DockSetup.txt, or (None, why not).
+    The model is only a label for the dock's limits and messages as long as the
+    database stays the same, so only a model whose database is written the same
+    way is accepted (a Classic for another Classic, a nano 4G for a nano 4G)."""
+    if not os.path.isdir(os.path.join(mount, "iPod_Control")):
+        return None, "Model= is for stock iPods"
+    import dock_limits
+    number = dock_limits.model_number(wanted)
+    if not number or not re.fullmatch(r"[A-Z]\d{3}", number):
+        return None, f"Model={wanted} isn't a model number like MC297 (Settings > About)"
+    current = read_sysinfo(mount)[0].get("ModelNumStr") or \
+        (record.player(guid) or {}).get("model")
+    try:
+        name, traits = _model_traits(number)
+        if name == "UNKNOWN":
+            return None, f"Model {wanted} isn't an iPod model the dock knows"
+        if current and traits != _model_traits(current)[1]:
+            return None, (f"Model {wanted} would change how this iPod's music list is "
+                          f"written (it's set up as {current[1:]})")
+    except ImportError:
+        return None, "Can't check iPod models on this dock (pygpod missing)"
+    return "x" + number, None
+
+
+def set_model(mount, record, guid, model):
+    """Write a model from model_change into SysInfo and the record. Returns the
+    message for MediaDock.txt."""
+    values, lines = read_sysinfo(mount)
+    lines = [ln for ln in lines if ln.partition(":")[0].strip() != "ModelNumStr"]
+    os.makedirs(os.path.dirname(sysinfo_path(mount)), exist_ok=True)
+    tmp = sysinfo_path(mount) + ".musicdock-new"
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines + [f"ModelNumStr: {model}"]) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, sysinfo_path(mount))
+    record.upsert_player(guid, model=model, source="manual")
+    import dock_players
+    return f"model set to M{model[1:]} ({dock_players.model_name(model)})"
 
 
 def check_supported(model):
@@ -1155,12 +1218,13 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         log_info(f"Added album art to {art_added} track(s) already on the player")
         session["dirty"] = True
     import dock_limits
+    song_limit = dock_limits.song_limits((record.player(guid) or {}).get("model"))[1]
     added, skipped_full, over_limit, replaced = 0, 0, 0, 0
     copy_began, copy_bytes = time.monotonic(), 0
     for n, t in enumerate(additions):
         swap = t["id"] in changed
-        if not swap and len(db.tracks) >= dock_limits.STOCK_LIMIT:
-            # Stock iPods are reported to fail at about 50,000 songs.
+        if not swap and len(db.tracks) >= song_limit:
+            # Each model handles about so many songs (dock_limits.MODEL_SONGS).
             over_limit += 1
             continue
         if deadline and wall() >= deadline:
@@ -1217,8 +1281,8 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         log_info(f"Copied {added} tracks, {copy_bytes / 1e6:.1f} MB in "
                  f"{time.monotonic() - copy_began:.1f} s")
     if over_limit:
-        log_info(f"{dock_limits.STOCK_LIMIT:,} songs on the iPod: the most the dock "
-                 f"adds to a stock iPod; {over_limit} track(s) not added")
+        log_info(f"{song_limit:,} songs on the iPod: the most the dock adds to this "
+                 f"model; {over_limit} track(s) not added")
     if skipped_full:
         log_info(f"Player is full: {skipped_full} track(s) not added")
 

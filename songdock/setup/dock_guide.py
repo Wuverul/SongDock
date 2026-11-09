@@ -250,6 +250,18 @@ The Navidrome server and the account the dock signs in with:
     deleted from the iPod with this file. If the change can't be made,
     the file stays - delete it yourself if you give up.
 
+This iPod's model (MediaDock.txt shows the one the dock found):
+  Model=MC297         the model number from Settings > About on the iPod
+  - The dock reads it from the iPod, or guesses it from how the iPod
+    connects, which can pick the wrong size of the right kind (after a
+    restore, every iPod classic looks alike). MediaDock.txt says when
+    it's a guess.
+  - It sets how many songs the dock puts on this iPod: about 20,000 for
+    a 30 GB iPod video, about 50,000 for bigger ones and every classic.
+  - Only a model of the same kind is accepted (a classic for a classic):
+    one that would change how the iPod's music list is written is
+    refused.
+
 Retiring an iPod you've replaced:
   The dock keeps a copy of each song until every iPod it syncs has it,
   so an old, smaller iPod you no longer use can stop a bigger new one

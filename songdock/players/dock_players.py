@@ -52,6 +52,23 @@ def model_name(model):
     return model
 
 
+def model_text(model, source=None):
+    """'iPod Classic 3rd Gen (7G), model MC297, about 50,000 songs' for MediaDock.txt and
+    musicdock-status, saying when the model is a guess and how to correct it."""
+    if not model:
+        return "model unknown"
+    import dock_limits
+    number = dock_limits.model_number(model)
+    name = model_name(model)
+    text = f"model M{number}" if name == model else f"{name}, model M{number}"
+    songs = dock_limits.MODEL_SONGS.get(number)
+    if songs:
+        text += f", about {songs:,} songs"
+    if source == "guess":
+        text += " (a guess: correct it with Model= in DockSetup.txt)"
+    return text
+
+
 def label(p):
     """How people see a player: "Jo's iPod (iPod Nano 4th Gen)"."""
     return f"{p.get('name') or 'Unnamed iPod'} ({model_name(p.get('model'))})"
