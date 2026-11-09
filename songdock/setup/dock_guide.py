@@ -295,10 +295,6 @@ WHAT THE SCREEN MEANS
                      Results of {wifi} and {setup} (see above).
   USB NOT WORKING    A plug-in failed and the dock stopped noticing
                      players. Unplug the dock's power briefly to restart it.
-  RESTORING          Filling a new or wiped iPod, which takes several
-                     syncs: songs on the iPod so far, and the time left.
-                     Safe to unplug between syncs; it carries on when
-                     docked.
   SAFE HOURS         No syncs right now (SafeHours=, see above). Safe to
                      unplug; shows when syncing resumes.
 Plays are never lost: if Navidrome can't be reached, the dock keeps them

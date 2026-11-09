@@ -275,7 +275,6 @@ for a dark case):
 | **DOCK UPDATED / SETUP NOT USED** | Result of a `DockSetup.txt` on the iPod (see `MediaDock README.txt` on the iPod) |
 | **NO WI-FI / CLOCK NOT SET** | The dock can't reach the network after starting up |
 | **USB NOT WORKING** | A plug-in failed (e.g. a loose connector) and the dock's USB port stopped responding. Unplug the dock's power briefly to restart it; until then, players aren't noticed |
-| **RESTORING** | Filling a new or wiped iPod, which takes several syncs: songs on the iPod so far out of all of them, and the time left. Safe to unplug between syncs (not yet tried on a real new iPod) |
 | **SAFE HOURS** | Inside the `safe_hours` window with a player connected: no syncs. Shows when syncing resumes, or "replug after 10:00 AM" for a player the dock can't reconnect itself; safe to unplug |
 
 The icon in the corner of SYNCING and PREPARE & SYNC shows what kind of player
@@ -439,10 +438,10 @@ below is either untested on hardware or not built.
   files were left damaged, and the dock couldn't write to it until it was
   restored). The dock now repairs that by itself before syncing, but the repair
   hasn't run on a real unplugged iPod yet.
-- **Written but not yet tried on real hardware:** an automatic update; `make_room` on
+- **Written but not yet tried on real hardware:** `make_room` on
   a full player; a sync stopped by safe hours; plays waiting while Navidrome is
-  down; `Keep.m3u8` on a real Rockbox player. (PLAYER FULL and the RESTORING screen
-  have now run on real iPods.)
+  down; `Keep.m3u8` on a real Rockbox player. (PLAYER FULL and an automatic update
+  have now run on a real dock.)
 - **Restart the iPod once after its album art is converted.** The dock
   stores one cover per album rather than one per song (about 12 times
   less space). The first sync after updating converts the art already on

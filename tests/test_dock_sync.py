@@ -325,7 +325,7 @@ class OptInTests(unittest.TestCase):
             summary = dock_sync.make_ipod_work(cfg, "G", 0x1263, True)(
                 dev, lambda *a, **k: steps.append(a[1]))
         self.assertIsInstance(sp.call_args.kwargs["deadline"], float)
-        self.assertEqual(steps, ["Restoring 1/600: A - T"])
+        self.assertEqual(steps, ["On iPod 1/600: A - T"])
         self.assertTrue(summary["paused"])
         later.assert_not_called()                 # a fake device: nothing to re-plug
 
@@ -696,14 +696,14 @@ class PrepareAndSyncScreenTests(unittest.TestCase):
 
         def work(device, step):
             dock_sync.RESTORE.update(have=0, total=2105)               # as count_restore does
-            step(5, "Restoring 1/2,105: A - T", part_done=0, part_total=2105)
+            step(5, "On iPod 1/2,105: A - T", part_done=0, part_total=2105)
             return {"added": 1}
         try:
             run_sync(RecordingDevice(self.root, []),
                      lambda s, *a, force=False: shown.append((s,) + a), work=work)
         finally:
             dock_sync.RESTORE.clear()
-        copying = [s for s in shown if "Restoring 1/2,105: A - T" in s]
+        copying = [s for s in shown if "On iPod 1/2,105: A - T" in s]
         self.assertEqual(copying[0][0], "syncing")                      # not the run's counts
         self.assertEqual(shown[-1][0], "safe")
         self.assertIsNone(self.dp.running_prepare())                    # its last sync: done

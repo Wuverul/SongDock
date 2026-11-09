@@ -827,13 +827,15 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   restore (2026-11-02: a grown plan on a well-filled Nano used to start one that never ended);
   a full player (`players.full`) ends it (restore.json next to the record: start
   time + songs then; survives reboots); it lasts until nothing is
-  missing. Screens count songs on the player / whole plan: the prepare
-  job draws RESTORING (new resting screen, in DRAW_OVER, CONNECTING_OVER,
-  usbport SHOW_OVER, REFRESHABLE) instead of PREPARING and DOCK READY,
-  with "Preparing n/m" or "Next sync: +n" and the time left from the pace
-  since the start (after 25 songs); the sync's SYNCING detail becomes
-  "Restoring 12,341/40,000: artist - title" and PREPARE & SYNC gets "On
-  iPod n/N" (`--restored/--restore-total`). The prepare job keeps the
+  missing. Screens count songs on the player / whole plan: the sync's
+  SYNCING detail becomes "On iPod 12,341/40,000: artist - title" and
+  PREPARE & SYNC gets "On iPod n/N" (`--restored/--restore-total`).
+  **RESTORING screen off (user, 2026-11-09: kept going wrong, not needed;
+  the true count on SYNCING is what matters):** `dock_restore.SCREEN = False`.
+  Its code stays (in DRAW_OVER, CONNECTING_OVER, usbport SHOW_OVER, REFRESHABLE):
+  with SCREEN on, the prepare job draws RESTORING instead of PREPARING and DOCK
+  READY, with "Preparing n/m" or "Next sync: +n" and the time left from the pace
+  since the start (after 25 songs). The prepare job keeps the
   pending check on DOCK READY's arguments (`pending`), not the screen's.
   **The sync counts it after reconcile (2026-11-04):** `sync_player(on_reconciled=)`
   passes the songs really on the player; before, a wiped iPod still looked full in the

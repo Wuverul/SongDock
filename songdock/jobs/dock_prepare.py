@@ -2282,15 +2282,15 @@ def main(argv=None):
     from dock_sync import Screen
     screen = Screen(args.preview_dir)
     previous = read_manifest(cache_dir)
-    # Restoring a new or wiped iPod (dock_restore): RESTORING with one count
-    # for the whole job instead of this run's PREPARING.
+    # Restoring a new or wiped iPod (dock_restore): PREPARE & SYNC counts songs on the
+    # iPod out of all of them, and RESTORING (if dock_restore.SCREEN) replaces PREPARING.
     import dock_restore
     restore = None if args.dry_run else dock_restore.for_last_player(previous)
 
     def show(name, *screen_args):
         if args.dry_run:
             return
-        if restore and name == "preparing":
+        if restore and dock_restore.SCREEN and name == "preparing":
             a = dict(zip(screen_args[::2], screen_args[1::2]))
             name, *screen_args = dock_restore.screen_args(
                 restore, f"Preparing {int(a.get('--done', 0)):,}/{int(a.get('--total', 0)):,}")
@@ -2436,7 +2436,7 @@ def main(argv=None):
     if not args.dry_run:
         idle += pending_args(read_manifest(cache_dir), cache_dir)
     pending = list(idle)                    # DOCK READY's arguments: what's left to sync
-    if not args.dry_run:
+    if not args.dry_run and dock_restore.SCREEN:
         info = dock_restore.for_last_player(read_manifest(cache_dir))
         if info:
             a = dict(zip(idle[1::2], idle[2::2]))

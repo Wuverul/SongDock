@@ -793,7 +793,7 @@ def make_ipod_work(cfg, guid, product, write):
         def progress(n, total, t):
             what = f"{t.get('artist')} - {t.get('title')}"
             if RESTORE:                              # one count for the whole restore
-                detail = f"Restoring {RESTORE['have'] + n + 1:,}/{RESTORE['total']:,}: {what}"
+                detail = f"On iPod {RESTORE['have'] + n + 1:,}/{RESTORE['total']:,}: {what}"
             else:
                 detail = f"Copying {n + 1}/{total}: {what}"
             step(5, detail, part_done=n, part_total=total)

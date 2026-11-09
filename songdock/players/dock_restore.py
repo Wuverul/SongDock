@@ -27,6 +27,10 @@ import time
 import dock_record
 
 RESTORE_MIN = 500          # songs missing for a sync to count as a restore
+# The RESTORING screen in place of PREPARING and DOCK READY (user, 2026-11-09: off; it
+# kept going wrong and isn't needed). Kept in case it comes back. With it off, a restore
+# only changes the sync's count: songs on the iPod out of the whole plan.
+SCREEN = False
 MIN_FOR_PACE = 25          # songs restored before a time left is shown
 
 
