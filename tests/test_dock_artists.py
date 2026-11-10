@@ -185,6 +185,21 @@ class TidyTests(unittest.TestCase):
         a.tidy(songs)
         self.assertEqual({s["artist"] for s in songs}, {"chromonicci", "Purity Ring", "Leavv"})
 
+    def test_a_leading_the_is_the_same_artist(self):
+        # 2026-11-10: "The Fat of the Land" by "Prodigy \u2022 The Prodigy" (both tags) listed
+        # under Prodigy, "The Day Is My Enemy" under The Prodigy
+        songs = [{"id": "1", "artist": "Prodigy", "title": "Breathe",
+                  "displayAlbumArtist": "Prodigy \u2022 The Prodigy"},
+                 {"id": "2", "artist": "The Prodigy", "title": "Rok-Weiler",
+                  "displayAlbumArtist": "The Prodigy"}]
+        songs += [dict(songs[0], id=f"x{i}") for i in range(5)]   # more without "The"
+        a.tidy(songs)
+        self.assertEqual({s["artist"] for s in songs}, {"The Prodigy"})
+        self.assertEqual(songs[0]["title"], "Breathe")              # not a guest of itself
+        self.assertEqual(a.same_artist("The Prodigy"), a.same_artist("prodigy"))
+        self.assertNotEqual(a.same_artist("Theory"), a.same_artist("ory"))
+        self.assertEqual(a.same_artist("The"), "the")
+
     def test_symbols_only_name_survives(self):
         songs = self.songs("♥", "♥")
         a.tidy(songs)

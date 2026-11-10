@@ -55,9 +55,13 @@ def compilations(entries):
     return found
 
 
+THE = re.compile(r"^\s*the\s+(?=\S)", re.I)
+
+
 def same_artist(name):
-    """What two spellings of one artist share: no case, no punctuation."""
-    return re.sub(r"\W", "", name).casefold() or name.casefold()
+    """What two spellings of one artist share: no case, no punctuation, no leading
+    "The" (user, 2026-11-10: "Prodigy" and "The Prodigy" were two listings)."""
+    return re.sub(r"\W", "", THE.sub("", name)).casefold() or name.casefold()
 
 
 def aliases(entries):
@@ -204,8 +208,9 @@ def tidy(songs, extra_names=(), unproven=None, compilation_albums=()):
                 and credit.casefold() not in kept:
             unproven.add(credit)
         spellings[split[song["id"]][0]] += 1
-    best = {}
-    for name, count in sorted(spellings.items(), key=lambda kv: (-kv[1], kv[0])):
+    best = {}            # the most common spelling; one with "The" over one without
+    for name, count in sorted(spellings.items(),
+                              key=lambda kv: (not THE.match(kv[0]), -kv[1], kv[0])):
         best.setdefault(same_artist(name), name)
     changed = 0
     for song in songs:

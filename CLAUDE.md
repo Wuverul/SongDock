@@ -743,7 +743,9 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   for "Porter Robinson & Madeon"):** the album's artist, first name if it has
   several, without any feat. part (2026-11-06: "femtanyl feat. X" singles were
   their own listing; the album artist field loses it too, and the album's own
-  credit is never a guest); on compilations (album artist contains "Various") the first name
+  credit is never a guest). Spellings differing only by a leading "The" are one
+  artist, and the "The" one wins (2026-11-10: "Prodigy" from an album artist "Prodigy •
+  The Prodigy" vs "The Prodigy"; `same_artist`); on compilations (album artist contains "Various") the first name
   in the track's credit. "Chillhop Music" is treated as an artist. `feat.`/
   `ft.`/`featuring`/`w/` always separate. A comma, `&` or `/` separates only
   with evidence: Navidrome's `artists` names a part separately or has `;`,
