@@ -70,6 +70,30 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(out, {"a": "Ambient", "b": "Electronic", "c": "Indie Pop",
                                "d": "Electronic"})
 
+    def test_an_untagged_album_takes_its_artists_genre(self):
+        # 2026-11-11: 50 albums with no tags sat in "Other"
+        out = genres([song("a", "electronic", album="1", artist="Coyote Kisses"),
+                      song("b", album="2", artist="Coyote Kisses"),
+                      song("c", album="3", artist="coyote kisses."),
+                      song("d", album="4", artist="Nobody Tagged"),
+                      song("e", "electronic", album="5", artist="X"),
+                      song("f", album="5", artist="X")])           # album partly tagged
+        self.assertEqual(out, {"a": "Electronic", "b": "Electronic", "c": "Electronic",
+                               "d": "Other", "e": "Electronic", "f": "Electronic"})
+
+    def test_not_also_stops_the_groups_own_artist_rule(self):
+        # 2026-11-11: Snail's House's kawaii future bass albums in their own group, his
+        # chillout albums in Electronic (never Lofi / Chill)
+        groups = [{"name": "Lofi / Chill", "match": ["chillout"]},
+                  {"name": "Kawaii Future Bass", "match": ["kawaii future bass"]},
+                  {"name": "Electronic", "match": ["artist:Snail's House",
+                                                   "not:kawaii future bass", "electronic"]}]
+        out = g.assign([song("a", "kawaii future bass", "future funk", album="1",
+                             artist="Snail\u2019s House"),
+                        song("b", "chillout", "downtempo", album="2", artist="Snail\u2019s House"),
+                        song("c", "chillout", album="3", artist="Blackmill")], groups, "")
+        self.assertEqual(out, {"a": "Kawaii Future Bass", "b": "Electronic", "c": "Lofi / Chill"})
+
     def test_list_order_is_priority_not_tag_order(self):
         # Indie Rock is listed before Electronic, whatever order the tags are in.
         self.assertEqual(genres([song("a", "electronic", "indie rock")]), {"a": "Indie Rock"})

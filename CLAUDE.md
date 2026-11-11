@@ -566,8 +566,10 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   release type, `album:<words>` the album name, e.g. `album:chillhop`; `artist:<name>`
   (2026-11-10) an artist or album artist by whole name, checked before every tag
   keyword: tags can't tell Snail's House from Emancipator; `not:<words>` (2026-11-11)
-  keeps songs with such a tag out of a group, so they go on to the next: Ambient
-  "not:house"; Lofi / Chill dropped bare
+  keeps songs with such a tag out of a group, so they go on to the next (also past the
+  group's own `artist:` rules: Electronic's Snail's House rule + "not:kawaii future
+  bass"): Ambient "not:house"; an album with no tags at all takes the genre most of its
+  artist's tagged songs got (`borrow_artist_genres`; half of the 50 "Other" albums); Lofi / Chill dropped bare
   "lo fi", a sound on indie/future bass records, for "lo fi hip hop"). A
   song gets the first group matching any tag (order = priority, so adding
   albums never reshuffles; user's choice over counting). Only songs no group

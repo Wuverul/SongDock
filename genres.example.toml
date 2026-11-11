@@ -14,7 +14,8 @@
 # "release:live" matches the album's release type in Navidrome, and
 # "album:chillhop" words in the album's name. "artist:Gorillaz" puts an artist
 # in that group whatever its tags (ahead of every tag keyword); "not:house" keeps
-# songs with that tag out of the group. Then each album takes the
+# songs with that tag out of the group (its own artist: rules too). An album with
+# no tags takes the genre its artist's other songs got. Then each album takes the
 # group most of its songs got. To see what your list does to your library:
 #   /opt/songdock/venv/bin/python /opt/songdock/app/songdock/jobs/dock_prepare.py --genres
 

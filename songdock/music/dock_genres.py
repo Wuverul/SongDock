@@ -25,15 +25,20 @@ How a song's group is chosen:
     as the song's artist or album artist (case and punctuation ignored).
   * "not:<words>" keeps a group from songs with a tag matching the words, so they
     go on to the next group (user, 2026-11-11: Ambient gets Air's "Moon Safari"
-    but not "ambient, deep house" tracks: "not:house"). Tag and album keywords
-    only: an "artist:" rule is a deliberate choice and still wins.
+    but not "ambient, deep house" tracks: "not:house"). It also stops the group's
+    own "artist:" rules (user, 2026-11-11: Electronic's "artist:Snail's House" with
+    "not:kawaii future bass", so his kawaii future bass albums reach that group and
+    the rest stay in Electronic); another group's "artist:" rule still wins.
   * No match: the song's tag that the most synced albums carry (ties: the
     song's first tag), or "Other" if it has no tags. The list always comes
     first; counting only names what the list doesn't cover (user,
     2026-10-19). `unmatched = "<name>"` puts all of these under one name.
 Then every song of an album gets the group most of its songs got (ties go
 to the group listed first; a matched group beats `unmatched`), so an album
-never splits across genres.
+never splits across genres. An album with no tags at all (and no "artist:" or
+"album:" rule for it) takes the genre most of its artist's tagged songs got
+(user, 2026-11-11: 50 albums with no tags sat in "Other"; half were by artists
+tagged elsewhere in the library). Otherwise it stays "Other".
 """
 
 import re
@@ -187,10 +192,10 @@ def song_group(tags, types, compiled, album="", artists=()):
     """(rank, group name) for one song; rank = len(compiled) if no match.
     artists: the song's artist names (artist, album artist)."""
     names = {normalize(a) for a in artists if a}
-    for rank, group in enumerate(compiled):
-        if group[4] & names:
-            return rank, group[0]
     norm = [normalize(t) for t in tags]
+    for rank, group in enumerate(compiled):
+        if group[4] & names and not any(w in t for w in group[5] for t in norm):
+            return rank, group[0]
     album = normalize(album)
     for rank, (name, words, rtypes, album_words, _, nots) in enumerate(compiled):
         if any(w in t for w in nots for t in norm):
@@ -239,11 +244,14 @@ def assign(songs, groups, unmatched=DEFAULT_UNMATCHED, album_types=None):
     album_types = album_types or {}
     albums_with = tag_album_counts(songs)
     picks = {}                     # song id -> (rank, genre)
+    untagged = set()               # no tags, no rule: may borrow its artist's genre
     for s in songs:
         tags = song_tags(s)
         rank, name = song_group(tags, album_types.get(s.get("albumId"), []), compiled,
                                 s.get("album"), song_artists(s))
         if name is None:
+            if not tags:
+                untagged.add(s["id"])
             name = unmatched or most_common_tag(tags, albums_with) or NO_TAGS
         picks[s["id"]] = (rank, name)
     by_album = {}
@@ -254,7 +262,25 @@ def assign(songs, groups, unmatched=DEFAULT_UNMATCHED, album_types=None):
         counts = Counter(votes)
         # A matched group beats `unmatched`; then most songs; then list order.
         winner[key] = min(counts, key=lambda v: (v[0] == len(compiled), -counts[v], v))[1]
+    borrow_artist_genres(songs, winner, untagged)
     return {s["id"]: winner[album_key(s)] for s in songs}
+
+
+def borrow_artist_genres(songs, winner, untagged):
+    """Albums whose every song is in `untagged` take the genre most of their
+    artist's other songs got ({album key: genre} `winner`, changed in place)."""
+    by_artist, albums = {}, {}
+    for s in songs:
+        artist = normalize(s.get("artist"))
+        albums.setdefault(album_key(s), []).append(s)
+        if s["id"] not in untagged:
+            by_artist.setdefault(artist, Counter())[winner[album_key(s)]] += 1
+    for key, album in albums.items():
+        if not all(s["id"] in untagged for s in album):
+            continue
+        artist = Counter(normalize(s.get("artist")) for s in album).most_common(1)[0][0]
+        if by_artist.get(artist):
+            winner[key] = by_artist[artist].most_common(1)[0][0]
 
 
 def summary(songs, genres):
