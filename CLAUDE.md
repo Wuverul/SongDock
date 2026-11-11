@@ -565,7 +565,9 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   (name + keywords; whole-word match, `release:<type>` matches the album's
   release type, `album:<words>` the album name, e.g. `album:chillhop`; `artist:<name>`
   (2026-11-10) an artist or album artist by whole name, checked before every tag
-  keyword: tags can't tell Snail's House from Emancipator; Lofi / Chill dropped bare
+  keyword: tags can't tell Snail's House from Emancipator; `not:<words>` (2026-11-11)
+  keeps songs with such a tag out of a group, so they go on to the next: Ambient
+  "not:house"; Lofi / Chill dropped bare
   "lo fi", a sound on indie/future bass records, for "lo fi hip hop"). A
   song gets the first group matching any tag (order = priority, so adding
   albums never reshuffles; user's choice over counting). Only songs no group

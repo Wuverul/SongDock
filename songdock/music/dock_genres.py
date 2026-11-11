@@ -23,6 +23,10 @@ How a song's group is chosen:
     every tag rule (user, 2026-11-10: Snail's House is tagged "downtempo,
     chillout" like the albums that do belong in Lofi / Chill). The whole name,
     as the song's artist or album artist (case and punctuation ignored).
+  * "not:<words>" keeps a group from songs with a tag matching the words, so they
+    go on to the next group (user, 2026-11-11: Ambient gets Air's "Moon Safari"
+    but not "ambient, deep house" tracks: "not:house"). Tag and album keywords
+    only: an "artist:" rule is a deliberate choice and still wins.
   * No match: the song's tag that the most synced albums carry (ties: the
     song's first tag), or "Other" if it has no tags. The list always comes
     first; counting only names what the list doesn't cover (user,
@@ -97,6 +101,7 @@ NO_TAGS = "Other"
 RELEASE = "release:"
 ALBUM = "album:"
 ARTIST = "artist:"
+NOT = "not:"
 SMALL_WORDS = {"and", "n", "of", "the", "a"}
 
 
@@ -154,12 +159,15 @@ def tidy(tag):
 
 def compile_groups(groups):
     """[(name, [normalized tag keywords], {release types}, [normalized
-    album-name keywords], {normalized artist names})], in order."""
+    album-name keywords], {normalized artist names}, [normalized excluded tag
+    keywords])], in order."""
     out = []
     for g in groups:
-        words, types, album_words, artists = [], set(), [], set()
+        words, types, album_words, artists, nots = [], set(), [], set(), []
         for kw in g["match"]:
-            if kw.lower().startswith(ARTIST):
+            if kw.lower().startswith(NOT):
+                nots.append(normalize(kw[len(NOT):]))
+            elif kw.lower().startswith(ARTIST):
                 artists.add(normalize(kw[len(ARTIST):]))
             elif kw.lower().startswith(RELEASE):
                 types.add(kw[len(RELEASE):].strip().lower())
@@ -167,7 +175,7 @@ def compile_groups(groups):
                 album_words.append(normalize(kw[len(ALBUM):]))
             else:
                 words.append(normalize(kw))
-        out.append((g["name"], words, types, album_words, artists))
+        out.append((g["name"], words, types, album_words, artists, nots))
     return out
 
 
@@ -184,7 +192,9 @@ def song_group(tags, types, compiled, album="", artists=()):
             return rank, group[0]
     norm = [normalize(t) for t in tags]
     album = normalize(album)
-    for rank, (name, words, rtypes, album_words, _) in enumerate(compiled):
+    for rank, (name, words, rtypes, album_words, _, nots) in enumerate(compiled):
+        if any(w in t for w in nots for t in norm):
+            continue                                 # "not:" rules this group out
         if rtypes & set(types) or any(w in album for w in album_words) \
                 or any(w in t for w in words for t in norm):
             return rank, name

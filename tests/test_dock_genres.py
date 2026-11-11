@@ -58,6 +58,18 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(out, {"a": "Electronic", "b": "Indie Pop", "c": "Lofi / Chill",
                                "d": "Lofi / Chill", "e": "Indie Pop"})
 
+    def test_not_keeps_a_group_from_songs_with_that_tag(self):
+        # 2026-11-11: Ambient for Air's "Moon Safari", not for "ambient, deep house" tracks
+        groups = [{"name": "Ambient", "match": ["ambient", "not:house"]},
+                  {"name": "Electronic", "match": ["electronic", "house"]},
+                  {"name": "Indie Pop", "match": ["artist:Someone"]}]
+        out = g.assign([song("a", "downtempo", "electronic", "ambient", album="1"),
+                        song("b", "ambient", "deep house", "electronic", album="2"),
+                        song("c", "ambient", "electro house", album="3", artist="Someone"),
+                        song("d", "ambient", "house", album="4")], groups, "")
+        self.assertEqual(out, {"a": "Ambient", "b": "Electronic", "c": "Indie Pop",
+                               "d": "Electronic"})
+
     def test_list_order_is_priority_not_tag_order(self):
         # Indie Rock is listed before Electronic, whatever order the tags are in.
         self.assertEqual(genres([song("a", "electronic", "indie rock")]), {"a": "Indie Rock"})
