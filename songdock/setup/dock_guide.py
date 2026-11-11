@@ -80,8 +80,9 @@ and basic ones may not play them.""" if lossless
                     else "Songs are not made lossless by playlist on this dock.")
     singles_how = (f"""A playlist whose comment has {singles} syncs too, and each of its songs that
 is the only song of its album on the iPod goes in one album named after the
-playlist, "<Playlist> Singles", instead of an album of its own. Add more of
-that album and the song is back on its own album at the next sync.
+playlist, "<Playlist> Singles", instead of an album of its own (an artist's
+own singles stay in "<Artist> Singles"). Add more of that album and the song
+is back on its own album at the next sync.
 (SinglesTag=, below, changes the tag.)
 """ if singles else "")
     return f"""SONGDOCK - HOW TO USE AND RECONFIGURE IT FROM THIS IPOD

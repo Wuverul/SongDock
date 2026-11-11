@@ -103,6 +103,9 @@ display.theme = "light"
 #   One artist spelled two ways, listed under one name, as "other spelling =
 #   name", e.g. ["Beatles = The Beatles"].
 # sync.artist_aliases = []
+#   Text taken off the start of playlist names on the player, e.g. ["MixSync:"]
+#   (a tool's prefix). Also names "<Playlist> Singles" albums.
+# sync.playlist_prefixes = []
 #   Compilations to list as one artist: albums whose name contains the words,
 #   optionally "= the name to show", e.g. ["Now That's What I Call Music",
 #   "Monthly Mix = My Mixes"]. "label:words" matches a compilation's record label

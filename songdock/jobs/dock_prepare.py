@@ -237,6 +237,17 @@ def unique_ids(songs):
     return ids
 
 
+def player_playlist_name(name, prefixes=()):
+    """A playlist's name on the player: without the first of `prefixes` it starts
+    with (any case), e.g. "MixSync: Discovery" -> "Discovery" (user, 2026-11-10: a
+    sync tool's prefix; "M:" marks who made it and stays). The whole name if that
+    would leave nothing."""
+    for prefix in prefixes:
+        if name.casefold().startswith(prefix.strip().casefold()):
+            return name[len(prefix.strip()):].strip() or name
+    return name
+
+
 def has_tag(comment, tag):
     """True if the playlist comment contains the tag as a whole word (any case)."""
     if not tag:
@@ -282,7 +293,7 @@ def lossless_songs(client, tag, targets, playlists, previous_ids=()):
 
 def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites",
                   tag="", previously_tagged=(), album_info=None, album_copies=None,
-                  singles_tag=""):
+                  singles_tag="", prefixes=()):
     """Resolve the configured targets into one de-duplicated set of tracks.
 
     targets: e.g. ["starred", "playlist:Mel Test"].
@@ -296,6 +307,8 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     album a single is on; last run's answers go in, this run's come out.
     singles_tag: playlists with this in their comment (e.g. "#singles") sync too,
     and are marked "singles" in their record (playlist_singles).
+    prefixes: [sync] playlist_prefixes, taken off playlist names on the player
+    ("target" keeps the server's name, so a player renames rather than adds).
     Returns (tracks in artist/album/track order, {song id: [targets]},
     [playlist records for the manifest, in target order]).
     """
@@ -343,7 +356,8 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             seen_playlists.add(pid)
             songs = pl.get("entry", [])
             key = f"playlist:{pl['name']}"
-            playlists.append({"target": key, "id": pl["id"], "name": pl["name"],
+            playlists.append({"target": key, "id": pl["id"],
+                              "name": player_playlist_name(pl["name"], prefixes),
                               "via": "tag", **singles(pl, target[1]),
                               "song_ids": [s["id"] for s in songs]})
             add(key, songs)
@@ -363,7 +377,8 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
                 continue
             seen_playlists.add(pl["id"])
             songs = pl.get("entry", [])
-            playlists.append({"target": target, "id": pl["id"], "name": pl["name"],
+            playlists.append({"target": target, "id": pl["id"],
+                              "name": player_playlist_name(pl["name"], prefixes),
                               "via": "config", **singles(pl),
                               "song_ids": [s["id"] for s in songs]})
         else:
@@ -1471,7 +1486,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         client, cfg["sync"]["targets"], known,
         cfg["sync"].get("favorites_playlist", "Favorites"),
         cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info, album_copies,
-        cfg["sync"].get("singles_tag", ""))
+        cfg["sync"].get("singles_tag", ""), cfg["sync"].get("playlist_prefixes", ()))
     unsplit_artists = set()
     dock_artists.apply_aliases(targets, cfg["sync"].get("artist_aliases", ()))
     album_labels = {}

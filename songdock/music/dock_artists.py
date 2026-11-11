@@ -304,8 +304,10 @@ def playlist_singles(songs, playlists):
     playlist, "<Playlist> Singles", album artist "Various Artists" (user, 2026-11-10:
     loose songs from many albums, one album each, crowded the Albums menu). Once a
     second song of that album is in the plan, the song is back on its own album. A
-    song in two such playlists goes under the first by name; this comes after (and
-    wins over) "<Artist> Singles". Names only; "folder_album" keeps the real album.
+    song in two such playlists goes under the first by name. "<Artist> Singles" always
+    wins (user, 2026-11-10: this album only tidies the Albums menu; an artist's singles
+    belong together), so songs it took are left alone. Names only; "folder_album"
+    keeps the real album.
     Returns how many songs moved."""
     lists = sorted((p for p in playlists if p.get("singles")), key=lambda p: p["name"].casefold())
     if not lists:
@@ -316,9 +318,10 @@ def playlist_singles(songs, playlists):
     for pl in lists:
         for sid in pl.get("song_ids", ()):
             s = by_id.get(sid)
-            if not s or sid in moved or per_album.get(s.get("albumId"), 0) != 1:
+            if not s or sid in moved or per_album.get(s.get("albumId"), 0) != 1 \
+                    or s.get("folder_album"):              # in "<Artist> Singles" already
                 continue
-            s["folder_album"] = s.get("folder_album") or s.get("album")
+            s["folder_album"] = s.get("album")
             s["album"] = f"{pl['name']} Singles"
             s["displayAlbumArtist"] = "Various Artists"
             moved.add(sid)

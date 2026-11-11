@@ -1024,8 +1024,12 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
 - **Playlist singles (user, 2026-11-10):** `[sync] singles_tag` (default `#singles`, ""
   off; `SinglesTag=`): a playlist with it in its comment syncs, and each of its songs
   that is the only song of its album in the plan goes in "<Playlist> Singles" (album
-  artist "Various Artists"; first playlist by name if in two; wins over "<Artist>
-  Singles"), `dock_artists.playlist_singles`, names only. A second song of the album in
+  artist "Various Artists"; first playlist by name if in two; "<Artist> Singles" always
+  wins, user: the playlist album only tidies the Albums menu), `dock_artists.
+  playlist_singles`, names only. `[sync] playlist_prefixes` (e.g. ["MixSync:"], a sync
+  tool's prefix; "M:"-style initials stay) come off playlist names on the player
+  (`player_playlist_name`; the plan's `target` keeps the server name, so the player
+  renames its playlist instead of adding one). A second song of the album in
   the plan sends it back. Albums ending " Singles" list by title on the iPod
   (`ipod_db.sort_order`) and never share covers. Can't equal `playlist_tag`.
 - `dock_share.py` (user, 2026-10-30): `musicdock-status --share`, for bug reports and

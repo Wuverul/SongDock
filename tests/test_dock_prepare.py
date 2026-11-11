@@ -1133,12 +1133,30 @@ class PrepareTests(unittest.TestCase):
                                   "y1": ("Discovery Singles", "Various Artists")})
         # The rest of X Album gets starred: x1 goes back to its album
         server = FakeServer(songs=[song("x2", albumId="ax", album="X Album", artist="Xa")],
-                            playlists={"p1": ("Discovery", [dict(t, album=a) for t, a in
-                                                           zip(loose, ("X Album", "Y Album"))],
-                                              "new finds #Singles")})
+                            playlists={"p1": ("Discovery", [   # fresh, as a server sends
+                                song("x1", albumId="ax", album="X Album", artist="Xa"),
+                                song("y1", albumId="ay", album="Y Album", artist="Ya")],
+                                "new finds #Singles")})
         self.run_prepare(server, self.singles_config())
         albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
         self.assertEqual(albums, {"x1": "X Album", "x2": "X Album", "y1": "Discovery Singles"})
+
+    def test_a_tools_prefix_comes_off_playlist_names_on_the_player(self):
+        name = __import__("dock_prepare").player_playlist_name
+        self.assertEqual(name("MixSync: Discovery", ["MixSync:"]), "Discovery")
+        self.assertEqual(name("mixsync:M: Top Songs", ["MixSync:"]), "M: Top Songs")
+        self.assertEqual(name("M: Top Songs", ["MixSync:"]), "M: Top Songs")
+        self.assertEqual(name("MixSync:", ["MixSync:"]), "MixSync:")       # nothing left
+        loose = [song("x1", albumId="ax", album="X Album")]
+        server = FakeServer(playlists={"p1": ("MixSync: Discovery", loose, "#singles")})
+        cfg = self.singles_config()
+        cfg["sync"]["playlist_prefixes"] = ["MixSync:"]
+        self.run_prepare(server, cfg)
+        plan = self.manifest()
+        self.assertEqual([(p["name"], p["target"]) for p in plan["playlists"]
+                          if p["target"] != "starred"],
+                         [("Discovery", "playlist:MixSync: Discovery")])
+        self.assertEqual(plan["tracks"][0]["album"], "Discovery Singles")
 
     def singles_config(self):
         cfg = config()
