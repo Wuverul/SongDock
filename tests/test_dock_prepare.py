@@ -1158,6 +1158,18 @@ class PrepareTests(unittest.TestCase):
                          [("Discovery", "playlist:MixSync: Discovery")])
         self.assertEqual(plan["tracks"][0]["album"], "Discovery Singles")
 
+    def test_two_playlists_of_one_name_both_reach_the_player(self):
+        # 2026-11-10: two "MixSync: Discovery" shared one key, so the player kept one,
+        # overwritten by the other's songs at every sync
+        server = FakeServer(playlists={"p1": ("Discovery", [song("a")], "#ipod"),
+                                       "p2": ("Discovery", [song("b")], "#ipod")})
+        self.run_prepare(server, config(targets=()) | {"sync": {**config()["sync"],
+                                                                 "targets": [],
+                                                                 "playlist_tag": "#ipod"}})
+        lists = [(p["name"], p["target"], p["song_ids"]) for p in self.manifest()["playlists"]]
+        self.assertEqual(lists, [("Discovery", "playlist:Discovery", ["a"]),
+                                 ("Discovery (2)", "playlist:Discovery [p2]", ["b"])])
+
     def singles_config(self):
         cfg = config()
         cfg["sync"]["singles_tag"] = "#singles"

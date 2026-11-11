@@ -63,6 +63,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -356,6 +357,10 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             seen_playlists.add(pid)
             songs = pl.get("entry", [])
             key = f"playlist:{pl['name']}"
+            if any(p["target"] == key for p in playlists):
+                # Two playlists of one name (2026-11-10: two "MixSync: Discovery"): one
+                # key made the player keep only one, overwritten by the other each sync.
+                key = f"playlist:{pl['name']} [{pid}]"
             playlists.append({"target": key, "id": pl["id"],
                               "name": player_playlist_name(pl["name"], prefixes),
                               "via": "tag", **singles(pl, target[1]),
@@ -394,6 +399,12 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
         del tracks[song_id], sources[song_id]        # a copy that didn't win
     unify_album_names(client, tracks.values(), album_info)
     unify_album_artists(tracks.values())
+    taken = Counter()                  # one name per playlist on the player
+    for p in playlists:
+        name = p["name"]
+        taken[name.casefold()] += 1
+        if taken[name.casefold()] > 1:
+            p["name"] = f"{name} ({taken[name.casefold()]})"
     return sorted(tracks.values(), key=library_order), sources, playlists
 
 
