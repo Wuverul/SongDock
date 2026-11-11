@@ -155,7 +155,10 @@ Which music syncs:
                          list albums whose name contains these words as one
                          artist, the songs' artists going to their titles.
                          "= name" chooses the artist's name. Separate them
-                         with ;. This replaces the whole list; =none clears it
+                         with ;. This replaces the whole list; =none clears it.
+                         label:Chillhop = Chillhop Releases does the same for
+                         every compilation on that record label (or with it
+                         as album artist), whatever the album's name
   ArtistNames=Now, Now; Simon & Garfunkel
                          treat these credits as one artist, for a name with
                          a comma, & or / that the dock would otherwise split.

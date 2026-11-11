@@ -148,6 +148,7 @@ class Record:
         self._add_column("players", "swaps_no_room INTEGER")     # format swaps held back (2026-10-30)
         self._add_column("players", "full INTEGER")              # last sync ran out of room (2026-10-30)
         self._add_column("players", "model_source TEXT")         # sysinfo/serial/guess/manual (2026-11-09)
+        self._add_column("pending_plays", "gone_at INTEGER")     # song gone from the server (2026-11-10)
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
             # login user) so the prepare job can write it too.
@@ -471,7 +472,7 @@ class Record:
     def unsent_plays(self, limit=None):
         """Plays waiting for the server that can be sent (matched to a song)."""
         sql = ("SELECT * FROM pending_plays WHERE sent_at IS NULL AND navidrome_id "
-               "IS NOT NULL ORDER BY played_at, id")
+               "IS NOT NULL AND gone_at IS NULL ORDER BY played_at, id")
         if limit:
             sql += f" LIMIT {int(limit)}"
         return [dict(r) for r in self.db.execute(sql)]
@@ -480,8 +481,30 @@ class Record:
         """(sendable, unmatched) plays still waiting."""
         row = self.db.execute(
             "SELECT SUM(navidrome_id IS NOT NULL), SUM(navidrome_id IS NULL) "
-            "FROM pending_plays WHERE sent_at IS NULL").fetchone()
+            "FROM pending_plays WHERE sent_at IS NULL AND gone_at IS NULL").fetchone()
         return (row[0] or 0, row[1] or 0)
+
+    def gone_count(self):
+        """Plays kept back because their song is gone from the server, with no new copy."""
+        return self.db.execute("SELECT COUNT(*) FROM pending_plays WHERE sent_at IS NULL "
+                               "AND gone_at IS NOT NULL").fetchone()[0]
+
+    def mark_gone(self, nid):
+        """Stop sending plays of a song the server no longer has (Navidrome takes a play
+        for an unknown song and drops it, so they'd be lost). They stay in the queue."""
+        with self.db:
+            self.db.execute("UPDATE pending_plays SET gone_at = ? WHERE navidrome_id = ? "
+                            "AND sent_at IS NULL", (int(time.time()), nid))
+
+    def song_names(self, nid):
+        """(artist, title, duration or None) the dock last knew a song by: from a
+        player's track, else a queued play. None if it doesn't know the song."""
+        row = self.db.execute("SELECT artist, title, duration FROM tracks WHERE navidrome_id = ? "
+                              "ORDER BY changed_at DESC LIMIT 1", (nid,)).fetchone()
+        if not row:
+            row = self.db.execute("SELECT artist, title, NULL FROM pending_plays "
+                                  "WHERE navidrome_id = ? LIMIT 1", (nid,)).fetchone()
+        return tuple(row) if row else None
 
     def mark_sent(self, ids):
         with self.db:

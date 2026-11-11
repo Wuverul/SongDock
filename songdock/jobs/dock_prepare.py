@@ -624,6 +624,42 @@ def unify_album_artists(songs):
                 s["displayAlbumArtist"] = chosen
 
 
+def compilation_labels(client, songs, entries, previous, album_info):
+    """({album id: artist} that compilation_albums' "label:" entries choose, {album id:
+    {"labels", "compilation"}} kept in the plan so each album is looked up once). Only
+    looks anything up when there's such an entry. An album the server doesn't have is
+    skipped (asked again next run); any other failure stops the run, as album_fields."""
+    rules = dock_artists.compilations(entries, labels=True)
+    if not rules:
+        return {}, {}
+    known = previous.get("album_labels", {})
+    first = {}
+    for s in songs:
+        if s.get("albumId"):
+            first.setdefault(s["albumId"], s)
+    facts, chosen = {}, {}
+    for album_id in sorted(first):
+        fact = known.get(album_id)
+        if fact is None:
+            info = album_fields(client, album_id, album_info)
+            if not info:
+                continue
+            fact = {"labels": [x["name"] for x in info.get("recordLabels") or [] if x.get("name")],
+                    "compilation": bool(info.get("isCompilation"))
+                    or "compilation" in dock_genres.release_types(info)}
+        facts[album_id] = fact
+        song = first[album_id]
+        artist = dock_artists.label_artist(
+            rules, fact["labels"], song.get("displayAlbumArtist") or song.get("albumArtist"),
+            fact["compilation"])
+        if artist:
+            chosen[album_id] = artist
+    if chosen:
+        log.info("%d album(s) listed as one artist by their label (compilation_albums)",
+                 len(chosen))
+    return chosen, facts
+
+
 def plan_genres(client, cfg, songs, previous, album_info=None):
     """{song id: genre for the player} from the [genres] list, and the
     release types used ({album id: [types]}, kept in the manifest so each
@@ -1428,9 +1464,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info, album_copies)
     unsplit_artists = set()
     dock_artists.apply_aliases(targets, cfg["sync"].get("artist_aliases", ()))
+    album_labels = {}
     if cfg["sync"].get("primary_artist", True):
+        by_label, album_labels = compilation_labels(
+            client, targets, cfg["sync"].get("compilation_albums", ()), previous, album_info)
         dock_artists.tidy(targets, cfg["sync"].get("artist_names", ()), unsplit_artists,
-                          cfg["sync"].get("compilation_albums", ()))
+                          cfg["sync"].get("compilation_albums", ()), by_label)
     genres, album_types = plan_genres(client, cfg, targets, previous, album_info)
     # After the genres, which go by each song's real album.
     singles_min = cfg["sync"].get("singles_album_min", 4)
@@ -1877,6 +1916,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "tracks": ready, "on_player": uncached, "playlists": playlists,
             "skipped": not_ready, "kept_after_removal": len(kept.items),
             **({"album_types": album_types} if album_types else {}),
+            **({"album_labels": album_labels} if album_labels else {}),
             **({"album_song_counts": single_albums} if single_albums else {}),
             **({"album_copies": album_copies} if album_copies else {}),
             **({"interim": True} if waiting else {}),

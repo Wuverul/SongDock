@@ -45,14 +45,43 @@ COMPILATION = re.compile(r"\bvarious(?: artists)?\b", re.I)
 TITLE_CREDIT = re.compile(r"\b(?:feat|ft|featuring)\b", re.I)
 
 
-def compilations(entries):
-    """{words in the album name (lower case): artist} from compilation_albums
-    entries: "words", listed under those words, or "words = artist"."""
+LABEL = "label:"
+
+
+def compilations(entries, labels=False):
+    """{words (lower case): artist} from compilation_albums entries: "words", listed
+    under those words, or "words = artist". Words match the album's name, or with
+    labels=True its record label: entries "label:words = artist" (label_artist)."""
     found = {}
     for entry in entries or ():
         words, _, artist = entry.partition("=")
-        found[words.strip().casefold()] = artist.strip() or words.strip()
+        words = words.strip()
+        if words.casefold().startswith(LABEL) != labels:
+            continue
+        words = words[len(LABEL):].strip() if labels else words
+        found[words.casefold()] = artist.strip() or words
     return found
+
+
+def _has_words(words, text):
+    return bool(text) and re.search(r"(?<!\w)" + re.escape(words) + r"(?!\w)", text, re.I)
+
+
+def label_artist(rules, labels, album_artist, compilation):
+    """The artist for an album that a "label:" entry chooses (`rules` from
+    compilations(labels=True)), or None (user, 2026-11-10: Chillhop releases that
+    aren't "Chillhop Essentials"). The words must be in its record label or its
+    album artist (Chillhop's albums carry the label as album artist when the label
+    tag is missing), and the album must be a compilation: flagged as one
+    (`compilation`), by "Various Artists", or by the label itself, so a label's
+    single-artist albums keep their artist."""
+    for words, artist in rules.items():
+        by_artist = _has_words(words, album_artist)
+        if not (by_artist or any(_has_words(words, label) for label in labels)):
+            continue
+        if compilation or by_artist or COMPILATION.search(album_artist or ""):
+            return artist
+    return None
 
 
 THE = re.compile(r"^\s*the\s+(?=\S)", re.I)
@@ -169,11 +198,12 @@ def _album_artist(song):
     return without_guests(song.get("displayAlbumArtist") or song.get("albumArtist") or "")[0]
 
 
-def tidy(songs, extra_names=(), unproven=None, compilation_albums=()):
+def tidy(songs, extra_names=(), unproven=None, compilation_albums=(), albums=None):
     """Give each song its one artist and credit the others in its title.
     Changes the song records in place. Returns how many changed. Pass a set
     as `unproven` to get the credits left whole for lack of evidence.
-    compilation_albums: [sync] compilation_albums from the config."""
+    compilation_albums: [sync] compilation_albums from the config. albums: {album id:
+    artist} chosen by its "label:" entries (dock_prepare.compilation_labels)."""
     keep = (*KEEP_NAMES, *extra_names)
     chosen = compilations(compilation_albums)
     kept = {k.casefold() for k in keep}
@@ -188,6 +218,8 @@ def tidy(songs, extra_names=(), unproven=None, compilation_albums=()):
             any(";" in a.get("name", "") for a in listed or [])
 
     def album_main(song):
+        if albums and song.get("albumId") in albums:
+            return albums[song["albumId"]]
         name = (song.get("album") or "").casefold()
         for words, artist in chosen.items():
             if words in name:

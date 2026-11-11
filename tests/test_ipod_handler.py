@@ -1006,7 +1006,7 @@ class HandlerTests(unittest.TestCase):
         for stars in (5, 1, 0, 5, 1, 4, 0):
             h.queue_favorites(self.rate(stars), self.rec, G, 4)
             dock_plays.upload_favorites(client, self.rec)
-        self.assertEqual(set(calls), {"star"})
+        self.assertEqual(set(calls) - {"getSong", "search3"}, {"star"})   # lookups only read
         root = os.path.join(os.path.dirname(__file__), "..", "songdock")
         for path in glob.glob(os.path.join(root, "*", "*.py")):
             with open(path) as f:

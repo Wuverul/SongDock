@@ -464,6 +464,13 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   (result `stock_compatible: True`, DOCK UPDATED; the music follows after
   the next prepare run via auto re-sync). Without that it fails with "Stock
   iPod: dock is set up for Rockbox" (or SETUP NOT USED with the reason).
+- **Plays and favorites check their song first (2026-11-10):** Navidrome answers "ok" to
+  `scrobble` or `star` for a song ID it doesn't have, and drops it. So `dock_plays.
+  check_songs` asks `getSong` for each queued song: gone (code 70) = searched by the
+  names the dock knows (`find_moved_song`: artist incl. "The"/guests, title without
+  "(feat. ...)", length within 2 s, exactly one) and moved there with `Record.
+  rename_songs` (plays, favorite, players' tracks: no re-copy); no single match = its
+  plays kept back (`pending_plays.gone_at`), shown in musicdock-status, never sent.
 - `subsonic.py`: token-auth client. Request URLs contain a working token: never
   log them. **Short outages (2026-11-01):** requests that only read are tried again after 2, 5
   and 15 s if they failed within 10 s (`RETRY_WAITS`; a slower failure is a timeout, likely a
@@ -765,7 +772,12 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   contains the words list as one artist, ahead of the rules above, e.g.
   "Now That's What I Call Music", or "Chillhop Essentials = Chillhop
   Releases" to name it. Empty by default; the user's Pi has that Chillhop
-  entry (27 albums, 720 songs). `fill_missing_names` makes
+  entry (27 albums, 720 songs). **`label:` entries (user, 2026-11-10: Chillhop albums
+  not named "Essentials"):** "label:Chillhop = Chillhop Releases" picks albums whose
+  record label or album artist has the words (whole words), and only compilations
+  (flag, "compilation" release type, "Various Artists", or the label as album artist),
+  so a label's single-artist albums keep their artist (`label_artist`). Labels come
+  from getAlbum, kept in the plan's `album_labels` (one lookup per album). `fill_missing_names` makes
   title and artist follow the plan like the album, in the iTunesDB only (no
   re-copy); Rockbox re-tags. The album artist field itself is left alone.
   **On the Nano 2026-10-30** (first version): one sync renamed 345 tracks

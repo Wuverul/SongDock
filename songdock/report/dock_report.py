@@ -276,12 +276,17 @@ def ipod_section(record_path, manifest, now=None):
                 "SELECT navidrome_id FROM room_removed WHERE guid = ?", (p["guid"],))]
         except sqlite3.Error:                     # the table comes with the next sync
             set_aside = []
-        sent, waiting, unmatched, oldest = db.execute(
+        # Plays kept back because their song is gone from the server (dock_plays):
+        # the column comes with the next write, so an older record has none.
+        cols = {r[1] for r in db.execute("PRAGMA table_info(pending_plays)")}
+        kept = "gone_at IS NULL" if "gone_at" in cols else "1"
+        sent, waiting, unmatched, oldest, gone = db.execute(
             "SELECT SUM(sent_at IS NOT NULL), "
-            "SUM(sent_at IS NULL AND navidrome_id IS NOT NULL), "
+            f"SUM(sent_at IS NULL AND navidrome_id IS NOT NULL AND {kept}), "
             "SUM(sent_at IS NULL AND navidrome_id IS NULL), "
-            "MIN(CASE WHEN sent_at IS NULL AND navidrome_id IS NOT NULL "
-            "THEN queued_at END) FROM pending_plays").fetchone()
+            f"MIN(CASE WHEN sent_at IS NULL AND navidrome_id IS NOT NULL AND {kept} "
+            f"THEN queued_at END), SUM(sent_at IS NULL AND NOT ({kept})) "
+            "FROM pending_plays").fetchone()
     finally:
         db.close()
     import dock_players
@@ -304,12 +309,15 @@ def ipod_section(record_path, manifest, now=None):
     plays = f"Plays: {sent or 0} sent so far, {waiting or 0} waiting to send"
     if unmatched:
         plays += f", {unmatched} unmatched (songs the dock didn't add)"
+    if gone:
+        plays += f", {gone} kept back (their songs are gone from Navidrome)"
     lines.append(plays)
     keys = p.keys()
     player = {"on_player": len(set(present)),
               "capacity": p["capacity"] if "capacity" in keys else None,
               "kind": p["kind"] if "kind" in keys else None, "model": p["model"]}
     return lines, {"plays_waiting": waiting or 0, "oldest_waiting": oldest,
+                   "plays_gone": gone or 0,
                    "player": player}
 
 
@@ -418,6 +426,9 @@ def problems(facts, now=None):
         out.append(f"SD card {facts['disk_pct']}% full")
     if facts.get("cache_pct", 0) >= 90:
         out.append(f"Cache at {facts['cache_pct']:.0f}% of max_cache_gb")
+    if facts.get("plays_gone"):
+        out.append(f"{facts['plays_gone']} plays not sent: their songs are gone from Navidrome "
+                   "(see the log for which)")
     if facts.get("plays_waiting") and facts.get("oldest_waiting") and \
             now - facts["oldest_waiting"] > 86400:
         out.append(f"{facts['plays_waiting']} plays waiting over a day "

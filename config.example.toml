@@ -102,7 +102,8 @@ display.theme = "light"
 # sync.artist_aliases = []
 #   Compilations to list as one artist: albums whose name contains the words,
 #   optionally "= the name to show", e.g. ["Now That's What I Call Music",
-#   "Monthly Mix = My Mixes"].
+#   "Monthly Mix = My Mixes"]. "label:words" matches a compilation's record label
+#   or album artist instead, e.g. "label:Chillhop = Chillhop Releases".
 # sync.compilation_albums = []
 #   An artist with this many one-song albums gets them as one album,
 #   "<Artist> Singles" (0 = off).

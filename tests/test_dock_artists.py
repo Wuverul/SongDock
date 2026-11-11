@@ -98,6 +98,33 @@ class AlbumArtistTests(unittest.TestCase):
                              ("Mix Releases", "T (feat. Aso, Bao)"))
             self.assertEqual(songs[1]["artist"], "Aso")
 
+    def test_a_label_lists_its_compilations_whatever_their_name(self):
+        # 2026-11-10: Chillhop albums beyond "Chillhop Essentials", tagged unevenly
+        rules = a.compilations(["Now Music", "label:Chillhop = Chillhop Releases"], labels=True)
+        self.assertEqual(rules, {"chillhop": "Chillhop Releases"})
+        self.assertEqual(a.compilations(["Now Music", "label:Chillhop = X"]),
+                         {"now music": "Now Music"})
+        pick = lambda *args: a.label_artist(rules, *args)   # noqa: E731
+        R = "Chillhop Releases"
+        self.assertEqual(pick(["Chillhop Music"], "Various Artists", False), R)
+        self.assertEqual(pick(["Chillhop Music"], "Various Artists", True), R)
+        self.assertEqual(pick([], "Chillhop Music", False), R)          # label tag missing
+        self.assertEqual(pick(["Chillhop Music"], "Chillhop Music \u2022 Various Artists",
+                              True), R)
+        self.assertEqual(pick(["Chillhop Music"], "Some Lofi Compilation", True), R)
+        self.assertIsNone(pick(["Chillhop Music"], "Psalm Trees", False))   # an artist's album
+        self.assertIsNone(pick(["Ninja Tune"], "Various Artists", True))
+        self.assertIsNone(pick(["Chillhopper"], "Various Artists", True))    # whole words
+
+    def test_tidy_takes_albums_chosen_by_label(self):
+        songs = [{"id": "1", "artist": "Aso", "title": "T", "album": "Lofi Fall",
+                  "albumId": "L1", "displayAlbumArtist": "Various Artists"},
+                 {"id": "2", "artist": "Aso", "title": "U", "album": "Aso Album",
+                  "albumId": "A1", "displayAlbumArtist": "Aso"}]
+        a.tidy(songs, albums={"L1": "Chillhop Releases"})
+        self.assertEqual([(t["artist"], t["title"]) for t in songs],
+                         [("Chillhop Releases", "T (feat. Aso)"), ("Aso", "U")])
+
     def test_a_compilation_without_a_name_lists_under_its_words(self):
         self.assertEqual(a.compilations(["Now That's Music", "Mix = Mixes"]),
                          {"now that's music": "Now That's Music", "mix": "Mixes"})

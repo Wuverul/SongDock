@@ -292,7 +292,7 @@ title. These only change the player, not Navidrome:
 ```toml
 sync.primary_artist = true                 # false: keep the credits as they are
 sync.artist_names = ["Now, Now"]           # names with a comma, & or / to keep whole
-sync.compilation_albums = ["Monthly Mix = My Mixes"]   # list these as one artist
+sync.compilation_albums = ["Monthly Mix = My Mixes", "label:Chillhop = Chillhop"]   # one artist
 sync.artist_aliases = ["Beatles = The Beatles"]        # another spelling of one artist
 sync.singles_album_min = 4                 # one-song albums before "<Artist> Singles"
 ```

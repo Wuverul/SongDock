@@ -1123,6 +1123,38 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(len(calls), made)                    # remembered
         self.assertEqual(self.manifest().get("generated"), generated)   # plan unchanged
 
+    def test_label_compilations_listed_as_one_artist_looked_up_once(self):
+        # 2026-11-10: Chillhop releases beyond "Chillhop Essentials"
+        songs = [song("c1", artist="Aso", albumId="ch1", album="Lofi Fall",
+                      displayAlbumArtist="Various Artists"),
+                 song("c2", artist="Psalm Trees", albumId="ch2", album="Fireside",
+                      displayAlbumArtist="Psalm Trees"),
+                 song("c3", artist="Nymano", albumId="ch3", album="Summer 2020",
+                      displayAlbumArtist="Chillhop Music")]
+        meta = {"ch1": {"recordLabels": [{"name": "Chillhop Music"}], "isCompilation": True},
+                "ch2": {"recordLabels": [{"name": "Chillhop Music"}]},     # one artist's album
+                "ch3": {}}                                           # no label tag at all
+        calls = []
+
+        class Server(FakeServer):
+            def call(self, method, **kw):
+                if method == "getAlbum":
+                    calls.append(kw["id"])
+                    return {"album": {"id": kw["id"], "name": "x", "song": [],
+                                      **meta[kw["id"]]}}
+                return super().call(method, **kw)
+        cfg = config()
+        cfg["sync"]["compilation_albums"] = ["label:Chillhop = Chillhop Releases"]
+        self.run_prepare(Server(songs=songs), cfg)
+        names = {t["id"]: (t["artist"], t["title"]) for t in self.manifest()["tracks"]}
+        self.assertEqual(names, {"c1": ("Chillhop Releases", "Song c1 (feat. Aso)"),
+                                 "c2": ("Psalm Trees", "Song c2"),
+                                 "c3": ("Chillhop Releases", "Song c3 (feat. Nymano)")})
+        self.assertEqual(sorted(calls), ["ch1", "ch2", "ch3"])
+        calls.clear()
+        self.run_prepare(Server(songs=[dict(s) for s in songs]), cfg)
+        self.assertEqual(calls, [])                                   # remembered in the plan
+
     def test_making_room_on_players_is_off_unless_turned_on(self):
         server = FakeServer(songs=[song("a")])
         self.run_prepare(server)

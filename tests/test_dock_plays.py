@@ -16,13 +16,24 @@ GUID = "000A270000000001"
 
 
 class FakeScrobbler:
-    def __init__(self, reject=(), down_after=None):
+    def __init__(self, reject=(), down_after=None, gone=(), songs=(), lookups_down=False):
         self.reject = set(reject)          # navidrome ids the server rejects
-        self.down_after = down_after       # requests before the network "drops"
+        self.down_after = down_after       # scrobbles before the network "drops"
+        self.gone = set(gone)              # ids the server no longer has (getSong: 70)
+        self.songs = list(songs)           # what search3 finds
+        self.lookups_down = lookups_down
         self.requests = []
         self.recorded = []                 # (id, time ms) the server accepted
 
     def call(self, endpoint, **params):
+        if endpoint in ("getSong", "search3") and self.lookups_down:
+            raise SubsonicError(f"{endpoint}: can't reach server", network=True)
+        if endpoint == "getSong":
+            if params["id"] in self.gone:
+                raise SubsonicError("getSong: Song not found (code 70)", code=70)
+            return {"song": {"id": params["id"]}}
+        if endpoint == "search3":
+            return {"searchResult3": {"song": self.songs}}
         assert endpoint == "scrobble" and params["submission"] == "true"
         if self.down_after is not None and len(self.requests) >= self.down_after:
             raise SubsonicError("scrobble: can't reach server (timed out)", network=True)
@@ -76,6 +87,38 @@ class UploadTests(unittest.TestCase):
         self.assertEqual(dock_plays.upload_plays(server, self.rec)[0], 1)
         self.assertEqual(self.rec.unsent_count(), (0, 1))
 
+    def test_a_song_with_a_new_id_gets_its_plays_there(self):
+        # Navidrome takes a play for an unknown ID and drops it (2026-11-10)
+        self.rec.add_track(GUID, 7, navidrome_id="old", artist="The Prodigy",
+                           title="Breathe (feat. X)", duration=334)
+        self.rec.queue_plays(GUID, [{"dbid": 7, "played_at": 1792100000, "navidrome_id": "old"}])
+        server = FakeScrobbler(gone={"old"}, songs=[
+            {"id": "new", "artist": "Prodigy feat. X", "title": "Breathe", "duration": 335},
+            {"id": "live", "artist": "Prodigy", "title": "Breathe", "duration": 412}])
+        self.assertEqual(dock_plays.upload_plays(server, self.rec), (1, 0, False))
+        self.assertEqual(server.recorded, [("new", 1792100000000)])
+        self.assertEqual(self.rec.tracks(GUID)[0]["navidrome_id"], "new")   # iPod track too
+
+    def test_a_song_gone_with_no_new_copy_keeps_its_plays_back(self):
+        self.queue(2, nid=lambda i: "gone" if i == 0 else "here")
+        server = FakeScrobbler(gone={"gone"}, songs=[])
+        self.assertEqual(dock_plays.upload_plays(server, self.rec), (1, 0, False))
+        self.assertEqual(server.recorded, [("here", 1792100001000)])
+        self.assertEqual((self.rec.unsent_count(), self.rec.gone_count()), ((0, 0), 1))
+        self.assertEqual(dock_plays.upload_plays(server, self.rec), (0, 0, False))  # not retried
+
+    def test_two_possible_new_copies_is_no_match(self):
+        self.assertIsNone(dock_plays.find_moved_song(FakeScrobbler(songs=[
+            {"id": "a", "artist": "Mako", "title": "Breathe", "duration": 188},
+            {"id": "b", "artist": "Mako", "title": "Breathe", "duration": 189}]),
+            "Mako", "Breathe", 188))
+
+    def test_server_down_while_checking_sends_nothing(self):
+        self.queue(2)
+        server = FakeScrobbler(lookups_down=True)
+        self.assertEqual(dock_plays.upload_plays(server, self.rec), (0, 0, True))
+        self.assertEqual(len(self.rec.unsent_plays()), 2)
+
     def test_nothing_queued_sends_nothing(self):
         server = FakeScrobbler()
         self.assertEqual(dock_plays.upload_plays(server, self.rec), (0, 0, False))
@@ -91,8 +134,14 @@ class FavoriteTests(unittest.TestCase):
         self.rec.note_ratings("G", ["a", "b", "c"], [])
         self.stars = []
 
-    def client(self, fail=None):
-        def call(method, id):
+    def client(self, fail=None, gone=()):
+        def call(method, id=None, **params):
+            if method == "getSong":
+                if id in gone:
+                    raise SubsonicError("getSong: Song not found (code 70)", code=70)
+                return {"song": {"id": id}}
+            if method == "search3":
+                return {"searchResult3": {}}
             if fail and id in fail:
                 raise fail[id]
             self.stars.append((method, id))
@@ -109,7 +158,8 @@ class FavoriteTests(unittest.TestCase):
         self.assertEqual(self.rec.unsent_favorites(), ["b", "c"])
 
     def test_song_gone_from_the_server_is_dropped_other_errors_retry(self):
-        c = self.client({"a": SubsonicError("gone", code=70), "b": SubsonicError("no", code=50)})
+        # Navidrome stars an unknown ID without complaint: the lookup finds it gone
+        c = self.client({"b": SubsonicError("no", code=50)}, gone={"a"})
         self.assertEqual(dock_plays.upload_favorites(c, self.rec), 1)
         self.assertEqual(self.rec.unsent_favorites(), ["b"])
 

@@ -154,7 +154,8 @@ class RockboxTests(unittest.TestCase):
         self.keep_lines("#EXTM3U")
         rb.sync_player(self.mount, G, self.rec, self.manifest([s]), self.cache,
                        work_dir=os.path.join(self.tmp, "work"), write=True, client=client)
-        self.assertEqual({c.args[0] for c in client.call.call_args_list}, {"star"})
+        self.assertEqual({c.args[0] for c in client.call.call_args_list} - {"getSong", "search3"},
+                         {"star"})                                    # lookups only read
 
     def test_a_navidrome_playlist_called_keep_cant_overwrite_the_list(self):
         s = self.song("n1", "One")
