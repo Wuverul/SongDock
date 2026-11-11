@@ -102,3 +102,62 @@ class UsbPortTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# The kernel's messages when the Wi-Fi chip stopped answering (2026-11-10 23:32), every 6 s.
+WIFI_DEAD = [
+    "songdock kernel: ieee80211 phy0: brcmf_proto_bcdc_query_dcmd: brcmf_proto_bcdc_msg "
+    "failed w/status -110",
+    "songdock kernel: ieee80211 phy0: brcmf_cfg80211_dump_station: BRCMF_C_GET_ASSOCLIST "
+    "failed, err=-110",
+]
+
+
+class WifiWatchTests(UsbPortTests):
+    def setUp(self):
+        super().setUp()
+        self.reboots, self.updating = [], False
+        self.reboot_state = os.path.join(os.path.dirname(self.state), "lib", "wifiwatch.json")
+
+    def check(self, now):
+        return dock_usbport.check(self.state, now=now, read_log=self.read_log,
+                                  show=lambda: self.shown.append(now),
+                                  busy=lambda: self.sync, reboot=lambda: self.reboots.append(now),
+                                  reboot_state=self.reboot_state,
+                                  updating=lambda: self.updating)
+
+    def dead_for(self, start, seconds):
+        for t in range(start, start + seconds + 1, 6):
+            self.kernel(t, WIFI_DEAD)
+
+    def test_a_wifi_chip_that_stays_silent_restarts_the_dock_once(self):
+        self.dead_for(1800001000, 120)
+        self.check(1800001125)
+        self.assertEqual(self.reboots, [])                  # 2 minutes: not yet
+        self.dead_for(1800001126, 70)
+        self.check(1800001200)
+        self.assertEqual(self.reboots, [1800001200])
+        self.dead_for(1800001201, 300)                             # still dead after it
+        self.check(1800001510)
+        self.assertEqual(self.reboots, [1800001200])               # at most once an hour
+
+    def test_a_glitch_that_recovers_restarts_nothing(self):
+        # 2026-11-11 00:12: one burst of errors, then the Wi-Fi carried on
+        self.dead_for(1800001000, 30)
+        self.check(1800001040)
+        self.check(1800001300)
+        self.dead_for(1800001400, 30)                              # another short one later
+        self.check(1800001440)
+        self.assertEqual(self.reboots, [])
+
+    def test_never_during_a_sync_or_an_update(self):
+        self.dead_for(1800001000, 200)
+        self.sync = True
+        self.check(1800001200)
+        self.sync, self.updating = False, True
+        self.check(1800001201)
+        self.assertEqual(self.reboots, [])
+        self.updating = False
+        self.dead_for(1800001202, 6)
+        self.check(1800001210)
+        self.assertEqual(self.reboots, [1800001210])

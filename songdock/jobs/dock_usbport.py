@@ -19,6 +19,14 @@ never over a sync. It never touches the USB controller: rebinding the
 dwc_otg driver to revive the port crashed the kernel (NULL pointer
 dereference in dwc_otg_driver_remove, Raspberry Pi OS 6.18, 2026-10-25).
 
+It also watches the Wi-Fi chip (user, 2026-11-11). On 2026-11-10 at 23:32 its link
+to the Pi locked up ("mmc1: Controller never released inhibit bit(s)", then brcmfmac
+timeouts, "status -110", every 6 seconds): the Pi ran on with no network for half an
+hour until its power was cut. When those timeouts have gone on for WIFI_DEAD_FOR and
+are still coming, and no sync or update is running, it restarts the dock - at most
+once an hour (the time is kept on the SD card, so a restart can't loop). A short
+glitch that recovers by itself (00:12 the same night) never gets that far.
+
 Uses the standard library only (runs under the system python3).
 """
 
@@ -44,6 +52,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DOCK_STATUS = dock_paths.script("dock_status.py")
 STATE = "/run/musicdock/usbport.json"
 STUCK_AFTER = 60                 # seconds of silence after the kernel gave up
+WIFI_DEAD_FOR = 180              # seconds of Wi-Fi firmware timeouts before a restart
+WIFI_STILL = 60                  # ...the last of them at most this long ago
+REBOOT_GAP = 3600                # seconds between two restarts for the Wi-Fi
+REBOOT_STATE = "/var/lib/musicdock/wifiwatch.json"   # survives the restart
+# The Wi-Fi firmware not answering: "brcmf_proto_bcdc_msg failed w/status -110",
+# "BRCMF_C_GET_ASSOCLIST failed, err=-110".
+WIFI_DEAD = re.compile(r"brcmf.*(?:status|err=)\s*-110\b")
 # Resting screens only: never over a sync, the boot screens or CONNECTING
 # (a re-sync dropping the iPod on purpose).
 SHOW_OVER = ("none,idle,preparing,restoring,safehours,safe,nospace,failed,notsynced,wifi,"
@@ -90,8 +105,19 @@ def sync_running():
     return bool(out.strip())
 
 
+def update_running():
+    out = subprocess.run(["systemctl", "is-active", "musicdock-update.service"],
+                         capture_output=True, text=True).stdout.strip()
+    return out in ("active", "activating")
+
+
+def reboot_now():
+    subprocess.run(["systemctl", "reboot"])
+
+
 def check(state_path=STATE, now=None, read_log=read_kernel_log, show=show_screen,
-          busy=sync_running):
+          busy=sync_running, reboot=reboot_now, reboot_state=REBOOT_STATE,
+          updating=update_running):
     """One run. Returns the bus reported this time, or None."""
     now = time.time() if now is None else now
     try:
@@ -109,6 +135,15 @@ def check(state_path=STATE, now=None, read_log=read_kernel_log, show=show_screen
         m = WORKS.search(text)
         if m:
             trouble.pop(f"usb{m.group(1)}", None)    # works again: forget the trouble
+    wifi = state.setdefault("wifi", {})             # {"since", "last"}: timeouts seen
+    for stamp, text in lines:
+        if WIFI_DEAD.search(text):
+            wifi.setdefault("since", stamp)
+            wifi["last"] = stamp
+    if wifi.get("last") and now - wifi["last"] > WIFI_STILL:
+        wifi.clear()                                 # it came back by itself
+    if wifi.get("since") and wifi["last"] - wifi["since"] >= WIFI_DEAD_FOR:
+        wifi_restart(wifi, now, busy, updating, reboot, reboot_state)
     reported = None
     for bus, t in sorted(trouble.items()):
         if t["shown"] or now - t["since"] < STUCK_AFTER or busy():
@@ -127,6 +162,38 @@ def check(state_path=STATE, now=None, read_log=read_kernel_log, show=show_screen
     except OSError:
         pass
     return reported
+
+
+def wifi_restart(wifi, now, busy, updating, reboot, reboot_state):
+    """Restart the dock for a Wi-Fi chip that stopped answering, unless a sync or an
+    update is running or it restarted for this within REBOOT_GAP."""
+    if busy() or updating():
+        return
+    try:
+        with open(reboot_state) as f:
+            last = json.load(f).get("rebooted", 0)
+    except (OSError, ValueError):
+        last = 0
+    if now - last < REBOOT_GAP:
+        if not wifi.get("held"):
+            log.warning("Wi-Fi still not answering, but the dock restarted for it %d min "
+                        "ago: waiting (cut the power to restart it now)", (now - last) // 60)
+            wifi["held"] = True
+        return
+    log.warning("The Wi-Fi chip hasn't answered for %d s (firmware timeouts since %s): "
+                "restarting the dock", wifi["last"] - wifi["since"],
+                time.strftime("%H:%M:%S", time.localtime(wifi["since"])))
+    try:
+        os.makedirs(os.path.dirname(reboot_state), exist_ok=True)
+        with open(reboot_state + ".tmp", "w") as f:
+            json.dump({"rebooted": now}, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(reboot_state + ".tmp", reboot_state)
+    except OSError as e:
+        log.warning("Couldn't note the restart (%s): not restarting, to be safe", e)
+        return
+    reboot()
 
 
 def main():

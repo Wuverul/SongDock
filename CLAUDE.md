@@ -899,7 +899,13 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   Zero 2 W; USB gone until a power cycle). Never reset the controller.
   Also: the port's sysfs `disable` reads 1 whenever nothing is plugged in
   on dwc_otg (0 once a device is configured), so it can't show a dead
-  port. System python3, stdlib only.
+  port. System python3, stdlib only. **Wi-Fi watch (user, 2026-11-11):** the same run
+  restarts the dock when the Wi-Fi chip's firmware has timed out (`brcmf ... -110`) for
+  `WIFI_DEAD_FOR` (3 min) and still is, never during a sync or an update, at most once
+  an hour (`/var/lib/musicdock/wifiwatch.json`). Seen 2026-11-10 23:32: "mmc1:
+  Controller never released inhibit bit(s)", then timeouts every 6 s, offline 31 min
+  until a power cut. install.sh also turns Wi-Fi power saving off (NetworkManager
+  `wifi.powersave = 2` + `iw`), a known trigger on the BCM43430.
 - **`[device] flac` (2026-10-24, user request):** default true; only used
   with `type = "rockbox"`. false = `dock_prepare.format_mode` returns
   `rockbox_no_flac`: FLAC -> `convert_to`, everything else (Ogg/Opus/MP3)

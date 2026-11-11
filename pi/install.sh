@@ -157,6 +157,32 @@ if [ -f "$WIFI_SHIPPED" ] && [[ "$(uname -r)" == 6.18.* ]]; then
   fi
 fi
 
+# 3d. Wi-Fi power saving off ------------------------------------------------------
+# On 2026-11-10 the Zero 2 W's Wi-Fi chip (BCM43430) stopped answering under load
+# ("mmc1: Controller never released inhibit bit(s)", then brcmfmac timeouts) and the
+# dock was offline until its power was cut. Power saving is a commonly reported
+# trigger on this chip; a dock runs on mains, so it's off. NetworkManager applies it
+# at each connection; `iw` turns it off now too, without dropping the connection
+# (restarting NetworkManager here would cut off an install run over SSH).
+POWERSAVE_CONF=/etc/NetworkManager/conf.d/50-songdock-wifi-powersave.conf
+POWERSAVE_WANT="$(printf '%s\n' "# Installed by SongDock: Wi-Fi power saving off (dropouts on the Zero 2 W)." \
+  "[connection]" "wifi.powersave = 2")"
+if [ -d /etc/NetworkManager ]; then
+  if [ "$(cat "$POWERSAVE_CONF" 2>/dev/null)" != "$POWERSAVE_WANT" ]; then
+    say "Turning Wi-Fi power saving off"
+    if [ $CHECK = 1 ]; then plan "write $POWERSAVE_CONF"; else
+      install -d -m 755 /etc/NetworkManager/conf.d
+      printf '%s\n' "$POWERSAVE_WANT" > "$POWERSAVE_CONF"
+      nmcli general reload conf >/dev/null 2>&1 || true
+      for dev in /sys/class/net/wlan*; do
+        [ -e "$dev" ] && iw dev "$(basename "$dev")" set power_save off >/dev/null 2>&1 || true
+      done
+    fi
+  else
+    say "Wi-Fi: power saving off"
+  fi
+fi
+
 # 4. Python packages not in apt (pygpod, mutagen) in a venv --------------------
 # The venv also sees apt's Pillow/gpiozero (--system-site-packages).
 # Raspberry Pi OS blocks system-wide pip installs. Owned by root like the code:

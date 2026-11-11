@@ -1778,7 +1778,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     workers = resolve_workers(cfg["sync"].get("workers", "auto"))
     slots = ConversionSlots(workers)
     lock, show_lock = threading.Lock(), threading.Lock()
-    progress = {"added": 0, "started": 0, "reserved": 0, "offline": False}
+    # The screens count songs a player lacks; songs already on every player are
+    # fetched only while room lasts and join the count as they start (2026-11-11:
+    # "Converting 3/1,026" with 657 of them on the iPod and never fetched).
+    progress = {"added": 0, "started": 0, "reserved": 0, "offline": False,
+                "total": sum(1 for name, _ in missing if name not in held)}
     skipped = []
     # A song too big for this cache even when it's empty (a tiny SD card, a
     # long DJ mix as FLAC) would stop every run at it - "no room" ends the
@@ -1794,8 +1798,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                      int(t.get("size") or 0) / 1e6, room / 1e6)
             skipped.append({"id": t["id"], "title": label(t), "error": False,
                             "reason": "too big for this dock's cache (more than half of it)"})
+    progress["total"] = sum(1 for name, _ in missing if name not in held)
     if missing:
-        log.info("Getting %d tracks with %d conversion worker(s)", len(missing), workers)
+        log.info("Getting %d tracks with %d conversion worker(s)%s", progress["total"], workers,
+                 f" (+{len(missing) - progress['total']} already on the players, while the "
+                 "cache has room)" if len(missing) > progress["total"] else "")
 
     def prepare_one(name, t, need):
         conv = format_of(t)
@@ -1813,10 +1820,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 progress["started"] += 1
             if show:
                 with show_lock:
-                    show("preparing", "--done", str(n), "--total", str(len(missing)),
+                    show("preparing", "--done", str(n), "--total", str(progress["total"]),
                          "--detail", f"{'Converting' if conv else 'Downloading'}: {label(t)}")
             if on_progress:
-                on_progress(n, len(missing), handed["batches"], len(missing) + reused)
+                on_progress(n, progress["total"], handed["batches"], progress["total"] + reused)
             src = os.path.join(tmp_dir, f"src-{name}.{(t.get('suffix') or 'bin').lower()}")
             log.info("Downloading %s (%s, %.1f MB)", label(t), t.get("suffix"),
                      int(t.get("size") or 0) / 1e6)
@@ -2035,6 +2042,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                                      disk_usage)
                 if not reason:
                     progress["reserved"] += need
+                    if name in held:
+                        progress["total"] += 1      # a held song that fits after all
             if reason:
                 in_flight.release()
                 rest = [t2 for n2, t2 in missing[i:] if n2 not in held]

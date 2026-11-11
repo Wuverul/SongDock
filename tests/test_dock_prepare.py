@@ -1025,6 +1025,18 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual([t["id"] for t in self.manifest()["on_player"]], ["a"])
         self.assertEqual((summary["skipped"], summary["ready"]), ([], 2))
 
+    def test_progress_counts_what_the_players_lack(self):
+        # 2026-11-11: "Converting 3/1,026" while 657 of them were on the iPod and never
+        # fetched (the cache was full)
+        self.cached("b.mp3", 5000)
+        server = FakeServer(songs=[song("a", size=5000), song("b"), song("c", size=1000)])
+        seen = []
+        self.run_prepare(server, cfg=config(max_gb=self.SMALL),
+                         on_player={"a": {"mp3 v0"}, "b": {"mp3 v0"}},
+                         on_progress=lambda done, total, *rest: seen.append(total))
+        self.assertEqual(server.downloads, ["c"])
+        self.assertEqual(seen, [1])
+
     def test_held_tracks_are_still_cached_while_there_is_room(self):
         server = FakeServer(songs=[song("a")])
         self.run_prepare(server, on_player={"a": {"mp3 v0"}})
