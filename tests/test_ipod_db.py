@@ -113,6 +113,15 @@ class SortOrderTests(unittest.TestCase):
         numbers = [tracks[i].track_number for i in ipod_db.sort_order(tracks, 4, "album")]
         self.assertEqual(numbers[:14], list(range(1, 15)))
 
+    def test_a_singles_album_lists_by_title(self):
+        # "<Playlist> Singles" holds songs of many releases: their track numbers mean nothing
+        from types import SimpleNamespace as T
+        tracks = [T(album="Discovery Singles", artist="x", title=title, cd_number=disc,
+                    track_number=n, genre="", albumartist="Various Artists")
+                  for title, disc, n in (("Zebra", 1, 1), ("Apple", 2, 9), ("Mango", 1, 4))]
+        self.assertEqual([tracks[i].title for i in ipod_db.sort_order(tracks, 4, "album")],
+                         ["Apple", "Mango", "Zebra"])
+
     def test_an_album_with_several_artists_is_one_album(self):
         # 2026-11-03: Jet Set Radio's tracks are by three artists; one album artist.
         from types import SimpleNamespace as T

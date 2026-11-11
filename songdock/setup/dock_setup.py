@@ -7,6 +7,7 @@ and the list of known iPods written into its MediaDock.txt.
     Keep=Jo's iPod (nano)        bring a forgotten iPod back
     PlaylistTag=#car             sync playlists tagged #car instead ("none" = off)
     LosslessTag=none             no lossless songs on this dock (default #lossless)
+    SinglesTag=#loose            playlists whose lone songs gather in "<Playlist> Singles"
     CompilationAlbums=A = B; C   these compilations list as one artist ("none" = off)
     ArtistNames=Now, Now; A & B  these credits are one artist, never split ("none" = off)
     ArtistAliases=Beatles = The Beatles   list that spelling under this name ("none" = off)
@@ -63,7 +64,7 @@ log = logging.getLogger("dock_setup")
 SETUP_FILE = "DockSetup.txt"
 GUIDE_FILE = "MediaDock README.txt"     # the manual (dock_guide.py)
 ACTIONS = {"forget": dock_players.forget, "keep": dock_players.keep}
-SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag",
+SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "singlestag": "SinglesTag",
             "compilationalbums": "CompilationAlbums", "artistnames": "ArtistNames",
             "artistaliases": "ArtistAliases",
             "syncstarred": "SyncStarred",
@@ -157,6 +158,18 @@ def plan_settings(settings, cfg):
         changes[("sync", "lossless_tag")] = lossless
         done.append(f"Playlists tagged {lossless} sync as lossless" if lossless
                     else "No playlists sync as lossless")
+    if "SinglesTag" in settings:
+        value = settings["SinglesTag"]
+        if not value:
+            raise SetupFileError('SinglesTag needs a tag, e.g. #singles (or "none")')
+        singles = "" if value.lower() in ("none", "off") else value
+        if any(c.isspace() for c in singles):
+            raise SetupFileError("SinglesTag must be one word, e.g. #singles")
+        if singles and singles.lower() == tag.lower():
+            raise SetupFileError("SinglesTag can't be the tag that syncs playlists")
+        changes[("sync", "singles_tag")] = singles
+        done.append(f"Playlists tagged {singles} gather their lone songs" if singles
+                    else "No playlist gathers its lone songs")
     if "CompilationAlbums" in settings:
         value = settings["CompilationAlbums"]
         if not value:

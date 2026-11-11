@@ -296,3 +296,30 @@ def group_singles(songs, song_counts, minimum=4):
                 s["displayAlbumArtist"] = artist      # one album, not one per credit
                 moved += 1
     return moved
+
+
+def playlist_singles(songs, playlists):
+    """Songs of a playlist tagged with [sync] singles_tag (e.g. "#singles") that are
+    the only song of their album in the plan go into one album named after the
+    playlist, "<Playlist> Singles", album artist "Various Artists" (user, 2026-11-10:
+    loose songs from many albums, one album each, crowded the Albums menu). Once a
+    second song of that album is in the plan, the song is back on its own album. A
+    song in two such playlists goes under the first by name; this comes after (and
+    wins over) "<Artist> Singles". Names only; "folder_album" keeps the real album.
+    Returns how many songs moved."""
+    lists = sorted((p for p in playlists if p.get("singles")), key=lambda p: p["name"].casefold())
+    if not lists:
+        return 0
+    per_album = Counter(s.get("albumId") for s in songs if s.get("albumId"))
+    by_id = {s["id"]: s for s in songs}
+    moved = set()
+    for pl in lists:
+        for sid in pl.get("song_ids", ()):
+            s = by_id.get(sid)
+            if not s or sid in moved or per_album.get(s.get("albumId"), 0) != 1:
+                continue
+            s["folder_album"] = s.get("folder_album") or s.get("album")
+            s["album"] = f"{pl['name']} Singles"
+            s["displayAlbumArtist"] = "Various Artists"
+            moved.add(sid)
+    return len(moved)

@@ -21,6 +21,7 @@ def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
     sync = cfg.get("sync", {})
     tag = sync.get("playlist_tag", "")
     lossless = sync.get("lossless_tag", "#lossless")
+    singles = sync.get("singles_tag", "#singles")
     favorites = sync.get("favorites_playlist", "")
     grace = sync.get("removal_grace_days", 7)
     targets = sync.get("targets", [])
@@ -77,6 +78,12 @@ this. This needs an iPod the dock has synced (a Rockbox player on a
 Rockbox-only dock); music players on the same dock get these files too,
 and basic ones may not play them.""" if lossless
                     else "Songs are not made lossless by playlist on this dock.")
+    singles_how = (f"""A playlist whose comment has {singles} syncs too, and each of its songs that
+is the only song of its album on the iPod goes in one album named after the
+playlist, "<Playlist> Singles", instead of an album of its own. Add more of
+that album and the song is back on its own album at the next sync.
+(SinglesTag=, below, changes the tag.)
+""" if singles else "")
     return f"""SONGDOCK - HOW TO USE AND RECONFIGURE IT FROM THIS IPOD
 ==========================================================
 
@@ -100,7 +107,7 @@ Chosen in Navidrome, not on the iPod:
 {chosen}
 {tag_how}
 {lossless_how}
-Each song lists under one artist: its album's artist, or on a Various Artists
+{singles_how}Each song lists under one artist: its album's artist, or on a Various Artists
 album the first name in its credit. A song by "A feat. B", "A, B" or "A & B"
 lists under A and is titled "Song (feat. B)". A comma, & or / stays part of
 the name if nothing shows two people (MediaDock.txt lists these).
@@ -180,6 +187,8 @@ Which music syncs:
 Music format (stock iPods and Rockbox players):
   LosslessTag=none       ignore {lossless or "the lossless tag"} on this dock, e.g. one serving a
                          small iPod; LosslessTag=#hifi uses another tag
+  SinglesTag=#loose      gather lone songs from playlists with this tag in
+                         "<Playlist> Singles" (SinglesTag=none: never)
   StockCompatible=no     for a dock that only serves Rockbox players: copy
                          music as it is on the server, FLAC included
                          (lossless, about 2-3 times the space). Refused

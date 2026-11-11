@@ -20,7 +20,7 @@ PLACEHOLDER_PASSWORD = "your-navidrome-password"
 
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
-             "playlist_tag": "#ipod", "lossless_tag": "#lossless",
+             "playlist_tag": "#ipod", "lossless_tag": "#lossless", "singles_tag": "#singles",
              "primary_artist": True, "artist_names": [], "compilation_albums": [], "artist_aliases": [], "workers": "auto", "removal_grace_days": 7,
              "recent_play_months": 3, "singles_album_min": 4, "make_room": False, "make_room_albums": True, "favorite_rating": 4, "auto_update": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
@@ -137,6 +137,12 @@ def load(path=None):
     if lossless and lossless.lower() == cfg["sync"]["playlist_tag"].lower():
         raise ConfigError(f"{path}: lossless_tag and playlist_tag can't be the same tag: "
                           "every tagged playlist would become lossless")
+    singles = cfg["sync"]["singles_tag"]
+    if not isinstance(singles, str) or any(c.isspace() for c in singles):
+        raise ConfigError(f'{path}: singles_tag must be one word, e.g. "#singles" ("" = off)')
+    if singles and singles.lower() == cfg["sync"]["playlist_tag"].lower():
+        raise ConfigError(f"{path}: singles_tag and playlist_tag can't be the same tag: "
+                          "every tagged playlist's songs would leave their albums")
     if not targets and not cfg["sync"]["playlist_tag"]:
         # targets = [] is fine: playlists found by their tag only.
         raise ConfigError(f'{path}: nothing to sync: targets is empty and playlist_tag '

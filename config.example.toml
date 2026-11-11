@@ -74,6 +74,9 @@ display.theme = "light"
 # (ALAC; FLAC on Rockbox) when Navidrome has them lossless. About 3x the
 # space: "" turns it off, e.g. for a small iPod.
 # sync.lossless_tag = "#lossless"
+#   Playlists whose comment has this sync too, and their songs that are the only
+#   song of their album go in one album, "<Playlist> Singles" ("" = off).
+# sync.singles_tag = "#singles"
 
 # --- Favorites from the iPod ---
 # A song you rate this many stars on the iPod gets starred in Navidrome, once

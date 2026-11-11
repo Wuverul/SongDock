@@ -31,7 +31,7 @@ class GuideTests(unittest.TestCase):
                        "NewLibrary=yes", "StockCompatible=no", "StockCompatible=yes", "FLAC=no",
                        "comment contains #car", "the playlist \"Road Trip\"",
                        "\"Favorites\"", "deleted right away", "SAFE TO REMOVE",
-                       "SafeHours=07:00-10:00", "RecentPlayMonths=3", "MakeRoom=yes", "MakeRoomAlbums=no", "AutoUpdate=no", "FavoriteRating=5", "SinglesAlbum=6", "UPDATING", "PLAYER FULL", "SAFE HOURS", "Model=MC297"):
+                       "SafeHours=07:00-10:00", "RecentPlayMonths=3", "MakeRoom=yes", "MakeRoomAlbums=no", "AutoUpdate=no", "FavoriteRating=5", "SinglesAlbum=6", "UPDATING", "PLAYER FULL", "SAFE HOURS", "Model=MC297", "SinglesTag=", "<Playlist> Singles"):
             self.assertIn(needle, text)
         self.assertNotIn("RESTORING", text)          # screen off (dock_restore.SCREEN)
         self.assertLessEqual(max(len(line) for line in text.splitlines()), 80)

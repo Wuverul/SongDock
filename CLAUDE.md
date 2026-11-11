@@ -1021,6 +1021,13 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   is 1 (`album_song_counts` in the plan) gets them as "<Artist> Singles", after the genres. Names
   only, in the iTunesDB, no re-copy; tracks sort by title. Art isn't shared in an album named
   "... Singles". Rockbox keeps each in its own folder (`folder_album`, cover.jpg is per folder).
+- **Playlist singles (user, 2026-11-10):** `[sync] singles_tag` (default `#singles`, ""
+  off; `SinglesTag=`): a playlist with it in its comment syncs, and each of its songs
+  that is the only song of its album in the plan goes in "<Playlist> Singles" (album
+  artist "Various Artists"; first playlist by name if in two; wins over "<Artist>
+  Singles"), `dock_artists.playlist_singles`, names only. A second song of the album in
+  the plan sends it back. Albums ending " Singles" list by title on the iPod
+  (`ipod_db.sort_order`) and never share covers. Can't equal `playlist_tag`.
 - `dock_share.py` (user, 2026-10-30): `musicdock-status --share`, for bug reports and
   friends helping out; prints only, sends nothing. A fixed list of facts (add new
   settings to `SHARED_SETTINGS` on purpose); error lines lose library names, then

@@ -281,7 +281,8 @@ def lossless_songs(client, tag, targets, playlists, previous_ids=()):
 
 
 def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites",
-                  tag="", previously_tagged=(), album_info=None, album_copies=None):
+                  tag="", previously_tagged=(), album_info=None, album_copies=None,
+                  singles_tag=""):
     """Resolve the configured targets into one de-duplicated set of tracks.
 
     targets: e.g. ["starred", "playlist:Mel Test"].
@@ -293,6 +294,8 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     album_info: pass a dict to keep the album records read along the way.
     album_copies: pass a dict to also look through the whole library for the
     album a single is on; last run's answers go in, this run's come out.
+    singles_tag: playlists with this in their comment (e.g. "#singles") sync too,
+    and are marked "singles" in their record (playlist_singles).
     Returns (tracks in artist/album/track order, {song id: [targets]},
     [playlist records for the manifest, in target order]).
     """
@@ -300,15 +303,21 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     tracks, sources, playlists = {}, {}, []
     album_info = {} if album_info is None else album_info
     listing = None
-    if tag:
+    tags = [t for t in (tag, singles_tag) if t]
+    if tags:
         listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
         if not listing and previously_tagged:
             raise PrepareError(
                 f"the server listed no playlists, but {len(previously_tagged)} were "
-                f"tagged {tag} last time; stopping without removing anything. (If you "
-                f"really deleted them all, set playlist_tag = \"\" to continue.)")
-        tagged = [p for p in listing if has_tag(p.get("comment"), tag)]
+                f"tagged {' or '.join(tags)} last time; stopping without removing anything. "
+                f"(If you really deleted them all, set playlist_tag = \"\" to continue.)")
+        tagged = [p for p in listing if any(has_tag(p.get("comment"), t) for t in tags)]
         targets = list(targets) + [("tagged", p) for p in tagged]
+
+    def singles(*records):
+        """The playlist's comment comes with getPlaylists and getPlaylist alike."""
+        return {"singles": True} if any(has_tag(r.get("comment"), singles_tag)
+                                        for r in records) else {}
 
     def add(target, songs):
         for song in songs:
@@ -335,7 +344,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             songs = pl.get("entry", [])
             key = f"playlist:{pl['name']}"
             playlists.append({"target": key, "id": pl["id"], "name": pl["name"],
-                              "via": "tag",
+                              "via": "tag", **singles(pl, target[1]),
                               "song_ids": [s["id"] for s in songs]})
             add(key, songs)
             continue
@@ -355,7 +364,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             seen_playlists.add(pl["id"])
             songs = pl.get("entry", [])
             playlists.append({"target": target, "id": pl["id"], "name": pl["name"],
-                              "via": "config",
+                              "via": "config", **singles(pl),
                               "song_ids": [s["id"] for s in songs]})
         else:
             raise PrepareError(f"unknown target {target!r} "
@@ -1461,7 +1470,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     targets, sources, playlists = target_tracks(
         client, cfg["sync"]["targets"], known,
         cfg["sync"].get("favorites_playlist", "Favorites"),
-        cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info, album_copies)
+        cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info, album_copies,
+        cfg["sync"].get("singles_tag", ""))
     unsplit_artists = set()
     dock_artists.apply_aliases(targets, cfg["sync"].get("artist_aliases", ()))
     album_labels = {}
@@ -1475,6 +1485,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     singles_min = cfg["sync"].get("singles_album_min", 4)
     single_albums = one_track_albums(client, targets, previous, album_info, singles_min)
     dock_artists.group_singles(targets, single_albums, singles_min)
+    loose = dock_artists.playlist_singles(targets, playlists)
+    if loose:
+        log.info("%d song(s) alone from their album in #singles playlists: listed as "
+                 "\"<Playlist> Singles\"", loose)
     separate_album_names(targets)        # after every other name change
     # Songs Navidrome re-numbered are followed, not fetched again (needs the final
     # names, which the plan's entries have).
@@ -2098,7 +2112,8 @@ def show_genres(config_path=None):
         songs, _, _ = target_tracks(client, cfg["sync"]["targets"], known,
                                     cfg["sync"].get("favorites_playlist", "Favorites"),
                                     cfg["sync"].get("playlist_tag", ""),
-                                    album_info=album_info)
+                                    album_info=album_info,
+                                    singles_tag=cfg["sync"].get("singles_tag", ""))
         genres, _ = plan_genres(client, cfg, songs, previous, album_info)
     except (SubsonicError, PrepareError) as e:
         log.error("Couldn't read the targets: %s", e)

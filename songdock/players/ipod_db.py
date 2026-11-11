@@ -998,6 +998,8 @@ def sort_order(tracks, sort_key, field):
         t = tracks[i]
         album, artist, title = _sort_text(t.album), _sort_text(t.artist), _sort_text(t.title)
         numbers = (t.cd_number or 0, t.track_number or 0)
+        if (t.album or "").casefold().endswith(" singles"):
+            numbers = (0, 0)          # songs of many releases ("<Playlist> Singles"): by title
         if sort_key == 4:
             return (album, _sort_text(album_key(t)[1]), *numbers, title)
         if sort_key == 5:

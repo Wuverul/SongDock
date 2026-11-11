@@ -261,6 +261,23 @@ class TidyTests(unittest.TestCase):
             self.assertEqual(run(extra), [("Simon & Garfunkel", "V (feat. Z)"),
                                           ("Simon & Garfunkel", "W")])
 
+    def test_lone_songs_of_a_singles_playlist_gather_in_its_album(self):
+        def s(i, album, **kw):
+            return {"id": i, "artist": "A", "title": i, "album": album, "albumId": album, **kw}
+        songs = [s("1", "Alpha"), s("2", "Beta"), s("3", "Beta"), s("4", "Gamma"),
+                 s("5", "Delta", folder_album="Delta EP")]      # already "<Artist> Singles"
+        lists = [{"name": "Road Trip", "singles": True, "song_ids": ["1", "4"]},
+                 {"name": "Discovery", "singles": True, "song_ids": ["4", "2", "5"]},
+                 {"name": "Plain", "song_ids": ["1"]}]
+        self.assertEqual(a.playlist_singles(songs, lists), 3)
+        got = {t["id"]: (t["album"], t.get("folder_album"), t.get("displayAlbumArtist"))
+               for t in songs}
+        self.assertEqual(got["1"], ("Road Trip Singles", "Alpha", "Various Artists"))
+        self.assertEqual(got["4"], ("Discovery Singles", "Gamma", "Various Artists"))  # first by name
+        self.assertEqual(got["2"], ("Beta", None, None))           # Beta has two songs here
+        self.assertEqual(got["5"], ("Discovery Singles", "Delta EP", "Various Artists"))
+        self.assertEqual(a.playlist_singles(songs, [lists[2]]), 0)
+
     # "<Artist> Singles"
     def singles(self, n, artist="Fox", start=0):
         return [{"id": f"{artist}{i}", "artist": artist, "title": f"T{i}", "album": f"A{i}",

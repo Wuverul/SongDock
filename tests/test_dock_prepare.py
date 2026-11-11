@@ -1123,6 +1123,28 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(len(calls), made)                    # remembered
         self.assertEqual(self.manifest().get("generated"), generated)   # plan unchanged
 
+    def test_a_singles_playlist_gathers_lone_songs_until_their_album_comes(self):
+        loose = [song("x1", albumId="ax", album="X Album", artist="Xa"),
+                 song("y1", albumId="ay", album="Y Album", artist="Ya")]
+        server = FakeServer(playlists={"p1": ("Discovery", loose, "new finds #Singles")})
+        self.run_prepare(server, self.singles_config())
+        albums = {t["id"]: (t["album"], t["album_artist"]) for t in self.manifest()["tracks"]}
+        self.assertEqual(albums, {"x1": ("Discovery Singles", "Various Artists"),
+                                  "y1": ("Discovery Singles", "Various Artists")})
+        # The rest of X Album gets starred: x1 goes back to its album
+        server = FakeServer(songs=[song("x2", albumId="ax", album="X Album", artist="Xa")],
+                            playlists={"p1": ("Discovery", [dict(t, album=a) for t, a in
+                                                           zip(loose, ("X Album", "Y Album"))],
+                                              "new finds #Singles")})
+        self.run_prepare(server, self.singles_config())
+        albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
+        self.assertEqual(albums, {"x1": "X Album", "x2": "X Album", "y1": "Discovery Singles"})
+
+    def singles_config(self):
+        cfg = config()
+        cfg["sync"]["singles_tag"] = "#singles"
+        return cfg
+
     def test_label_compilations_listed_as_one_artist_looked_up_once(self):
         # 2026-11-10: Chillhop releases beyond "Chillhop Essentials"
         songs = [song("c1", artist="Aso", albumId="ch1", album="Lofi Fall",
