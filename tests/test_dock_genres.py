@@ -37,6 +37,27 @@ class MatchTests(unittest.TestCase):
         self.assertEqual(out, {"a": "Rock", "b": "DnB", "c": "Lofi / Chill",
                                "d": "Pop", "e": "Lofi / Chill"})
 
+    def test_lo_fi_alone_is_a_sound_not_the_genre(self):
+        # 2026-11-10: San Holo and Message to Bears were in Lofi / Chill by "lo-fi"
+        out = genres([song("a", "electronic", "future bass", "lo-fi", album="1"),
+                      song("b", "folk", "indie rock", "lo-fi", album="2"),
+                      song("c", "lo-fi hip hop", album="3")])
+        self.assertEqual(out, {"a": "Electronic", "b": "Indie Rock", "c": "Lofi / Chill"})
+
+    def test_an_artist_named_in_a_group_beats_every_tag(self):
+        groups = [{"name": "Lofi / Chill", "match": ["chillout", "trip hop"]},
+                  {"name": "Indie Pop", "match": ["artist:Gorillaz", "art pop"]},
+                  {"name": "Electronic", "match": ["artist:Snail's House", "electronic"]}]
+        songs = [song("a", "downtempo", "chillout", album="1", artist="Snail\u2019s House"),
+                 song("b", "trip hop", album="2", artist="Gorillaz"),
+                 song("c", "trip hop", album="3", artist="Emancipator"),
+                 song("d", "chillout", album="4", artist="Air Supply"),
+                 song("e", "chillout", album="5", artist="X",
+                      displayAlbumArtist="Gorillaz \u2022 Someone")]
+        out = g.assign(songs, groups, "")
+        self.assertEqual(out, {"a": "Electronic", "b": "Indie Pop", "c": "Lofi / Chill",
+                               "d": "Lofi / Chill", "e": "Indie Pop"})
+
     def test_list_order_is_priority_not_tag_order(self):
         # Indie Rock is listed before Electronic, whatever order the tags are in.
         self.assertEqual(genres([song("a", "electronic", "indie rock")]), {"a": "Indie Rock"})

@@ -19,6 +19,10 @@ How a song's group is chosen:
     (e.g. "release:live"), for things genre tags don't say. "album:<words>"
     matches words in the album's name (e.g. "album:chillhop" files every
     "Chillhop Essentials" volume under Lofi / Chill, whatever its tags).
+  * "artist:<name>" files an artist's songs there whatever their tags, ahead of
+    every tag rule (user, 2026-11-10: Snail's House is tagged "downtempo,
+    chillout" like the albums that do belong in Lofi / Chill). The whole name,
+    as the song's artist or album artist (case and punctuation ignored).
   * No match: the song's tag that the most synced albums carry (ties: the
     song's first tag), or "Other" if it has no tags. The list always comes
     first; counting only names what the list doesn't cover (user,
@@ -52,9 +56,11 @@ DEFAULT_GROUPS = [
                                     "speedcore", "mashcore"]},
     {"name": "DnB", "match": ["drum and bass", "drum n bass", "dnb", "jungle",
                               "liquid funk", "neurofunk"]},
+    # Not "lo-fi" alone: it's also a sound (indie rock, future bass), which put San Holo
+    # and Message to Bears here (user, 2026-11-10); "lo-fi hip hop" is the genre.
     {"name": "Lofi / Chill", "match": ["album:chillhop", "album:lofi", "album:lo fi",
-                                       "lo fi", "lofi", "chill", "chillout", "chillhop",
-                                       "trip hop", "new age"]},
+                                       "lo fi hip hop", "lofi hip hop", "chill", "chillout",
+                                       "chillhop", "trip hop", "new age"]},
     {"name": "Hip-Hop", "match": ["hip hop", "hiphop", "boom bap", "rap", "trap", "grime",
                                   "drill"]},
     {"name": "Indie Rock", "match": ["indie rock"]},
@@ -90,6 +96,7 @@ DEFAULT_UNMATCHED = ""
 NO_TAGS = "Other"
 RELEASE = "release:"
 ALBUM = "album:"
+ARTIST = "artist:"
 SMALL_WORDS = {"and", "n", "of", "the", "a"}
 
 
@@ -147,18 +154,20 @@ def tidy(tag):
 
 def compile_groups(groups):
     """[(name, [normalized tag keywords], {release types}, [normalized
-    album-name keywords])], in order."""
+    album-name keywords], {normalized artist names})], in order."""
     out = []
     for g in groups:
-        words, types, album_words = [], set(), []
+        words, types, album_words, artists = [], set(), [], set()
         for kw in g["match"]:
-            if kw.lower().startswith(RELEASE):
+            if kw.lower().startswith(ARTIST):
+                artists.add(normalize(kw[len(ARTIST):]))
+            elif kw.lower().startswith(RELEASE):
                 types.add(kw[len(RELEASE):].strip().lower())
             elif kw.lower().startswith(ALBUM):
                 album_words.append(normalize(kw[len(ALBUM):]))
             else:
                 words.append(normalize(kw))
-        out.append((g["name"], words, types, album_words))
+        out.append((g["name"], words, types, album_words, artists))
     return out
 
 
@@ -166,11 +175,16 @@ def uses_release_types(groups):
     return any(kw.lower().startswith(RELEASE) for g in groups for kw in g["match"])
 
 
-def song_group(tags, types, compiled, album=""):
-    """(rank, group name) for one song; rank = len(compiled) if no match."""
+def song_group(tags, types, compiled, album="", artists=()):
+    """(rank, group name) for one song; rank = len(compiled) if no match.
+    artists: the song's artist names (artist, album artist)."""
+    names = {normalize(a) for a in artists if a}
+    for rank, group in enumerate(compiled):
+        if group[4] & names:
+            return rank, group[0]
     norm = [normalize(t) for t in tags]
     album = normalize(album)
-    for rank, (name, words, rtypes, album_words) in enumerate(compiled):
+    for rank, (name, words, rtypes, album_words, _) in enumerate(compiled):
         if rtypes & set(types) or any(w in album for w in album_words) \
                 or any(w in t for w in words for t in norm):
             return rank, name
@@ -195,6 +209,15 @@ def most_common_tag(tags, albums_with):
     return tidy(best[1])
 
 
+def song_artists(song):
+    """The names an "artist:" keyword can match: the song's artist and album artist
+    (each name of a joined one, "A \u2022 B")."""
+    names = [song.get("artist"), song.get("displayAlbumArtist"), song.get("albumArtist")]
+    names += [a.get("name") for a in (song.get("artists") or []) + (song.get("albumArtists") or [])
+              if isinstance(a, dict)]
+    return {p.strip() for n in names if n for p in re.split(r"\s+\u2022\s+", n)}
+
+
 def album_key(song):
     return song.get("albumId") or (song.get("album"), song.get("albumArtist") or song.get("artist"))
 
@@ -209,7 +232,7 @@ def assign(songs, groups, unmatched=DEFAULT_UNMATCHED, album_types=None):
     for s in songs:
         tags = song_tags(s)
         rank, name = song_group(tags, album_types.get(s.get("albumId"), []), compiled,
-                                s.get("album"))
+                                s.get("album"), song_artists(s))
         if name is None:
             name = unmatched or most_common_tag(tags, albums_with) or NO_TAGS
         picks[s["id"]] = (rank, name)

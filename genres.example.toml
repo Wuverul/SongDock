@@ -12,7 +12,8 @@
 # any of its tags. Keywords match whole words, ignoring case and punctuation
 # ("rock" matches "alternative rock"; "pop" doesn't match "electropop").
 # "release:live" matches the album's release type in Navidrome, and
-# "album:chillhop" words in the album's name. Then each album takes the
+# "album:chillhop" words in the album's name. "artist:Gorillaz" puts an artist
+# in that group whatever its tags (ahead of every tag keyword). Then each album takes the
 # group most of its songs got. To see what your list does to your library:
 #   /opt/songdock/venv/bin/python /opt/songdock/app/songdock/jobs/dock_prepare.py --genres
 
@@ -58,8 +59,8 @@ match = ["drum and bass", "drum n bass", "dnb", "jungle", "liquid funk",
 
 [[genres.groups]]
 name = "Lofi / Chill"
-match = ["album:chillhop", "album:lofi", "album:lo fi", "lo fi", "lofi",
-         "chill", "chillout", "chillhop", "trip hop", "new age"]
+match = ["album:chillhop", "album:lofi", "album:lo fi", "lo fi hip hop",
+         "lofi hip hop", "chill", "chillout", "chillhop", "trip hop", "new age"]
 
 [[genres.groups]]
 name = "Hip-Hop"

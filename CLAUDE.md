@@ -563,7 +563,10 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   several genre tags, and the iPod showed each combination as a genre (56
   for 78 albums). `[genres]` in the config is an ordered list of groups
   (name + keywords; whole-word match, `release:<type>` matches the album's
-  release type, `album:<words>` the album name, e.g. `album:chillhop`). A
+  release type, `album:<words>` the album name, e.g. `album:chillhop`; `artist:<name>`
+  (2026-11-10) an artist or album artist by whole name, checked before every tag
+  keyword: tags can't tell Snail's House from Emancipator; Lofi / Chill dropped bare
+  "lo fi", a sound on indie/future bass records, for "lo fi hip hop"). A
   song gets the first group matching any tag (order = priority, so adding
   albums never reshuffles; user's choice over counting). Only songs no group
   matches go by count: their tag carried by the most synced albums
