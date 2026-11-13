@@ -1471,9 +1471,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   "Human After All" + a Renard album -> prepare pruned 29 from the cache within
   5 min, DOCK READY showed the pending removals, the next dock removed all 29
   (each logged with its reason, record history kept, Favorites updated) in 44 s.
-- **Real-use checks still pending** (tested on fake iPods / fake servers):
-  plays queued while Navidrome is down (can't be tested by stopping the
-  server: it's someone else's). Docking during boot: verified (2026-10-23
+- **Real-use checks** (tested on fake iPods / fake servers first):
+  plays queued while Navidrome is down: verified 2026-11-12 from the record
+  (2 plays queued 2026-10-23 01:34 with the server unreachable, sent 11:30,
+  once each; none of 594 ever sent twice). Docking during boot: verified (2026-10-23
   Nano, 2026-10-25 flash drive at 12 s; the sync waited for the boot
   screens). wifi.txt on a real network: verified 2026-10-18 and 2026-10-23.
 - **Manual test with 3 tracks passed on the Nano (2026-10-16):** MP3s
