@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Loud AAC files no longer clip.** The dock copies AAC files (.m4a) as they are, and the clipping fix in 0.7.5 only lowered MP3s, so a loud AAC still crackled on the iPod (Vulpey's "Sever" peaks at +4.2 dB over the highest level a player can output). Each AAC is now measured once; one that would clip is converted to MP3 and lowered like the others. That's a lossy-to-lossy conversion, a small loss next to clipping, and it happens only to AAC files that clip. Play counts are kept when the iPod's copy is replaced.
+
 ## 0.7.6
 
 Survives a Navidrome update, and uses a current pygpod.

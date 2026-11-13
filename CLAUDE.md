@@ -1512,8 +1512,14 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   The encoding label carries it ("mp3 v0 -1.5dB": `gain_label`/`base_label`/
   `label_steps`); settings changes compare `base_label`, and the full label makes
   players swap. An unchecked MP3 isn't "held" (fetched to be checked). Without mp3gain
-  (older install) a warning and no lowering. Not covered: `convert_to = "aac"` (no
-  aacgain), AAC copied as-is. Tried and rejected: re-encoding with ffmpeg `volume`
+  (older install) a warning and no lowering. **AAC kept as-is (2026-11-12, Vulpey -
+  Sever: a 256 kbps AAC at +4.2 dBFS crackled on the iPod):** measured once too (as
+  it's fetched, or the cached copy; unmeasured = not held); one over the ceiling
+  (`loud_aac`, from the last plan's `peak`) becomes MP3 on the next run (`song_format`
+  `loud=`) and is lowered like the rest; once an MP3 it stays one (no flip-back). No
+  aacgain in Debian. Checked on the Pi: the MP3 keeps the float peaks (1.628 vs the
+  AAC's 1.627), -4.5 dB leaves 0 samples over. Not covered: `convert_to = "aac"`.
+  Tried and rejected: re-encoding with ffmpeg `volume`
   (~2x conversion time), a -14 LUFS target (ebur128 true peak is as slow as encoding,
   and it isn't what the user wanted).
 - **ffmpeg's built-in AAC encoder produces audible high-frequency artifacts**

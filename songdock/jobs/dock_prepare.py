@@ -788,9 +788,10 @@ def hires_alac(track):
                 and int(track.get("bitRate") or 0) >= HIRES_MIN_KBPS))
 
 
-def song_format(track, device_type, convert_to, lossless=()):
+def song_format(track, device_type, convert_to, lossless=(), loud=()):
     """What a song is converted to, or None to keep the server's file.
-    lossless: IDs of the songs in #lossless playlists."""
+    lossless: IDs of the songs in #lossless playlists. loud: IDs of AAC files
+    that would clip (loud_aac)."""
     suffix = (track.get("suffix") or "").lower()
     if device_type == "stock_ipod" and hires_alac(track):
         return "alac"
@@ -798,7 +799,9 @@ def song_format(track, device_type, convert_to, lossless=()):
     if track["id"] in lossless and source_lossless:
         return "alac" if device_type == "stock_ipod" else None    # Rockbox plays FLAC
     if not needs_conversion(suffix, device_type):
-        return None
+        # An AAC that clips becomes an MP3, which mp3gain can lower (nothing
+        # lowers an AAC without re-encoding it anyway).
+        return "mp3" if suffix in AAC_SUFFIXES and track["id"] in loud else None
     if convert_to == "alac" and (not source_lossless or device_type == "rockbox_basic"):
         return "mp3"
     return convert_to
@@ -1234,6 +1237,27 @@ GAIN_STEP = 1.50515      # dB per mp3gain step: 2 ** (1/4) in amplitude
 CLIP_CEILING = -0.2      # dBFS: a decoded peak above this would clip on a player
 
 
+#
+# AAC files kept as they are clip too (2026-11-12: Vulpey - Sever, a 256 kbps
+# AAC made by ffmpeg, decodes to +4.2 dBFS and crackled on the iPod from its
+# first second). AAC has no mp3gain: aacgain isn't in Debian. So each is
+# measured once too, and one that would clip is converted to MP3 (from the
+# decoded floats, which keep the peaks) and lowered like any other. A lossy to
+# lossy conversion, but a small loss next to clipping. ALAC in .m4a never goes
+# above full scale, so it stays as it is.
+AAC_SUFFIXES = {"m4a", "aac"}
+
+
+def loud_aac(entries):
+    """IDs of AAC sources to make into MP3s, from plan entries: those measured
+    above CLIP_CEILING, and those already made into MP3s (their MP3's peak may
+    measure a little lower; this keeps them from flipping back)."""
+    return {e["id"] for e in entries
+            if (e.get("source_suffix") or "").lower() in AAC_SUFFIXES
+            and ((e.get("peak") is not None and e["peak"] > CLIP_CEILING)
+                 or (e.get("encoding") or "").startswith("mp3 "))}
+
+
 def decoded_peak(path):
     """The highest sample of `path` decoded to floating point, in dBFS (above
     0 = clipping on a player). Streams: about 3 s for a song on a Pi Zero 2 W."""
@@ -1527,9 +1551,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     lossless, lossless_lists = lossless_songs(
         client, cfg["sync"].get("lossless_tag", "") if lossless_on else "", targets,
         playlists, previous.get("lossless_playlists", ()))
+    # Measured on an earlier run (AAC files are measured once they're cached).
+    loud = loud_aac(previous.get("tracks", []) + previous.get("on_player", [])) \
+        if lower_fn else set()
 
     def format_of(t):
-        return song_format(t, device, cfg["device"]["convert_to"], lossless)
+        return song_format(t, device, cfg["device"]["convert_to"], lossless, loud)
 
     def made_as(t):
         target = format_of(t)
@@ -1567,6 +1594,19 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
 
     def is_mp3(name):
         return name.lower().endswith(".mp3")
+
+    def is_aac(name, t):
+        """A file kept as the server's AAC (or ALAC): measured, never lowered."""
+        return not format_of(t) and (t.get("suffix") or "").lower() in AAC_SUFFIXES
+
+    def checked_for_clipping(name, t):
+        return is_mp3(name) or is_aac(name, t)
+
+    def log_loud_aac(measured):
+        for t in measured:
+            if peaks.get(t["id"], -99) > CLIP_CEILING:
+                log.info("AAC would clip (%+.2f dBFS): made into an MP3 and lowered on the "
+                         "next check: %s", peaks[t["id"]], label(t))
     if lower_fn is None and any(is_mp3(n) for n in wanted):
         log.warning("%s isn't installed (run the installer again): MP3s aren't checked "
                     "for clipping", MP3GAIN)
@@ -1614,8 +1654,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
 
     # MP3s cached before the clipping check: measured once (about 3 s each).
     unmeasured = [(name, t) for name, t in wanted.items()
-                  if lower_fn and name in existing and name not in stale and is_mp3(name)
-                  and t["id"] not in peaks]
+                  if lower_fn and name in existing and name not in stale
+                  and checked_for_clipping(name, t) and t["id"] not in peaks]
     if unmeasured and dry_run:
         log.info("  would check %d cached tracks for clipping", len(unmeasured))
     elif unmeasured:
@@ -1641,6 +1681,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         log.info("Clipping check: %d of %d cached tracks would clip",
                  sum(peaks.get(t["id"], -99) > CLIP_CEILING for _, t in unmeasured),
                  len(unmeasured))
+        log_loud_aac([t for name, t in unmeasured if is_aac(name, t)])
     if lower_fn:
         settle_albums()
     missing = [(name, t) for name, t in wanted.items()
@@ -1649,11 +1690,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # Songs already on every player in their current encoding ("held") can
     # do without a cache file. Fetch songs the player lacks first (playlist
     # songs before the rest), then mirror held ones while there's room. An MP3
-    # never checked for clipping isn't held: it's fetched to be checked.
+    # or AAC never checked for clipping isn't held: it's fetched to be checked.
     on_player = on_player or {}
     held = {name for name, t in wanted.items()
             if on_player.get(t["id"]) and on_player[t["id"]] <= {None, current_label(t)}
-            and (not lower_fn or not is_mp3(name) or t["id"] in peaks)}
+            and (not lower_fn or not checked_for_clipping(name, t) or t["id"] in peaks)}
     missing.sort(key=lambda nt: (nt[0] in held, not any(
         s.startswith("playlist:") for s in sources.get(nt[1]["id"], []))))
 
@@ -1856,6 +1897,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                              else ", as its album", label(t))
                 with lock:
                     made_with[t["id"]] = gain_label(made_as(t), steps)
+            elif lower_fn and is_aac(name, t):
+                peak = peak_fn(out)
+                with lock:
+                    peaks[t["id"]] = round(peak, 2)
+                    made_with[t["id"]] = made_as(t)
+                log_loud_aac([t])
             else:
                 with lock:
                     made_with[t["id"]] = made_as(t)

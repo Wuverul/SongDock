@@ -1975,11 +1975,51 @@ class NoClippingTests(unittest.TestCase):
         self.assertEqual(self.encodings(), {"a1": "mp3 v0 -4.5dB", "a2": "mp3 v0 -4.5dB"})
 
     def test_lossless_and_other_formats_are_left_alone(self):
-        self.peaks = {"m": 2.0}
+        self.peaks = {"m": 2.0, "o": -1.0}
         server = FakeServer(songs=[song("m", suffix="mp3", albumId="A"),
                                    song("o", suffix="m4a", albumId="A")])
         self.run_prepare(server)
         self.assertEqual(self.encodings(), {"m": "original -3.0dB", "o": "original"})
+
+    def test_an_aac_that_clips_becomes_a_lowered_mp3(self):
+        # 2026-11-12: Vulpey - Sever, a 256 kbps AAC at +4.2 dBFS, crackled on the iPod.
+        self.peaks = {"loud": 4.23, "quiet": -1.0}
+        server = FakeServer(songs=[song("loud", suffix="m4a", albumId="A"),
+                                   song("quiet", suffix="m4a", albumId="B")])
+        self.run_prepare(server)                  # measured as it's downloaded
+        self.assertEqual(self.encodings(), {"loud": "original", "quiet": "original"})
+        converted = []
+
+        def convert(*a, **kw):
+            converted.append(self.song_of(a[0]))
+            fake_convert(*a, **kw)
+        self.run_prepare(server, convert)
+        self.assertEqual(converted, ["loud"])
+        self.assertEqual(self.encodings(), {"loud": "mp3 v0 -4.5dB", "quiet": "original"})
+        self.assertEqual(sorted(os.listdir(os.path.join(self.cache, "tracks"))),
+                         ["loud.mp3", "quiet.m4a"])   # the clipping AAC is gone
+        server.downloads.clear()
+        self.run_prepare(server, convert)             # settled: nothing more to do
+        self.assertEqual((server.downloads, converted), ([], ["loud"]))
+
+    def test_aacs_cached_before_the_check_are_measured(self):
+        self.peaks = {"loud": 1.0}
+        server = FakeServer(songs=[song("loud", suffix="m4a")])
+        prepare(server, config(), self.cache, convert_fn=fake_convert, disk_usage=ROOMY,
+                player_kinds={"stock"}, lower_fn=None)          # an older dock
+        self.run_prepare(server)
+        self.assertEqual(self.encodings(), {"loud": "original"})
+        self.run_prepare(server)
+        self.assertEqual(self.encodings(), {"loud": "mp3 v0 -1.5dB"})
+
+    def test_a_made_mp3_stays_one(self):
+        # Its MP3 may measure a little under the ceiling; it mustn't swap back.
+        entries = [{"id": "a", "source_suffix": "m4a", "peak": 0.5, "encoding": "original"},
+                   {"id": "b", "source_suffix": "m4a", "peak": -0.5, "encoding": "mp3 v0"},
+                   {"id": "c", "source_suffix": "m4a", "peak": -0.5, "encoding": "original"},
+                   {"id": "d", "source_suffix": "m4a", "encoding": "original"},
+                   {"id": "e", "source_suffix": "mp3", "peak": 2.0, "encoding": "original"}]
+        self.assertEqual(dock_prepare.loud_aac(entries), {"a", "b"})
 
     def test_an_unchecked_mp3_on_the_player_still_needs_a_cache_file(self):
         # With no room, songs on every player stay uncached ("held"), unless they
@@ -2002,6 +2042,16 @@ class NoClippingTests(unittest.TestCase):
             return ({t["id"] for t in m["on_player"]}, {t["id"] for t in m["skipped"]})
         self.assertEqual(plan(peaks_known=True), ({"a1", "b1"}, set()))
         self.assertEqual(plan(peaks_known=False), (set(), {"a1", "b1"}))
+
+    def test_an_unchecked_aac_on_the_player_still_needs_a_cache_file(self):
+        server = FakeServer(songs=[song("o", suffix="m4a")])
+        prepare(server, config(max_gb=0.0000001), self.cache, convert_fn=fake_convert,
+                disk_usage=ROOMY, player_kinds={"stock"}, peak_fn=self.peak,
+                lower_fn=self.lower, on_player={"o": {"original"}})
+        with open(os.path.join(self.cache, "manifest.json")) as f:
+            m = json.load(f)
+        self.assertEqual(([t["id"] for t in m["on_player"]], [t["id"] for t in m["skipped"]]),
+                         ([], ["o"]))
 
 
 class AlbumNameTests(unittest.TestCase):
