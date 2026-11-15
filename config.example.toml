@@ -128,6 +128,9 @@ display.theme = "light"
 # --- Genres ---
 # The iPod's Genres menu uses a built-in list of groups. To make your own,
 # see genres.example.toml next to this file.
+# Albums with no genre tags (and no other songs by their artist to go by)
+# get one from MusicBrainz, else Deezer. Only song IDs are sent. false = off.
+# sync.genre_lookup = true
 
 
 # =====================================================================

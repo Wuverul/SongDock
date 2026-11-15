@@ -31,6 +31,8 @@ and the list of known iPods written into its MediaDock.txt.
     SinglesAlbum=4               one-track albums before "<Artist> Singles" (0 = off)
     FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
     AutoUpdate=no                new releases are announced, not installed
+    GenreLookup=no               albums with no genre stay in "Other" (no
+                                 MusicBrainz / Deezer lookups)
     MakeRoom=yes                 a full player loses its oldest songs for new ones
     MakeRoomAlbums=no            with MakeRoom=yes, songs go one by one, not whole albums
     RecentPlayMonths=3           with MakeRoom=yes, how far back songs are safe
@@ -72,7 +74,7 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "singles
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
-            "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate",
+            "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate", "genrelookup": "GenreLookup",
             "favoriterating": "FavoriteRating", "singlesalbum": "SinglesAlbum"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
@@ -308,6 +310,13 @@ def plan_settings(settings, cfg):
             done.append("Automatic updates " + ("on" if on else "off"))
         else:
             done.append("Automatic updates already " + ("on" if on else "off"))
+    if "GenreLookup" in settings:
+        on = yes_no("GenreLookup", settings["GenreLookup"])
+        if on != cfg["sync"].get("genre_lookup", True):
+            changes[("sync", "genre_lookup")] = on
+            done.append("Genre lookups " + ("on" if on else "off"))
+        else:
+            done.append("Genre lookups already " + ("on" if on else "off"))
     if "MakeRoom" in settings:
         on = yes_no("MakeRoom", settings["MakeRoom"])
         if on != cfg["sync"].get("make_room", False):

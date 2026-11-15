@@ -234,6 +234,11 @@ An artist with 4 or more one-track albums gets them as one album, "<Artist>
 Singles", each song keeping its own art. Only the names here change.
   SinglesAlbum=6  how many it takes (SinglesAlbum=0: leave them separate)
 
+An album with no genre in its files, and no other songs by its artist to go
+by, gets its genre from MusicBrainz, or else Deezer (only song IDs are sent).
+Albums neither knows are under "Other".
+  GenreLookup=no  don't ask; such albums stay under "Other"
+
 A song you rate 4 or 5 stars on a stock iPod gets favorited in Navidrome, once.
 Lowering the rating or removing the favorite afterwards is left as you set it.
   FavoriteRating=5  only 5 stars (FavoriteRating=0: ratings never favorite)

@@ -237,9 +237,12 @@ def album_key(song):
     return song.get("albumId") or (song.get("album"), song.get("albumArtist") or song.get("artist"))
 
 
-def assign(songs, groups, unmatched=DEFAULT_UNMATCHED, album_types=None):
+def assign(songs, groups, unmatched=DEFAULT_UNMATCHED, album_types=None, web_genres=None,
+           unplaced=None):
     """{song id: genre} for the player. album_types: {album id: [release
-    types]} (only needed if a group uses "release:")."""
+    types]} (only needed if a group uses "release:"). web_genres: {album key:
+    [genre names]} from dock_lookup, used only for albums nothing else places;
+    unplaced (a set, filled in): the keys of those albums, to look up."""
     compiled = compile_groups(groups)
     album_types = album_types or {}
     albums_with = tag_album_counts(songs)
@@ -262,14 +265,29 @@ def assign(songs, groups, unmatched=DEFAULT_UNMATCHED, album_types=None):
         counts = Counter(votes)
         # A matched group beats `unmatched`; then most songs; then list order.
         winner[key] = min(counts, key=lambda v: (v[0] == len(compiled), -counts[v], v))[1]
-    borrow_artist_genres(songs, winner, untagged)
+    borrowed = borrow_artist_genres(songs, winner, untagged)
+    # Albums no tag, rule or artist places: genres from MusicBrainz / Deezer, through
+    # the same list ("Electro" -> Electronic), else the most common of them.
+    for key in {album_key(s) for s in songs if s["id"] in untagged} - borrowed:
+        album = [s for s in songs if album_key(s) == key]
+        if not all(s["id"] in untagged for s in album):
+            continue
+        if unplaced is not None:
+            unplaced.add(key)
+        tags = (web_genres or {}).get(key)
+        if tags:
+            s = album[0]
+            name = song_group(tags, album_types.get(s.get("albumId"), []), compiled,
+                              s.get("album"), song_artists(s))[1]
+            winner[key] = name or unmatched or most_common_tag(tags, albums_with)
     return {s["id"]: winner[album_key(s)] for s in songs}
 
 
 def borrow_artist_genres(songs, winner, untagged):
     """Albums whose every song is in `untagged` take the genre most of their
-    artist's other songs got ({album key: genre} `winner`, changed in place)."""
-    by_artist, albums = {}, {}
+    artist's other songs got ({album key: genre} `winner`, changed in place).
+    Returns the keys of the albums that did."""
+    by_artist, albums, done = {}, {}, set()
     for s in songs:
         artist = normalize(s.get("artist"))
         albums.setdefault(album_key(s), []).append(s)
@@ -281,6 +299,8 @@ def borrow_artist_genres(songs, winner, untagged):
         artist = Counter(normalize(s.get("artist")) for s in album).most_common(1)[0][0]
         if by_artist.get(artist):
             winner[key] = by_artist[artist].most_common(1)[0][0]
+            done.add(key)
+    return done
 
 
 def summary(songs, genres):

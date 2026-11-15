@@ -569,7 +569,7 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   keeps songs with such a tag out of a group, so they go on to the next (also past the
   group's own `artist:` rules: Electronic's Snail's House rule + "not:kawaii future
   bass"): Ambient "not:house"; an album with no tags at all takes the genre most of its
-  artist's tagged songs got (`borrow_artist_genres`; half of the 50 "Other" albums); Lofi / Chill dropped bare
+  artist's tagged songs got (`borrow_artist_genres`; half of the 50 "Other" albums); one still placed nowhere asks outside (`dock_lookup.py`, user 2026-11-14, `[sync] genre_lookup`, default on, `GenreLookup=`): MusicBrainz by recording ID (recording, else release group, else artist genres; group/artist asked once per album: 1 request/s), else Deezer by ISRC (Navidrome's or MusicBrainz's; album genres, broad). Probed on the 61 "Other" albums: MusicBrainz 10, Deezer +29; MB user tags unusable (lyrics, "_to_do"), Deezer name search wrong (Sever -> Carmina Burana). Through the same list; kept in the plan's `web_genres` ({album id: genres, checked}), empty answers asked again after 30 days, 50 albums a run, a network failure keeps nothing. Only IDs are sent. Hand-made configs (tests) without the key never look up; Lofi / Chill dropped bare
   "lo fi", a sound on indie/future bass records, for "lo fi hip hop"). A
   song gets the first group matching any tag (order = priority, so adding
   albums never reshuffles; user's choice over counting). Only songs no group

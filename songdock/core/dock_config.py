@@ -23,6 +23,8 @@ DEFAULTS = {
              "playlist_tag": "#ipod", "lossless_tag": "#lossless", "singles_tag": "#singles",
              "primary_artist": True, "artist_names": [], "compilation_albums": [], "artist_aliases": [], "playlist_prefixes": [], "workers": "auto", "removal_grace_days": 7,
              "recent_play_months": 3, "singles_album_min": 4, "make_room": False, "make_room_albums": True, "favorite_rating": 4, "auto_update": True,
+             # Albums with no genre anywhere: asked of MusicBrainz and Deezer (dock_lookup).
+             "genre_lookup": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -201,6 +203,8 @@ def load(path=None):
         raise ConfigError(f"{path}: make_room must be true or false")
     if not isinstance(cfg["sync"]["make_room_albums"], bool):
         raise ConfigError(f"{path}: make_room_albums must be true or false")
+    if not isinstance(cfg["sync"]["genre_lookup"], bool):
+        raise ConfigError(f"{path}: genre_lookup must be true or false")
     if not isinstance(cfg["sync"]["auto_update"], bool):
         raise ConfigError(f"{path}: auto_update must be true or false")
     w = cfg["sync"]["workers"]

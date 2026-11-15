@@ -73,6 +73,7 @@ sys.path.insert(0, HERE)
 import dock_artists  # noqa: E402
 import dock_config  # noqa: E402
 import dock_genres  # noqa: E402
+import dock_lookup  # noqa: E402
 import dock_room  # noqa: E402
 from subsonic import Client, SubsonicError  # noqa: E402
 
@@ -695,11 +696,13 @@ def compilation_labels(client, songs, entries, previous, album_info):
     return chosen, facts
 
 
-def plan_genres(client, cfg, songs, previous, album_info=None):
-    """{song id: genre for the player} from the [genres] list, and the
-    release types used ({album id: [types]}, kept in the manifest so each
-    album is looked up once, and only if a group uses "release:").
-    album_info: album records already read this run (target_tracks)."""
+def plan_genres(client, cfg, songs, previous, album_info=None, genre_fetch=None):
+    """({song id: genre for the player} from the [genres] list, the release
+    types used ({album id: [types]}, kept in the manifest so each album is
+    looked up once, and only if a group uses "release:"), genres looked up
+    outside for albums nothing else places ({album id: dock_lookup entry},
+    kept the same way)). album_info: album records already read this run
+    (target_tracks). genre_fetch: dock_lookup's fetch (tests pass a stand-in)."""
     album_info = {} if album_info is None else album_info
     settings = cfg.get("genres", dock_config.DEFAULTS["genres"])
     groups = settings["groups"]
@@ -713,8 +716,22 @@ def plan_genres(client, cfg, songs, previous, album_info=None):
             info = album_fields(client, album_id, album_info)
             if info:                         # {} = lookup failed: retry next run
                 album_types[album_id] = dock_genres.release_types(info)
-    genres = dock_genres.assign(songs, groups, settings["unmatched"], album_types)
-    return genres, album_types
+    unplaced = set()
+    genres = dock_genres.assign(songs, groups, settings["unmatched"], album_types,
+                                unplaced=unplaced)
+    # Off unless the setting says so: dock_config fills in its default (on), so
+    # only hand-made configs (tests) go without, and never reach the internet.
+    if not cfg["sync"].get("genre_lookup", False):
+        return genres, album_types, {}
+    albums = {}
+    for s in songs:
+        if s.get("albumId") in unplaced:
+            albums.setdefault(s["albumId"], []).append(s)
+    looked_up = dock_lookup.lookup(albums, previous.get("web_genres", {}), genre_fetch)
+    if any(e.get("genres") for e in looked_up.values()):
+        genres = dock_genres.assign(songs, groups, settings["unmatched"], album_types,
+                                    {a: e["genres"] for a, e in looked_up.items()})
+    return genres, album_types, looked_up
 
 
 def one_track_albums(client, songs, previous, album_info, minimum):
@@ -1477,7 +1494,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
             on_player=None, on_batch=None, cpu_count=None, on_progress=None,
             player_kinds=None, plays=None, players_full=False, peak_fn=None,
-            lower_fn="auto", rename_fn=None):
+            lower_fn="auto", rename_fn=None, genre_fetch=None):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -1500,7 +1517,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     peak_fn(path): an MP3's decoded peak in dBFS (decoded_peak), and
     lower_fn(path, steps): lower it (lower; None = mp3gain isn't installed).
     Tests pass stand-ins. rename_fn(mapping): follow songs Navidrome gave new IDs
-    in the record (Record.rename_songs).
+    in the record (Record.rename_songs). genre_fetch: dock_lookup's fetch (a
+    stand-in in tests).
     """
     peak_fn = peak_fn or decoded_peak
     if lower_fn == "auto":
@@ -1530,7 +1548,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             client, targets, cfg["sync"].get("compilation_albums", ()), previous, album_info)
         dock_artists.tidy(targets, cfg["sync"].get("artist_names", ()), unsplit_artists,
                           cfg["sync"].get("compilation_albums", ()), by_label)
-    genres, album_types = plan_genres(client, cfg, targets, previous, album_info)
+    genres, album_types, web_genres = plan_genres(client, cfg, targets, previous, album_info,
+                                                  genre_fetch)
     # After the genres, which go by each song's real album.
     singles_min = cfg["sync"].get("singles_album_min", 4)
     single_albums = one_track_albums(client, targets, previous, album_info, singles_min)
@@ -2010,6 +2029,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             "tracks": ready, "on_player": uncached, "playlists": playlists,
             "skipped": not_ready, "kept_after_removal": len(kept.items),
             **({"album_types": album_types} if album_types else {}),
+            **({"web_genres": web_genres} if web_genres else {}),
             **({"album_labels": album_labels} if album_labels else {}),
             **({"album_song_counts": single_albums} if single_albums else {}),
             **({"album_copies": album_copies} if album_copies else {}),
@@ -2196,7 +2216,7 @@ def show_genres(config_path=None):
                                     cfg["sync"].get("playlist_tag", ""),
                                     album_info=album_info,
                                     singles_tag=cfg["sync"].get("singles_tag", ""))
-        genres, _ = plan_genres(client, cfg, songs, previous, album_info)
+        genres, _, _ = plan_genres(client, cfg, songs, previous, album_info)
     except (SubsonicError, PrepareError) as e:
         log.error("Couldn't read the targets: %s", e)
         return 1
