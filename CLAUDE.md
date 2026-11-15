@@ -18,7 +18,12 @@
 > git-ignored, never published).** Update it in
 > the same change as any work, and whenever a task or plan is added, changed
 > or proven on hardware, so it never has to be rebuilt by hand. Read it when
-> asked about project status.
+> asked about project status. **Two files since 2026-11-15** (user: the list
+> had got hard to follow): `TASKS.md` is a one-page dashboard for a person -
+> progress per milestone, one line per task, sorted into the user's hardware
+> tests, decisions, things to build, and "watch for" (deployed, just notice);
+> keep its counts right. `TASKS-notes.md` (also git-ignored) keeps the
+> details: test logs, what counts as a pass, the reasoning.
 
 A Raspberry Pi dock that keeps an iPod's music in sync with a Navidrome server:
 it uploads what was played, pulls the current weekly playlists, and charges the

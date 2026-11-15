@@ -31,6 +31,7 @@ id_*
 # Release packages (make_release.sh)
 dist/
 TASKS.md
+TASKS-notes.md
 .claude/worktrees/
 Decktop_Tasks.md
 Desktop_Tasks.md

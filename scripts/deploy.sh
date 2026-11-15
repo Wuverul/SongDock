@@ -53,7 +53,7 @@ rsync -av --delete \
   --exclude __pycache__ --exclude '*.pyc' \
   --exclude previews --exclude '*.png' \
   --exclude config.toml --exclude '*.local.toml' --exclude .env \
-  --exclude cache --exclude tmp --exclude TASKS.md \
+  --exclude cache --exclude tmp --exclude TASKS.md --exclude TASKS-notes.md \
   ./ "$PI:$REMOTE_DIR/"
 
 echo "== Installing in /opt/songdock (sudo asks for the Pi password)"
