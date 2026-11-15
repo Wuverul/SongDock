@@ -90,7 +90,8 @@ display.theme = "light"
 #   Remove whole albums (an album's age is its newest song's), or song by song.
 # sync.make_room_albums = true
 #   Never remove music played, added or in a changed playlist within this
-#   many months. Also decides what leaves the dock's cache first when it's full.
+#   many months (0.25 is about a week). Also decides what leaves the dock's
+#   cache first when it's full.
 # sync.recent_play_months = 3
 
 # --- Artist and album names on the iPod (Navidrome is never changed) ---

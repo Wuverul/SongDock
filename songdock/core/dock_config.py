@@ -191,8 +191,10 @@ def load(path=None):
     if not (isinstance(g, int) and not isinstance(g, bool) and 0 <= g <= 30):
         raise ConfigError(f"{path}: removal_grace_days must be a whole number from 0 to 30")
     m = cfg["sync"]["recent_play_months"]
-    if not (isinstance(m, int) and not isinstance(m, bool) and 0 <= m <= 120):
-        raise ConfigError(f"{path}: recent_play_months must be a whole number from 0 to 120")
+    # A fraction is fine: 0.25 is about a week (user, 2026-11-15: testing Make Room).
+    if not (isinstance(m, (int, float)) and not isinstance(m, bool) and 0 <= m <= 120):
+        raise ConfigError(f"{path}: recent_play_months must be a number from 0 to 120 "
+                          "(0.25 is about a week)")
     f = cfg["sync"]["favorite_rating"]
     if not (isinstance(f, int) and not isinstance(f, bool) and 0 <= f <= 5):
         raise ConfigError(f"{path}: favorite_rating must be a whole number from 0 to 5")

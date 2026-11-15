@@ -195,6 +195,13 @@ class RoomByAlbumTests(unittest.TestCase):
         self.assertEqual(dock_room.choose(rules, [10], 0, candidates, {"a1", "a2", "a3", "b1"}),
                          ["b1"])
 
+    def test_a_quarter_month_protects_about_a_week(self):
+        import dock_room
+        now, day = 100 * 86400, 86400
+        rules = dock_room.Rules({"songs": {"new": now - 7 * day, "old": now - 8 * day}},
+                                {}, 0.25, now)
+        self.assertEqual((rules.recent("new"), rules.recent("old")), (True, False))
+
     def test_off_it_goes_song_by_song(self):
         import dock_room
         rules = dock_room.Rules({"songs": {}}, {}, 1, 0)

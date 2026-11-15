@@ -2060,7 +2060,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # Cache files of held songs: dropped only to make room for a song the
     # player lacks, never for another held one (no churn). Songs not played
     # lately go first, largest first within each group.
-    months = int(cfg["sync"].get("recent_play_months", 3))
+    months = cfg["sync"].get("recent_play_months", 3)       # 0.25 = about a week
     recent_since = clock() - months * 30 * DAY
 
     def played_lately(t):

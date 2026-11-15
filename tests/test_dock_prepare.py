@@ -1664,6 +1664,14 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(dock_config.ConfigError, "convert_to"):
             dock_config.load(path)
 
+    def test_recent_play_months_may_be_a_fraction(self):
+        base = '[server]\nurl="https://x"\nusername="u"\npassword="p"\n[sync]\n'
+        cfg = dock_config.load(self.write(base + "recent_play_months = 0.25\n"))
+        self.assertEqual(cfg["sync"]["recent_play_months"], 0.25)       # about a week
+        for bad in ("-1", "121", '"3"', "true"):
+            with self.assertRaisesRegex(dock_config.ConfigError, "recent_play_months"):
+                dock_config.load(self.write(base + f"recent_play_months = {bad}\n"))
+
     def test_old_single_target_still_works(self):
         cfg = dock_config.load(self.write('[server]\nurl="https://x"\nusername="u"\n'
                                           'password="p"\n[sync]\ntarget="starred"\n'))
