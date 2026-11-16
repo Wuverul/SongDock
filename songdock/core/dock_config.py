@@ -22,7 +22,7 @@ DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
              "playlist_tag": "#ipod", "lossless_tag": "#lossless", "singles_tag": "#singles",
              "primary_artist": True, "artist_names": [], "compilation_albums": [], "artist_aliases": [], "playlist_prefixes": [], "workers": "auto", "removal_grace_days": 7,
-             "recent_play_months": 3, "singles_album_min": 4, "singles_max_tracks": 3, "make_room": False, "make_room_albums": True, "favorite_rating": 4, "auto_update": True,
+             "recent_play_months": 3, "singles_album_min": 4, "singles_max_tracks": 1, "make_room": False, "make_room_albums": True, "favorite_rating": 4, "auto_update": True,
              # Albums with no genre anywhere: asked of MusicBrainz and Deezer (dock_lookup).
              "genre_lookup": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,

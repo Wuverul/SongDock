@@ -29,7 +29,7 @@ and the list of known iPods written into its MediaDock.txt.
     SafeHours=07:00-10:00        no syncs in this daily window (local time;
                                  SafeHours=off to turn it off)
     SinglesAlbum=4               singles before "<Artist> Singles" (0 = off)
-    SinglesTracks=3              a release of up to this many tracks is a single
+    SinglesTracks=2              untagged releases up to this many tracks are singles
     FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
     AutoUpdate=no                new releases are announced, not installed
     GenreLookup=no               albums with no genre stay in "Other" (no

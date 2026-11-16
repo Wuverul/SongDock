@@ -272,18 +272,71 @@ def note(names, shown=20):
             + "; ".join(names[:shown]) + more)
 
 
-def is_single(album_id, song_counts, max_tracks=1):
-    """True for a release of at most `max_tracks` tracks ([sync] singles_max_tracks;
-    user, 2026-11-16: singles and remix releases of 2 to 4 tracks are singles too).
-    song_counts: {album id: tracks the album really has}."""
-    return bool(album_id) and 0 < (song_counts.get(album_id) or 0) <= max_tracks
+# What makes a release a single (user, 2026-11-16), checked in order:
+#   1. Its own release type, from its tags (MusicBrainz): "single" is one, at any
+#      length (a single with six remixes); "ep", "album", "compilation"... are not,
+#      remix albums included.
+#   2. Untagged: every track is a version of one song ("Cat Mall" / "Cat Mall [Game
+#      Mix]"), or the release is named after its tracks ("A / B", a double A-side).
+#      A remix album has many songs, so it stays an album whatever it's called.
+#   3. Otherwise only a release of at most [sync] singles_max_tracks tracks (1).
+# Checked on the user's library: Cat Mall, Blushy Remixes, Icarus, WWW (tagged
+# single), Dreamfields (untagged, one song) -> singles; Virtual Paradise, Holic,
+# Black Mamba EP (tagged ep), Forgive Me Please (untagged, three songs) -> albums.
+SHAPE_VERSION = 1          # raise when shape() changes: kept shapes are looked up again
+VERSION_WORDS = ("remix", "remixed", "mix", "edit", "instrumental", "vip", "extended",
+                 "version", "rework", "bootleg", "flip", "acoustic", "live", "remaster",
+                 "remastered", "radio", "club", "dub", "original", "demo", "reprise",
+                 "slowed", "sped up", "nightcore", "acapella", "a cappella", "cover",
+                 "feat", "ft", "featuring", "with")
+NOT_SINGLE_TYPES = {"album", "ep", "compilation", "soundtrack", "live", "dj-mix",
+                    "mixtape/street", "mixtape", "spokenword", "audiobook", "interview",
+                    "audio drama", "broadcast", "demo"}
+_VERSION = re.compile(r"\b(" + "|".join(re.escape(w) for w in VERSION_WORDS) + r")\b", re.I)
 
 
-def group_singles(songs, song_counts, minimum=4, max_tracks=1):
-    """An artist with `minimum` or more singles (releases of up to `max_tracks`
-    tracks) gets them as one album, "<Artist> Singles" (user, 2026-10-31), every
-    song of each. song_counts: {album id: tracks the album really has}, so a few
-    songs kept from a full album don't count. A song's real album stays in
+def base_title(title):
+    """A title without its version parts: "Blushy [russelbuck HYPER MIX]",
+    "Icarus (radio edit)", "Song - Someone Remix" -> "blushy", "icarus", "song".
+    Brackets without such words stay ("Intro (Part 2)")."""
+    t = title or ""
+    t = re.sub(r"\s*[\(\[][^\)\]]*[\)\]]",
+               lambda m: "" if _VERSION.search(m.group(0)) else m.group(0), t)
+    t = re.sub(r"\s+-\s+[^-]*$", lambda m: "" if _VERSION.search(m.group(0)) else m.group(0), t)
+    return re.sub(r"[^\w]+", " ", t.casefold()).strip()
+
+
+def shape(album, titles, types=()):
+    """What the singles check needs to know about a release, kept in the plan:
+    Navidrome's album record, its track titles and its release types
+    (dock_genres.release_types)."""
+    bases = {base_title(t) for t in titles}
+    named = {base_title(p) for p in re.split(r"\s+/\s+", album.get("name") or "")}
+    return {"tracks": album.get("songCount") or len(titles),
+            "types": sorted(set(types)),
+            "one_song": len(bases) == 1 and bool(titles),
+            "named_after": len(named) > 1 and named == bases,
+            "v": SHAPE_VERSION}
+
+
+def is_single(album_id, shapes, max_tracks=1):
+    """True if the release `album_id` is a single (see above). shapes: {album id:
+    shape()}; a release with no shape known isn't one."""
+    sh = shapes.get(album_id) if album_id else None
+    if not sh or not sh.get("tracks"):
+        return False
+    types = set(sh.get("types") or ())
+    if "single" in types:
+        return True
+    if types & NOT_SINGLE_TYPES:
+        return False
+    return sh.get("one_song") or sh.get("named_after") or sh["tracks"] <= max_tracks
+
+
+def group_singles(songs, shapes, minimum=4, max_tracks=1):
+    """An artist with `minimum` or more singles (is_single) gets them as one album,
+    "<Artist> Singles" (user, 2026-10-31), every song of each. shapes: {album id:
+    shape()}, so a few songs kept from a full album don't count. A song's real album stays in
     "folder_album", for players that keep art per folder. Returns how many songs
     moved. Only names change, so falling below `minimum` undoes it."""
     if not minimum:
@@ -293,7 +346,7 @@ def group_singles(songs, song_counts, minimum=4, max_tracks=1):
         in_plan.setdefault(s.get("albumId"), []).append(s)
     by_artist = {}
     for album_id, tracks in in_plan.items():
-        if len(tracks) <= max_tracks and is_single(album_id, song_counts, max_tracks):
+        if is_single(album_id, shapes, max_tracks) and len(tracks) <= shapes[album_id]["tracks"]:
             by_artist.setdefault(tracks[0].get("artist"), []).append(tracks)
     moved = 0
     for artist, releases in by_artist.items():
@@ -306,10 +359,9 @@ def group_singles(songs, song_counts, minimum=4, max_tracks=1):
     return moved
 
 
-def playlist_singles(songs, playlists, song_counts=None, max_tracks=1):
+def playlist_singles(songs, playlists, shapes=None, max_tracks=1):
     """Songs of a playlist tagged with [sync] singles_tag (e.g. "#singles") that are
-    the only song of their album in the plan, or from a single (a release of up to
-    `max_tracks` tracks: is_single), go into one album named after the playlist,
+    the only song of their album in the plan, or from a single (is_single), go into one album named after the playlist,
     "<Playlist> Singles", album artist "Various Artists" (user, 2026-11-10: loose
     songs from many albums, one album each, crowded the Albums menu). A single's other
     songs in the plan go with it, so it never splits. Once a second song of a bigger
@@ -322,7 +374,7 @@ def playlist_singles(songs, playlists, song_counts=None, max_tracks=1):
     lists = sorted((p for p in playlists if p.get("singles")), key=lambda p: p["name"].casefold())
     if not lists:
         return 0
-    song_counts = song_counts or {}
+    shapes = shapes or {}
     per_album = {}
     for s in songs:
         if s.get("albumId"):
@@ -334,7 +386,7 @@ def playlist_singles(songs, playlists, song_counts=None, max_tracks=1):
             s = by_id.get(sid)
             album = per_album.get((s or {}).get("albumId"), [])
             if not s or sid in moved or s.get("folder_album") or not (
-                    len(album) == 1 or is_single(s["albumId"], song_counts, max_tracks)):
+                    len(album) == 1 or is_single(s["albumId"], shapes, max_tracks)):
                 continue                       # (folder_album: in "<Artist> Singles")
             for t in album:
                 if t["id"] in moved or t.get("folder_album"):

@@ -1031,11 +1031,17 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   recent_play_months` (default 3, 0 = ignore; `RecentPlayMonths=`) go first,
   then largest first. Last played = the later of Navidrome's `played` and the
   record's plays. Only the cache copy goes: songs stay on the players.
-- **Singles = releases of up to `[sync] singles_max_tracks` tracks (user, 2026-11-16; default 3,
-  1 = the old one-track rule; `SinglesTracks=`):** `dock_artists.is_single`, for both groupings
-  below. Every plan song of such a release moves together (no split album); a release with more
-  plan songs than the limit never counts. `one_track_albums` looks up real counts for both
-  kinds of candidates (kept in `album_song_counts`). Hand-made configs (tests) default to 1.
+- **What a single is (user, 2026-11-16; `dock_artists.is_single`, for both groupings below):**
+  1. the release's own type (`releaseTypes`, MusicBrainz tags): "single" = yes at any length,
+  ep/album/compilation/... = no (remix albums stay albums); 2. untagged: every title the same
+  after `base_title` strips version parts (remix, mix, edit, instrumental, VIP, feat. ...), or the
+  release named after its tracks ("A / B"); 3. else <= `[sync] singles_max_tracks` (default 1;
+  `SinglesTracks=`). Chosen over a "remix in the title" rule, which would pull a bonus remix out
+  of a normal album. Checked on the user's releases (Cat Mall, Icarus, WWW tagged single;
+  Virtual Paradise, Holic, Black Mamba EP tagged ep; Dreamfields one song; Forgive Me Please three
+  songs). `release_shapes` looks up releases with <= 12 plan songs (getAlbum; album_info keeps
+  `_titles`), kept in the plan's `release_shapes` (`SHAPE_VERSION`). Every plan song of a single
+  moves together. Hand-made configs (tests) default to 1.
 - **Singles albums (user, 2026-10-31):** `dock_artists.group_singles`: an artist with
   `[sync] singles_album_min` (default 4, 0 off; `SinglesAlbum=`) albums whose real track count
   is 1 (`album_song_counts` in the plan) gets them as "<Artist> Singles", after the genres. Names

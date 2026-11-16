@@ -116,9 +116,10 @@ display.theme = "light"
 #   An artist with this many singles gets them as one album, "<Artist> Singles"
 #   (0 = off).
 # sync.singles_album_min = 4
-#   A release with up to this many tracks counts as a single (singles and remix
-#   releases); 1 = one-track releases only.
-# sync.singles_max_tracks = 3
+#   A single is a release tagged "single", or one song in several versions
+#   (remixes, instrumental...). Untagged releases of other songs count only up to
+#   this many tracks.
+# sync.singles_max_tracks = 1
 
 # --- Updates and automatic syncing ---
 # Install new SongDock releases by themselves (announced on screen 4 hours

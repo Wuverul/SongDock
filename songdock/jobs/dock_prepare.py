@@ -188,7 +188,7 @@ def starred_songs(client, album_info=None):
     for album in starred.get("album", []):
         info = client.call("getAlbum", id=album["id"]).get("album", {})
         if album_info is not None:
-            album_info[album["id"]] = {k: v for k, v in info.items() if k != "song"}
+            album_info[album["id"]] = album_record(info)
         songs += info.get("song", [])
     if starred.get("artist"):
         log.info("Ignoring %d starred artist(s): only songs and albums are synced",
@@ -420,6 +420,13 @@ NOT_ITS_ALBUM = {"compilation", "soundtrack", "live", "remix", "demo", "dj-mix",
 ALBUM_COPY_CHECK_DAYS = 7    # how often a single with no album copy is looked up again
 
 
+def album_record(album):
+    """What album_info keeps of a getAlbum answer: everything but the songs, and
+    their titles (for dock_artists.shape)."""
+    return {**{k: v for k, v in album.items() if k != "song"},
+            "_titles": [t.get("title") or "" for t in album.get("song") or []]}
+
+
 def album_fields(client, album_id, album_info):
     """Navidrome's album record (name, releaseTypes, songCount...), cached in
     `album_info`; {} if the server has no such album. Any other failure is raised,
@@ -428,7 +435,7 @@ def album_fields(client, album_id, album_info):
     if album_id not in album_info:
         try:
             album = client.call("getAlbum", id=album_id).get("album", {})
-            album_info[album_id] = {k: v for k, v in album.items() if k != "song"}
+            album_info[album_id] = album_record(album)
         except SubsonicError as e:
             if e.code != 70:
                 raise
@@ -734,15 +741,17 @@ def plan_genres(client, cfg, songs, previous, album_info=None, genre_fetch=None)
     return genres, album_types, looked_up
 
 
-def one_track_albums(client, songs, previous, album_info, minimum, max_tracks=1,
-                     playlists=()):
-    """{album id: its real track count} for albums that could be singles (releases of
-    up to `max_tracks` tracks; dock_artists.is_single): those with at most that many
-    songs in the plan, by an artist with `minimum` such albums ("<Artist> Singles"),
-    or holding a song of a #singles playlist ("<Playlist> Singles"; an album with one
-    song in the plan needs no count there). Kept in the manifest so each is looked up
-    once; a failed lookup is retried next run."""
-    known = previous.get("album_song_counts", {})
+MAX_SINGLE_TRACKS = 12      # releases with more songs in the plan aren't looked at
+
+
+def release_shapes(client, songs, previous, album_info, minimum, playlists=()):
+    """{album id: dock_artists.shape()} for releases that could be singles: those with
+    up to MAX_SINGLE_TRACKS songs in the plan, by an artist with `minimum` such
+    releases ("<Artist> Singles"), or holding a song of a #singles playlist
+    ("<Playlist> Singles"; a release with one song in the plan needs no shape there).
+    Kept in the manifest so each is looked up once (again when SHAPE_VERSION
+    changes); a failed lookup is retried next run."""
+    known = previous.get("release_shapes", {})
     plan = {}
     for s in songs:
         if s.get("albumId"):
@@ -751,22 +760,28 @@ def one_track_albums(client, songs, previous, album_info, minimum, max_tracks=1,
     if minimum:
         by_artist = {}
         for album_id, tracks in plan.items():
-            if len(tracks) <= max_tracks:
+            if len(tracks) <= MAX_SINGLE_TRACKS:
                 by_artist.setdefault(tracks[0].get("artist"), []).append(album_id)
         for albums in by_artist.values():
             if len(albums) >= minimum:
                 wanted.update(albums)
     in_lists = {sid for p in playlists if p.get("singles") for sid in p.get("song_ids", ())}
     for album_id, tracks in plan.items():
-        if 1 < len(tracks) <= max_tracks and any(t["id"] in in_lists for t in tracks):
+        if 1 < len(tracks) <= MAX_SINGLE_TRACKS and any(t["id"] in in_lists for t in tracks):
             wanted.add(album_id)
-    counts = {}
+    shapes = {}
     for album_id in sorted(wanted):
-        count = known.get(album_id) or album_fields(client, album_id,
-                                                    album_info).get("songCount")
-        if count:
-            counts[album_id] = count
-    return counts
+        if (known.get(album_id) or {}).get("v") == dock_artists.SHAPE_VERSION:
+            shapes[album_id] = known[album_id]
+            continue
+        info = album_fields(client, album_id, album_info)
+        if info and "_titles" not in info:          # read without its songs: once more
+            album_info.pop(album_id)
+            info = album_fields(client, album_id, album_info)
+        if info:
+            shapes[album_id] = dock_artists.shape(info, info.get("_titles", []),
+                                                  dock_genres.release_types(info))
+    return shapes
 
 
 def serves_basic_player(mode, player_kinds, previous):
@@ -1560,11 +1575,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                                                   genre_fetch)
     # After the genres, which go by each song's real album.
     singles_min = cfg["sync"].get("singles_album_min", 4)
-    singles_max = cfg["sync"].get("singles_max_tracks", 1)   # dock_config's default: 3
-    single_albums = one_track_albums(client, targets, previous, album_info, singles_min,
-                                     singles_max, playlists)
-    dock_artists.group_singles(targets, single_albums, singles_min, singles_max)
-    loose = dock_artists.playlist_singles(targets, playlists, single_albums, singles_max)
+    singles_max = cfg["sync"].get("singles_max_tracks", 1)
+    shapes = release_shapes(client, targets, previous, album_info, singles_min, playlists)
+    dock_artists.group_singles(targets, shapes, singles_min, singles_max)
+    loose = dock_artists.playlist_singles(targets, playlists, shapes, singles_max)
     if loose:
         log.info("%d song(s) alone from their album in #singles playlists: listed as "
                  "\"<Playlist> Singles\"", loose)
@@ -2041,7 +2055,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             **({"album_types": album_types} if album_types else {}),
             **({"web_genres": web_genres} if web_genres else {}),
             **({"album_labels": album_labels} if album_labels else {}),
-            **({"album_song_counts": single_albums} if single_albums else {}),
+            **({"release_shapes": shapes} if shapes else {}),
             **({"album_copies": album_copies} if album_copies else {}),
             **({"interim": True} if waiting else {}),
         }

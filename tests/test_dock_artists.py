@@ -11,6 +11,13 @@ import dock_paths  # noqa: E402,F401
 import dock_artists as a  # noqa: E402
 
 
+
+
+def shapes(counts, **extra):
+    """{album id: track count} as release shapes (dock_artists.shape), untagged."""
+    return {k: {"tracks": n, "types": [], "one_song": False, "named_after": False, "v": 1,
+                **extra.get(k, {})} for k, n in counts.items()}
+
 class SplitTests(unittest.TestCase):
     def test_guests_go(self):
         for credit, want in (
@@ -285,31 +292,68 @@ class TidyTests(unittest.TestCase):
             return {"id": i, "artist": "A", "title": i, "album": album, "albumId": album}
         songs = [s("1", "Remixes"), s("2", "Remixes"), s("3", "LP"), s("4", "LP")]
         lists = [{"name": "Mix", "singles": True, "song_ids": ["1", "3"]}]
-        counts = {"Remixes": 3, "LP": 12}
-        self.assertEqual(a.playlist_singles(songs, lists, counts, max_tracks=3), 2)
+        counts = shapes({"Remixes": 3, "LP": 12}, Remixes={"one_song": True})
+        self.assertEqual(a.playlist_singles(songs, lists, counts), 2)
         self.assertEqual([t["album"] for t in songs], ["Mix Singles", "Mix Singles", "LP", "LP"])
-        songs = [s("1", "Remixes"), s("2", "Remixes")]       # one track at most: as before
-        self.assertEqual(a.playlist_singles(songs, lists, counts, max_tracks=1), 0)
+        songs = [s("1", "Remixes"), s("2", "Remixes")]       # three different songs
+        self.assertEqual(a.playlist_singles(songs, lists, shapes({"Remixes": 3})), 0)
+
+    def test_versions_of_one_song_are_stripped_to_their_title(self):
+        # Real titles from the user's library, 2026-11-16.
+        for title, base in [("Blushy [russelbuck HYPER MIX]", "blushy"),
+                            ("Cat Mall [Game Mix]", "cat mall"),
+                            ("Icarus (radio edit)", "icarus"),
+                            ("Dreamfields (instrumental mix)", "dreamfields"),
+                            ("Track Name (Remixed again!)", "track name"),
+                            ("Song - Someone Remix", "song"),
+                            ("Come Follow We (feat. David Boomah)", "come follow we"),
+                            ("Intro (Part 2)", "intro part 2")]:      # not a version
+            self.assertEqual(a.base_title(title), base)
+
+    def test_what_makes_a_release_a_single(self):
+        def single(name, titles, types=(), max_tracks=1):
+            return a.is_single("x", {"x": a.shape({"name": name, "songCount": len(titles)},
+                                                   titles, types)}, max_tracks)
+        # Its own release type first: a single at any length, an EP never.
+        self.assertTrue(single("Icarus", ["Icarus (radio edit)", "Icarus (extended mix)"],
+                               ["single"]))
+        self.assertTrue(single("Big", [f"Song {i}" for i in range(6)], ["single"]))
+        self.assertFalse(single("Holic", ["IDOL", "Calling", "Mirror"], ["ep"]))
+        self.assertFalse(single("Dreamfields", ["Dreamfields", "Dreamfields (VIP)"], ["album"]))
+        self.assertFalse(single("Remixed", ["A (X Remix)", "B (Y Remix)", "C (Z Remix)"],
+                                ["album", "remix"], max_tracks=5))  # a remix album stays one
+        # Untagged: one song in versions, or named after its tracks.
+        self.assertTrue(single("Dreamfields", ["Dreamfields", "Dreamfields (instrumental mix)"]))
+        self.assertTrue(single("T", ["T", "T (A Remix)", "T (B Remix)", "T (Remixed again!)"]))
+        self.assertTrue(single("Turn Down the Lights / Soundboy Burial",
+                               ["Turn Down the Lights", "Soundboy Burial"]))
+        self.assertFalse(single("Forgive Me Please",
+                                ["Fall End Sea", "Just a Little Better", "But Here I Am"]))
+        self.assertFalse(single("Remixes", ["A (X Remix)", "B (Y Remix)"]))
+        # Otherwise by track count ([sync] singles_max_tracks).
+        self.assertTrue(single("Solo", ["Solo"]))
+        self.assertTrue(single("Pair", ["One", "Two"], max_tracks=2))
+        self.assertFalse(a.is_single("x", {}, 3))                    # nothing known
 
     # "<Artist> Singles"
     def test_releases_up_to_the_limit_count_as_singles(self):
         songs = self.singles(3) + [dict(self.singles(1, start=3)[0]),
                                    dict(self.singles(1, start=3)[0], id="Fox3b", title="T3 remix")]
-        counts = {s["albumId"]: 1 for s in songs}
-        counts["Fox-a3"] = 2                                  # a single with its remix
+        counts = shapes({s["albumId"]: 1 for s in songs})
+        counts.update(shapes({"Fox-a3": 2}))                  # 2 tracks: a limit of 3 takes it
         moved, _ = a.group_singles(songs, counts, 4, max_tracks=3), songs
         self.assertEqual(moved, 5)                            # both songs of the 2-track one
         self.assertEqual({s["album"] for s in songs}, {"Fox Singles"})
         songs = self.singles(3) + [dict(self.singles(1, start=3)[0])]
-        self.assertEqual(a.group_singles(songs, dict(counts, **{"Fox-a3": 4}), 4,
-                                         max_tracks=3), 0)    # a 4-track EP isn't one
+        self.assertEqual(a.group_singles(songs, dict(counts, **shapes({"Fox-a3": 4})), 4,
+                                         max_tracks=3), 0)    # 4 different songs aren't one
     def singles(self, n, artist="Fox", start=0):
         return [{"id": f"{artist}{i}", "artist": artist, "title": f"T{i}", "album": f"A{i}",
                  "albumId": f"{artist}-a{i}"} for i in range(start, start + n)]
 
     def group(self, songs, minimum=4, counts=None):
         counts = counts if counts is not None else {s["albumId"]: 1 for s in songs}
-        return a.group_singles(songs, counts, minimum), songs
+        return a.group_singles(songs, shapes(counts), minimum), songs
 
     def test_four_singles_become_one_album_three_dont(self):
         moved, songs = self.group(self.singles(4))
@@ -366,7 +410,7 @@ class AliasTests(unittest.TestCase):
         self.assertEqual(songs[0]["artists"], [{"id": "x", "name": "Artist 95"}])
         self.assertEqual(a.group_singles(
             [dict(self.song("Artist 95"), id=str(i), albumId=str(i)) for i in range(2)]
-            + [dict(songs[0], albumId="9")], {"0": 1, "1": 1, "9": 1}, minimum=3), 3)
+            + [dict(songs[0], albumId="9")], shapes({"0": 1, "1": 1, "9": 1}), minimum=3), 3)
 
     def test_case_and_punctuation_dont_matter(self):
         songs = [self.song("beatles"), self.song("Beatles!")]

@@ -231,10 +231,12 @@ A song starred as a single that your library also has on an album or EP goes
 on the player under that album, even if the album itself isn't selected.
 
 An artist with 4 or more singles gets them as one album, "<Artist> Singles",
-each song keeping its own art. A single is a release of up to 3 tracks (a single
-with its remixes, say). Only the names here change.
+each song keeping its own art. A single is a release tagged as one, or one song
+in several versions (remixes, an instrumental...); EPs and albums stay albums.
+Only the names here change.
   SinglesAlbum=6   how many it takes (SinglesAlbum=0: leave them separate)
-  SinglesTracks=2  most tracks in a single (SinglesTracks=1: one-track only)
+  SinglesTracks=2  untagged releases of different songs up to this many tracks
+                   count too (the default, 1: one-track releases only)
 
 An album with no genre in its files, and no other songs by its artist to go
 by, gets its genre from MusicBrainz, or else Deezer (only song IDs are sent).
