@@ -152,10 +152,12 @@ Everything here changes only what's on the player, unless it says otherwise.
   lists chosen compilations as one artist. One artist spelled two ways (e.g. also in
   another script) lists once with `artist_aliases`, or `ArtistAliases=` in a
   `DockSetup.txt`. `primary_artist = false` turns the rest off.
-- **Singles in one place:** an artist with 4 or more one-track albums gets them as
-  one album, "<Artist> Singles", each song keeping its own art. Songs kept from a
-  longer album don't count. `singles_album_min` (or `SinglesAlbum=` in a
-  `DockSetup.txt`) sets how many; 0 turns it off.
+- **Singles in one place:** an artist with 4 or more singles gets them as one album,
+  "<Artist> Singles", each song keeping its own art. A single is a release of up to 3
+  tracks, such as a single with its remixes; songs kept from a longer album don't
+  count. `singles_album_min` (or `SinglesAlbum=` in a `DockSetup.txt`) sets how many
+  singles it takes, 0 turns it off; `singles_max_tracks` (or `SinglesTracks=`) sets
+  the most tracks a single has.
 - **Ratings become favorites (this one does change Navidrome):** rate a song 4 or 5
   stars on a stock iPod and the next sync favorites it, once, so it stays on the iPod
   after leaving its playlists. It only ever adds a favorite: lowering a rating changes

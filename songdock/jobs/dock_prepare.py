@@ -734,30 +734,38 @@ def plan_genres(client, cfg, songs, previous, album_info=None, genre_fetch=None)
     return genres, album_types, looked_up
 
 
-def one_track_albums(client, songs, previous, album_info, minimum):
-    """{album id: its real track count} for albums that could make a "<Artist>
-    Singles": the only song of theirs in the plan, by an artist with `minimum` such
-    albums. Kept in the manifest so each is looked up once; a failed lookup is
-    retried next run."""
-    if not minimum:
-        return {}
+def one_track_albums(client, songs, previous, album_info, minimum, max_tracks=1,
+                     playlists=()):
+    """{album id: its real track count} for albums that could be singles (releases of
+    up to `max_tracks` tracks; dock_artists.is_single): those with at most that many
+    songs in the plan, by an artist with `minimum` such albums ("<Artist> Singles"),
+    or holding a song of a #singles playlist ("<Playlist> Singles"; an album with one
+    song in the plan needs no count there). Kept in the manifest so each is looked up
+    once; a failed lookup is retried next run."""
     known = previous.get("album_song_counts", {})
     plan = {}
     for s in songs:
         if s.get("albumId"):
-            plan.setdefault(s["albumId"], []).append(s.get("artist"))
-    by_artist = {}
-    for album_id, artists in plan.items():
-        if len(artists) == 1:
-            by_artist.setdefault(artists[0], []).append(album_id)
+            plan.setdefault(s["albumId"], []).append(s)
+    wanted = set()
+    if minimum:
+        by_artist = {}
+        for album_id, tracks in plan.items():
+            if len(tracks) <= max_tracks:
+                by_artist.setdefault(tracks[0].get("artist"), []).append(album_id)
+        for albums in by_artist.values():
+            if len(albums) >= minimum:
+                wanted.update(albums)
+    in_lists = {sid for p in playlists if p.get("singles") for sid in p.get("song_ids", ())}
+    for album_id, tracks in plan.items():
+        if 1 < len(tracks) <= max_tracks and any(t["id"] in in_lists for t in tracks):
+            wanted.add(album_id)
     counts = {}
-    for albums in by_artist.values():
-        if len(albums) >= minimum:
-            for album_id in sorted(albums):
-                count = known.get(album_id) or album_fields(client, album_id,
-                                                            album_info).get("songCount")
-                if count:
-                    counts[album_id] = count
+    for album_id in sorted(wanted):
+        count = known.get(album_id) or album_fields(client, album_id,
+                                                    album_info).get("songCount")
+        if count:
+            counts[album_id] = count
     return counts
 
 
@@ -1552,9 +1560,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                                                   genre_fetch)
     # After the genres, which go by each song's real album.
     singles_min = cfg["sync"].get("singles_album_min", 4)
-    single_albums = one_track_albums(client, targets, previous, album_info, singles_min)
-    dock_artists.group_singles(targets, single_albums, singles_min)
-    loose = dock_artists.playlist_singles(targets, playlists)
+    singles_max = cfg["sync"].get("singles_max_tracks", 1)   # dock_config's default: 3
+    single_albums = one_track_albums(client, targets, previous, album_info, singles_min,
+                                     singles_max, playlists)
+    dock_artists.group_singles(targets, single_albums, singles_min, singles_max)
+    loose = dock_artists.playlist_singles(targets, playlists, single_albums, singles_max)
     if loose:
         log.info("%d song(s) alone from their album in #singles playlists: listed as "
                  "\"<Playlist> Singles\"", loose)

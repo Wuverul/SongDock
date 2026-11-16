@@ -28,7 +28,8 @@ and the list of known iPods written into its MediaDock.txt.
                                  players that can't play it (FLAC=yes: as-is)
     SafeHours=07:00-10:00        no syncs in this daily window (local time;
                                  SafeHours=off to turn it off)
-    SinglesAlbum=4               one-track albums before "<Artist> Singles" (0 = off)
+    SinglesAlbum=4               singles before "<Artist> Singles" (0 = off)
+    SinglesTracks=3              a release of up to this many tracks is a single
     FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
     AutoUpdate=no                new releases are announced, not installed
     GenreLookup=no               albums with no genre stay in "Other" (no
@@ -75,7 +76,8 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "singles
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
             "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate", "genrelookup": "GenreLookup",
-            "favoriterating": "FavoriteRating", "singlesalbum": "SinglesAlbum"}
+            "favoriterating": "FavoriteRating", "singlesalbum": "SinglesAlbum",
+            "singlestracks": "SinglesTracks"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
 
@@ -290,8 +292,18 @@ def plan_settings(settings, cfg):
             raise SetupFileError("SinglesAlbum must be 0 (off) or a whole number from 2 to 100")
         if count != cfg["sync"].get("singles_album_min", 4):
             changes[("sync", "singles_album_min")] = count
-        done.append(f"{count}+ one-track albums become \"<Artist> Singles\"" if count
-                    else "One-track albums stay separate")
+        done.append(f"{count}+ singles become \"<Artist> Singles\"" if count
+                    else "Singles stay separate")
+    if "SinglesTracks" in settings:
+        try:
+            tracks = int(settings["SinglesTracks"])
+        except ValueError:
+            tracks = 0
+        if not 1 <= tracks <= 20:
+            raise SetupFileError("SinglesTracks must be a whole number from 1 to 20")
+        if tracks != cfg["sync"].get("singles_max_tracks", 3):
+            changes[("sync", "singles_max_tracks")] = tracks
+        done.append(f"Singles: releases of up to {tracks} track" + ("s" if tracks > 1 else ""))
     if "FavoriteRating" in settings:
         try:
             stars = int(settings["FavoriteRating"])

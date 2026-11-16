@@ -75,7 +75,8 @@ display.theme = "light"
 # space: "" turns it off, e.g. for a small iPod.
 # sync.lossless_tag = "#lossless"
 #   Playlists whose comment has this sync too, and their songs that are the only
-#   song of their album go in one album, "<Playlist> Singles" ("" = off).
+#   song of their album, or from a single, go in one album, "<Playlist> Singles"
+#   ("" = off).
 # sync.singles_tag = "#singles"
 
 # --- Favorites from the iPod ---
@@ -112,9 +113,12 @@ display.theme = "light"
 #   "Monthly Mix = My Mixes"]. "label:words" matches a compilation's record label
 #   or album artist instead, e.g. "label:Chillhop = Chillhop Releases".
 # sync.compilation_albums = []
-#   An artist with this many one-song albums gets them as one album,
-#   "<Artist> Singles" (0 = off).
+#   An artist with this many singles gets them as one album, "<Artist> Singles"
+#   (0 = off).
 # sync.singles_album_min = 4
+#   A release with up to this many tracks counts as a single (singles and remix
+#   releases); 1 = one-track releases only.
+# sync.singles_max_tracks = 3
 
 # --- Updates and automatic syncing ---
 # Install new SongDock releases by themselves (announced on screen 4 hours

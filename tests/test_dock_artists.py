@@ -279,7 +279,30 @@ class TidyTests(unittest.TestCase):
         self.assertEqual(got["5"], ("Delta", "Delta EP", None))
         self.assertEqual(a.playlist_singles(songs, [lists[2]]), 0)
 
+    def test_a_small_release_in_a_singles_playlist_moves_whole(self):
+        # User, 2026-11-16: singles and remix releases of 2-4 tracks are singles too.
+        def s(i, album):
+            return {"id": i, "artist": "A", "title": i, "album": album, "albumId": album}
+        songs = [s("1", "Remixes"), s("2", "Remixes"), s("3", "LP"), s("4", "LP")]
+        lists = [{"name": "Mix", "singles": True, "song_ids": ["1", "3"]}]
+        counts = {"Remixes": 3, "LP": 12}
+        self.assertEqual(a.playlist_singles(songs, lists, counts, max_tracks=3), 2)
+        self.assertEqual([t["album"] for t in songs], ["Mix Singles", "Mix Singles", "LP", "LP"])
+        songs = [s("1", "Remixes"), s("2", "Remixes")]       # one track at most: as before
+        self.assertEqual(a.playlist_singles(songs, lists, counts, max_tracks=1), 0)
+
     # "<Artist> Singles"
+    def test_releases_up_to_the_limit_count_as_singles(self):
+        songs = self.singles(3) + [dict(self.singles(1, start=3)[0]),
+                                   dict(self.singles(1, start=3)[0], id="Fox3b", title="T3 remix")]
+        counts = {s["albumId"]: 1 for s in songs}
+        counts["Fox-a3"] = 2                                  # a single with its remix
+        moved, _ = a.group_singles(songs, counts, 4, max_tracks=3), songs
+        self.assertEqual(moved, 5)                            # both songs of the 2-track one
+        self.assertEqual({s["album"] for s in songs}, {"Fox Singles"})
+        songs = self.singles(3) + [dict(self.singles(1, start=3)[0])]
+        self.assertEqual(a.group_singles(songs, dict(counts, **{"Fox-a3": 4}), 4,
+                                         max_tracks=3), 0)    # a 4-track EP isn't one
     def singles(self, n, artist="Fox", start=0):
         return [{"id": f"{artist}{i}", "artist": artist, "title": f"T{i}", "album": f"A{i}",
                  "albumId": f"{artist}-a{i}"} for i in range(start, start + n)]

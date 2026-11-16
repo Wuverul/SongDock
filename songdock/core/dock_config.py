@@ -22,7 +22,7 @@ DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
              "playlist_tag": "#ipod", "lossless_tag": "#lossless", "singles_tag": "#singles",
              "primary_artist": True, "artist_names": [], "compilation_albums": [], "artist_aliases": [], "playlist_prefixes": [], "workers": "auto", "removal_grace_days": 7,
-             "recent_play_months": 3, "singles_album_min": 4, "make_room": False, "make_room_albums": True, "favorite_rating": 4, "auto_update": True,
+             "recent_play_months": 3, "singles_album_min": 4, "singles_max_tracks": 3, "make_room": False, "make_room_albums": True, "favorite_rating": 4, "auto_update": True,
              # Albums with no genre anywhere: asked of MusicBrainz and Deezer (dock_lookup).
              "genre_lookup": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
@@ -201,6 +201,9 @@ def load(path=None):
     n = cfg["sync"]["singles_album_min"]
     if not (isinstance(n, int) and not isinstance(n, bool) and (n == 0 or 2 <= n <= 100)):
         raise ConfigError(f"{path}: singles_album_min must be 0 (off) or a whole number from 2 to 100")
+    n = cfg["sync"]["singles_max_tracks"]
+    if not (isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= 20):
+        raise ConfigError(f"{path}: singles_max_tracks must be a whole number from 1 to 20")
     if not isinstance(cfg["sync"]["make_room"], bool):
         raise ConfigError(f"{path}: make_room must be true or false")
     if not isinstance(cfg["sync"]["make_room_albums"], bool):

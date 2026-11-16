@@ -272,12 +272,20 @@ def note(names, shown=20):
             + "; ".join(names[:shown]) + more)
 
 
-def group_singles(songs, song_counts, minimum=4):
-    """An artist with `minimum` or more one-track albums gets them as one album,
-    "<Artist> Singles" (user, 2026-10-31). song_counts: {album id: tracks the album
-    really has}, so one song kept from a full album doesn't count. A song's real
-    album stays in "folder_album", for players that keep art per folder. Returns
-    how many songs moved. Only names change, so falling below `minimum` undoes it."""
+def is_single(album_id, song_counts, max_tracks=1):
+    """True for a release of at most `max_tracks` tracks ([sync] singles_max_tracks;
+    user, 2026-11-16: singles and remix releases of 2 to 4 tracks are singles too).
+    song_counts: {album id: tracks the album really has}."""
+    return bool(album_id) and 0 < (song_counts.get(album_id) or 0) <= max_tracks
+
+
+def group_singles(songs, song_counts, minimum=4, max_tracks=1):
+    """An artist with `minimum` or more singles (releases of up to `max_tracks`
+    tracks) gets them as one album, "<Artist> Singles" (user, 2026-10-31), every
+    song of each. song_counts: {album id: tracks the album really has}, so a few
+    songs kept from a full album don't count. A song's real album stays in
+    "folder_album", for players that keep art per folder. Returns how many songs
+    moved. Only names change, so falling below `minimum` undoes it."""
     if not minimum:
         return 0
     in_plan = {}
@@ -285,12 +293,12 @@ def group_singles(songs, song_counts, minimum=4):
         in_plan.setdefault(s.get("albumId"), []).append(s)
     by_artist = {}
     for album_id, tracks in in_plan.items():
-        if album_id and len(tracks) == 1 and song_counts.get(album_id) == 1:
-            by_artist.setdefault(tracks[0].get("artist"), []).append(tracks[0])
+        if len(tracks) <= max_tracks and is_single(album_id, song_counts, max_tracks):
+            by_artist.setdefault(tracks[0].get("artist"), []).append(tracks)
     moved = 0
-    for artist, singles in by_artist.items():
-        if artist and len(singles) >= minimum:
-            for s in singles:
+    for artist, releases in by_artist.items():
+        if artist and len(releases) >= minimum:
+            for s in (s for tracks in releases for s in tracks):
                 s["folder_album"] = s.get("album")
                 s["album"] = f"{artist} Singles"
                 s["displayAlbumArtist"] = artist      # one album, not one per credit
@@ -298,13 +306,15 @@ def group_singles(songs, song_counts, minimum=4):
     return moved
 
 
-def playlist_singles(songs, playlists):
+def playlist_singles(songs, playlists, song_counts=None, max_tracks=1):
     """Songs of a playlist tagged with [sync] singles_tag (e.g. "#singles") that are
-    the only song of their album in the plan go into one album named after the
-    playlist, "<Playlist> Singles", album artist "Various Artists" (user, 2026-11-10:
-    loose songs from many albums, one album each, crowded the Albums menu). Once a
-    second song of that album is in the plan, the song is back on its own album. A
-    song in two such playlists goes under the first by name. "<Artist> Singles" always
+    the only song of their album in the plan, or from a single (a release of up to
+    `max_tracks` tracks: is_single), go into one album named after the playlist,
+    "<Playlist> Singles", album artist "Various Artists" (user, 2026-11-10: loose
+    songs from many albums, one album each, crowded the Albums menu). A single's other
+    songs in the plan go with it, so it never splits. Once a second song of a bigger
+    album is in the plan, the song is back on its own album. A song in two such
+    playlists goes under the first by name. "<Artist> Singles" always
     wins (user, 2026-11-10: this album only tidies the Albums menu; an artist's singles
     belong together), so songs it took are left alone. Names only; "folder_album"
     keeps the real album.
@@ -312,17 +322,25 @@ def playlist_singles(songs, playlists):
     lists = sorted((p for p in playlists if p.get("singles")), key=lambda p: p["name"].casefold())
     if not lists:
         return 0
-    per_album = Counter(s.get("albumId") for s in songs if s.get("albumId"))
+    song_counts = song_counts or {}
+    per_album = {}
+    for s in songs:
+        if s.get("albumId"):
+            per_album.setdefault(s["albumId"], []).append(s)
     by_id = {s["id"]: s for s in songs}
     moved = set()
     for pl in lists:
         for sid in pl.get("song_ids", ()):
             s = by_id.get(sid)
-            if not s or sid in moved or per_album.get(s.get("albumId"), 0) != 1 \
-                    or s.get("folder_album"):              # in "<Artist> Singles" already
-                continue
-            s["folder_album"] = s.get("album")
-            s["album"] = f"{pl['name']} Singles"
-            s["displayAlbumArtist"] = "Various Artists"
-            moved.add(sid)
+            album = per_album.get((s or {}).get("albumId"), [])
+            if not s or sid in moved or s.get("folder_album") or not (
+                    len(album) == 1 or is_single(s["albumId"], song_counts, max_tracks)):
+                continue                       # (folder_album: in "<Artist> Singles")
+            for t in album:
+                if t["id"] in moved or t.get("folder_album"):
+                    continue
+                t["folder_album"] = t.get("album")
+                t["album"] = f"{pl['name']} Singles"
+                t["displayAlbumArtist"] = "Various Artists"
+                moved.add(t["id"])
     return len(moved)
