@@ -32,6 +32,8 @@ and the list of known iPods written into its MediaDock.txt.
     SinglesTracks=2              untagged releases up to this many tracks are singles
     FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
     AutoUpdate=no                new releases are announced, not installed
+    PlaylistSingles=no           only #singles playlists gather lone songs in
+                                 "<Playlist> Singles" (yes = every synced playlist)
     GenreLookup=no               albums with no genre stay in "Other" (no
                                  MusicBrainz / Deezer lookups)
     MakeRoom=yes                 a full player loses its oldest songs for new ones
@@ -75,7 +77,7 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "singles
             "password": "Password", "newlibrary": "NewLibrary",
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
-            "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate", "genrelookup": "GenreLookup",
+            "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate", "genrelookup": "GenreLookup", "playlistsingles": "PlaylistSingles",
             "favoriterating": "FavoriteRating", "singlesalbum": "SinglesAlbum",
             "singlestracks": "SinglesTracks"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
@@ -329,6 +331,15 @@ def plan_settings(settings, cfg):
             done.append("Genre lookups " + ("on" if on else "off"))
         else:
             done.append("Genre lookups already " + ("on" if on else "off"))
+    if "PlaylistSingles" in settings:
+        on = yes_no("PlaylistSingles", settings["PlaylistSingles"])
+        if on != cfg["sync"].get("playlist_singles", True):
+            changes[("sync", "playlist_singles")] = on
+            done.append("Playlist singles albums for " +
+                        ("every playlist" if on else "tagged playlists only"))
+        else:
+            done.append("Playlist singles albums already " +
+                        ("for every playlist" if on else "for tagged playlists only"))
     if "MakeRoom" in settings:
         on = yes_no("MakeRoom", settings["MakeRoom"])
         if on != cfg["sync"].get("make_room", False):

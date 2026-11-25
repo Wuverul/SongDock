@@ -239,11 +239,28 @@ def unique_ids(songs):
     return ids
 
 
-def player_playlist_name(name, prefixes=()):
-    """A playlist's name on the player: without the first of `prefixes` it starts
-    with (any case), e.g. "MixSync: Discovery" -> "Discovery" (user, 2026-11-10: a
-    sync tool's prefix; "M:" marks who made it and stays). The whole name if that
-    would leave nothing."""
+def tag_pattern(tag):
+    return r"(?<![\w#])" + re.escape(tag) + r"(?!\w)"
+
+
+def strip_tags(name, tags=()):
+    """`name` without the dock's tags ("Future Funk #ipod" -> "Future Funk"); the
+    whole name if that would leave nothing."""
+    out = name
+    for tag in tags:
+        if tag:
+            out = re.sub(tag_pattern(tag), " ", out, flags=re.IGNORECASE)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out or name
+
+
+def player_playlist_name(name, prefixes=(), tags=()):
+    """A playlist's name on the player: without the dock's tags (`tags`, user
+    2026-11-25: tags go in names on servers that can't edit comments, e.g. Aurral),
+    and without the first of `prefixes` it starts with (any case), e.g. "MixSync:
+    Discovery" -> "Discovery" (user, 2026-11-10: a sync tool's prefix; "M:" marks
+    who made it and stays). The whole name if that would leave nothing."""
+    name = strip_tags(name, tags)
     for prefix in prefixes:
         if name.casefold().startswith(prefix.strip().casefold()):
             return name[len(prefix.strip()):].strip() or name
@@ -251,15 +268,27 @@ def player_playlist_name(name, prefixes=()):
 
 
 def has_tag(comment, tag):
-    """True if the playlist comment contains the tag as a whole word (any case)."""
+    """True if the text (a playlist comment or name) contains the tag as a whole
+    word (any case)."""
     if not tag:
         return False
-    pattern = r"(?<![\w#])" + re.escape(tag) + r"(?!\w)"
-    return re.search(pattern, comment or "", re.IGNORECASE) is not None
+    return re.search(tag_pattern(tag), comment or "", re.IGNORECASE) is not None
+
+
+def playlist_has_tag(playlist, tag):
+    """A tag in the playlist's comment or in its name (user, 2026-11-25: Aurral's
+    web UI can't edit comments, so "Future Funk #ipod" counts too)."""
+    return has_tag(playlist.get("comment"), tag) or has_tag(playlist.get("name"), tag)
+
+
+def dock_tags(cfg):
+    """Every playlist tag the dock reads, for taking them off names."""
+    return [t for t in (cfg["sync"].get(k, "") for k in
+                        ("playlist_tag", "singles_tag", "lossless_tag")) if t]
 
 
 def lossless_songs(client, tag, targets, playlists, previous_ids=()):
-    """Songs to sync as lossless: those in playlists whose comment has `tag`.
+    """Songs to sync as lossless: those in playlists whose comment or name has `tag`.
     Such a playlist needn't be synced itself; it only flags songs that are.
     Returns ({song id}, [playlist ids]). Any failure raises: carrying on
     without the flags would swap these songs back to MP3."""
@@ -273,7 +302,7 @@ def lossless_songs(client, tag, targets, playlists, previous_ids=()):
     synced = {p["id"]: p for p in playlists}
     ids, recordings, found = set(), set(), []
     for p in listing:
-        if not has_tag(p.get("comment"), tag):
+        if not playlist_has_tag(p, tag):
             continue
         found.append(p["id"])
         if p["id"] in synced:          # song_ids already follow merged recordings
@@ -295,7 +324,7 @@ def lossless_songs(client, tag, targets, playlists, previous_ids=()):
 
 def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites",
                   tag="", previously_tagged=(), album_info=None, album_copies=None,
-                  singles_tag="", prefixes=()):
+                  singles_tag="", prefixes=(), name_tags=(), all_singles=False):
     """Resolve the configured targets into one de-duplicated set of tracks.
 
     targets: e.g. ["starred", "playlist:Mel Test"].
@@ -309,8 +338,13 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     album a single is on; last run's answers go in, this run's come out.
     singles_tag: playlists with this in their comment (e.g. "#singles") sync too,
     and are marked "singles" in their record (playlist_singles).
+    all_singles: [sync] playlist_singles: every synced playlist is marked "singles",
+    tagged or not (user, 2026-11-25); Favorites never is.
     prefixes: [sync] playlist_prefixes, taken off playlist names on the player
     ("target" keeps the server's name, so a player renames rather than adds).
+    name_tags: every tag the dock reads (sync, singles, lossless): a tag counts in
+    a playlist's name as in its comment, and is taken off the name on the player
+    and in "target" (adding "#ipod" to a name neither renames nor re-adds it).
     Returns (tracks in artist/album/track order, {song id: [targets]},
     [playlist records for the manifest, in target order]).
     """
@@ -319,6 +353,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     album_info = {} if album_info is None else album_info
     listing = None
     tags = [t for t in (tag, singles_tag) if t]
+    name_tags = [t for t in (*name_tags, *tags) if t]
     if tags:
         listing = client.call("getPlaylists").get("playlists", {}).get("playlist", [])
         if not listing and previously_tagged:
@@ -326,12 +361,12 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
                 f"the server listed no playlists, but {len(previously_tagged)} were "
                 f"tagged {' or '.join(tags)} last time; stopping without removing anything. "
                 f"(If you really deleted them all, set playlist_tag = \"\" to continue.)")
-        tagged = [p for p in listing if any(has_tag(p.get("comment"), t) for t in tags)]
+        tagged = [p for p in listing if any(playlist_has_tag(p, t) for t in tags)]
         targets = list(targets) + [("tagged", p) for p in tagged]
 
     def singles(*records):
         """The playlist's comment comes with getPlaylists and getPlaylist alike."""
-        return {"singles": True} if any(has_tag(r.get("comment"), singles_tag)
+        return {"singles": True} if all_singles or any(playlist_has_tag(r, singles_tag)
                                         for r in records) else {}
 
     def add(target, songs):
@@ -357,13 +392,13 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
                                    f"be read: {e}") from None
             seen_playlists.add(pid)
             songs = pl.get("entry", [])
-            key = f"playlist:{pl['name']}"
+            key = f"playlist:{strip_tags(pl['name'], name_tags)}"
             if any(p["target"] == key for p in playlists):
                 # Two playlists of one name (2026-11-10: two "MixSync: Discovery"): one
                 # key made the player keep only one, overwritten by the other each sync.
                 key = f"playlist:{pl['name']} [{pid}]"
             playlists.append({"target": key, "id": pl["id"],
-                              "name": player_playlist_name(pl["name"], prefixes),
+                              "name": player_playlist_name(pl["name"], prefixes, name_tags),
                               "via": "tag", **singles(pl, target[1]),
                               "song_ids": [s["id"] for s in songs]})
             add(key, songs)
@@ -384,7 +419,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             seen_playlists.add(pl["id"])
             songs = pl.get("entry", [])
             playlists.append({"target": target, "id": pl["id"],
-                              "name": player_playlist_name(pl["name"], prefixes),
+                              "name": player_playlist_name(pl["name"], prefixes, name_tags),
                               "via": "config", **singles(pl),
                               "song_ids": [s["id"] for s in songs]})
         else:
@@ -1254,7 +1289,7 @@ def convert(src, dst, options, duration=None):
     for extra, how in attempts:
         try:
             r = subprocess.run(base + extra + [dst], capture_output=True,
-                               text=True, timeout=timeout)
+                               text=True, errors="replace", timeout=timeout)
         except FileNotFoundError:
             raise PrepareError("ffmpeg isn't installed (sudo apt install ffmpeg)") from None
         if r.returncode == 0:
@@ -1300,11 +1335,14 @@ def loud_aac(entries):
 
 def decoded_peak(path):
     """The highest sample of `path` decoded to floating point, in dBFS (above
-    0 = clipping on a player). Streams: about 3 s for a song on a Pi Zero 2 W."""
+    0 = clipping on a player). Streams: about 3 s for a song on a Pi Zero 2 W.
+    ffmpeg prints the file's tags here, as they are: errors="replace", or a tag
+    that isn't UTF-8 fails the song (Virtual Riot - We're Not Alone, 2026-11-25)."""
     r = subprocess.run(["ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-i", path,
                         "-map", "0:a", "-af", "aformat=sample_fmts=flt,astats="
                         "measure_perchannel=none:measure_overall=Peak_level",
-                        "-f", "null", "-"], capture_output=True, text=True, timeout=600)
+                        "-f", "null", "-"], capture_output=True, text=True,
+                       errors="replace", timeout=600)
     found = re.findall(r"Peak level dB: (-?[\d.]+|-?inf)", r.stderr)
     if r.returncode or not found:
         raise PrepareError(f"couldn't measure the peak: {r.stderr.strip()[-200:]}")
@@ -1321,7 +1359,7 @@ def lower(path, steps):
     """Lower an MP3 by `steps` mp3gain steps, in place (no re-encoding; no
     tags added)."""
     r = subprocess.run([MP3GAIN, "-g", str(-steps), "-c", "-s", "s", path],
-                       capture_output=True, text=True, timeout=300)
+                       capture_output=True, text=True, errors="replace", timeout=300)
     if r.returncode:
         raise PrepareError(f"mp3gain failed: {(r.stderr or r.stdout).strip()[-200:]}")
 
@@ -1562,7 +1600,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         client, cfg["sync"]["targets"], known,
         cfg["sync"].get("favorites_playlist", "Favorites"),
         cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info, album_copies,
-        cfg["sync"].get("singles_tag", ""), cfg["sync"].get("playlist_prefixes", ()))
+        cfg["sync"].get("singles_tag", ""), cfg["sync"].get("playlist_prefixes", ()),
+        name_tags=dock_tags(cfg), all_singles=cfg["sync"].get("playlist_singles", False))
     unsplit_artists = set()
     dock_artists.apply_aliases(targets, cfg["sync"].get("artist_aliases", ()))
     album_labels = {}
@@ -2239,7 +2278,9 @@ def show_genres(config_path=None):
                                     cfg["sync"].get("favorites_playlist", "Favorites"),
                                     cfg["sync"].get("playlist_tag", ""),
                                     album_info=album_info,
-                                    singles_tag=cfg["sync"].get("singles_tag", ""))
+                                    singles_tag=cfg["sync"].get("singles_tag", ""),
+                                    name_tags=dock_tags(cfg),
+                                    all_singles=cfg["sync"].get("playlist_singles", False))
         genres, _, _ = plan_genres(client, cfg, songs, previous, album_info)
     except (SubsonicError, PrepareError) as e:
         log.error("Couldn't read the targets: %s", e)

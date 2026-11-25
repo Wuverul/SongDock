@@ -151,6 +151,12 @@ entries remain for playlists the user can't edit (e.g. service-owned dynamic
 ones); a playlist both tagged and configured counts once. If the server lists
 no playlists at all but some were tagged last run, the run stops without
 pruning. Currently: `targets = ["starred"]` + Mel Test via its `#iPod` tag.
+**Tags in names (user, 2026-11-25, for Aurral, whose web UI can't edit comments):**
+`#ipod`, `#lossless` and `#singles` count in a playlist's name as in its comment
+(`playlist_has_tag`). The dock's tags come off the name on the player and in the plan's
+`target` (`strip_tags`, `dock_tags`), so moving a tag from comment to name neither
+renames nor re-adds the playlist. Aurral stores a Subsonic `comment` as the playlist's
+description (API only) and sends it back when set.
 
 ## Safety rules (do not simplify these away)
 
@@ -1058,6 +1064,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   renames its playlist instead of adding one). A second song of the album in
   the plan sends it back. Albums ending " Singles" list by title on the iPod
   (`ipod_db.sort_order`) and never share covers. Can't equal `playlist_tag`.
+  **Every synced playlist by default (user, 2026-11-25):** `[sync] playlist_singles`
+  (default true, `PlaylistSingles=`; hand-made configs without the key: off) marks every
+  tagged or configured playlist "singles", no tag needed (Favorites never). false = only
+  `singles_tag` playlists. On the Classic's Navidrome plan it changed nothing (its lone-song
+  playlists already had #singles); it's for Aurral, whose playlists can't get comments in its UI.
 - `dock_share.py` (user, 2026-10-30): `musicdock-status --share`, for bug reports and
   friends helping out; prints only, sends nothing. A fixed list of facts (add new
   settings to `SHARED_SETTINGS` on purpose); error lines lose library names, then

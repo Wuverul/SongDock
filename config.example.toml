@@ -46,8 +46,9 @@ device.write = false
 # 2. CHECK THESE: defaults most people keep, but look them over
 # =====================================================================
 
-# What goes on the iPod: your starred songs ("starred"), and any playlist
-# whose comment in Navidrome contains the tag below. To add a playlist by name
+# What goes on the iPod: your starred songs ("starred"), and any playlist with
+# the tag below in its name or comment ("Road Trip #ipod"; the iPod shows the
+# name without it). To add a playlist by name
 # instead: ["starred", "playlist:Road Trip"]. Use [] with a tag for playlists only.
 sync.targets = ["starred"]
 sync.playlist_tag = "#ipod"          # "" = don't look for tagged playlists
@@ -70,14 +71,15 @@ display.theme = "light"
 # =====================================================================
 
 # --- Lossless songs ---
-# Songs in a playlist with this tag in its comment go on the iPod lossless
+# Songs in a playlist with this tag in its name or comment go on the iPod lossless
 # (ALAC; FLAC on Rockbox) when Navidrome has them lossless. About 3x the
 # space: "" turns it off, e.g. for a small iPod.
 # sync.lossless_tag = "#lossless"
-#   Playlists whose comment has this sync too, and their songs that are the only
-#   song of their album, or from a single, go in one album, "<Playlist> Singles"
-#   ("" = off).
-# sync.singles_tag = "#singles"
+# Songs of a synced playlist that are the only song of their album, or from a
+# single, go in one album, "<Playlist> Singles". false = only playlists with
+# singles_tag (below) in their name or comment, which also makes them sync.
+# sync.playlist_singles = true
+# sync.singles_tag = "#singles"          # "" = off
 
 # --- Favorites from the iPod ---
 # A song you rate this many stars on the iPod gets starred in Navidrome, once

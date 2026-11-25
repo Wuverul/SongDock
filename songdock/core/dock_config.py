@@ -25,6 +25,9 @@ DEFAULTS = {
              "recent_play_months": 3, "singles_album_min": 4, "singles_max_tracks": 1, "make_room": False, "make_room_albums": True, "favorite_rating": 4, "auto_update": True,
              # Albums with no genre anywhere: asked of MusicBrainz and Deezer (dock_lookup).
              "genre_lookup": True,
+             # Every synced playlist gathers its lone songs in "<Playlist> Singles",
+             # no #singles tag needed (user, 2026-11-25).
+             "playlist_singles": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -210,6 +213,8 @@ def load(path=None):
         raise ConfigError(f"{path}: make_room_albums must be true or false")
     if not isinstance(cfg["sync"]["genre_lookup"], bool):
         raise ConfigError(f"{path}: genre_lookup must be true or false")
+    if not isinstance(cfg["sync"]["playlist_singles"], bool):
+        raise ConfigError(f"{path}: playlist_singles must be true or false")
     if not isinstance(cfg["sync"]["auto_update"], bool):
         raise ConfigError(f"{path}: auto_update must be true or false")
     w = cfg["sync"]["workers"]

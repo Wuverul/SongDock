@@ -165,12 +165,13 @@ like `[sync]`. In those, write a setting from this guide without its group:
 
 ## 7. Choose your music
 
-In Navidrome:
+On your music server (Navidrome, Aurral, or another Subsonic server):
 - **Favorites:** star songs or whole albums. Starred albums sync all their tracks.
-- **Playlists:** open a playlist, click the edit (pencil) button, and put
-  **`#ipod`** in its **Comment** field (the field is easy to miss). Remove the
-  tag to stop syncing that playlist.
-- **Lossless (optional):** put **`#lossless`** in a playlist's comment too, and its songs
+- **Playlists:** add **`#ipod`** to the end of a playlist's name ("Road Trip #ipod"), or
+  put it in the playlist's **Comment** (in Navidrome: the edit (pencil) button; the
+  field is easy to miss). The iPod shows the name without the tag. Remove the tag to
+  stop syncing that playlist.
+- **Lossless (optional):** put **`#lossless`** in a playlist's name or comment, and its songs
   sync as ALAC if the server's copy is lossless. It takes about 3 times the space, so
   leave this for later on a small iPod.
 

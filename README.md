@@ -139,8 +139,8 @@ music in the background, so syncs are quick.
 
 Everything here changes only what's on the player, unless it says otherwise.
 
-- **Lossless for chosen songs:** add `#lossless` to a playlist's comment in
-  Navidrome and its songs sync as ALAC (FLAC on a Rockbox-only dock) if the
+- **Lossless for chosen songs:** add `#lossless` to a playlist's name or comment
+  on the server and its songs sync as ALAC (FLAC on a Rockbox-only dock) if the
   server's copy is lossless, replacing the MP3. ALAC takes about 3 times the
   space. Lossy files are never "upgraded", and hi-res files become 16-bit for stock
   iPods. If a song's new format doesn't fit, it keeps the old one, and an interrupted

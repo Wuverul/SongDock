@@ -315,6 +315,15 @@ class SettingsTests(PlayersBase):
         self.assertIs(self.settings()["sync"]["make_room_albums"], True)
         self.assertIn("MakeRoomAlbums", self.apply("MakeRoomAlbums=maybe\n")["reason"])
 
+    def test_playlist_singles_from_the_ipod(self):
+        self.assertEqual(self.apply("PlaylistSingles=no\n")["done"],
+                         ["Playlist singles albums for tagged playlists only"])
+        self.assertIs(self.settings()["sync"]["playlist_singles"], False)
+        self.assertEqual(self.apply("PlaylistSingles=yes\n")["done"],
+                         ["Playlist singles albums for every playlist"])
+        self.assertIs(self.settings()["sync"]["playlist_singles"], True)
+        self.assertIn("PlaylistSingles", self.apply("PlaylistSingles=maybe\n")["reason"])
+
     def test_artist_names_quote_safely_in_the_config(self):
         self.apply('ArtistNames=The "Best" \\ Band, Inc.\n')
         self.assertEqual(self.settings()["sync"]["artist_names"], ['The "Best" \\ Band, Inc.'])

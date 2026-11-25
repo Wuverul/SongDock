@@ -22,6 +22,7 @@ def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
     tag = sync.get("playlist_tag", "")
     lossless = sync.get("lossless_tag", "#lossless")
     singles = sync.get("singles_tag", "#singles")
+    all_singles = sync.get("playlist_singles", True)
     favorites = sync.get("favorites_playlist", "")
     grace = sync.get("removal_grace_days", 7)
     targets = sync.get("targets", [])
@@ -31,16 +32,18 @@ def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
                      + (f",\n    gathered on the iPod in a playlist called \"{favorites}\""
                         if favorites else ""))
     if tag:
-        lists.append(f"every Navidrome playlist whose comment contains {tag}")
+        lists.append(f"every playlist with {tag} in its name or comment")
     lists += [f"the playlist \"{t.split(':', 1)[1]}\"" for t in targets
               if t.startswith("playlist:")]
     chosen = "\n".join(f"  - {item}" for item in lists) or "  - (nothing is set up yet)"
     removal = (f"its copy on the dock is kept {grace} days in case you add it back."
                if grace else "its copy on the dock is deleted right away.")
     tag_how = (f"""
-  To add a playlist, open it in Navidrome's web page, edit it, and put
-  {tag} in its comment (the "Comment" field is easy to miss). Removing
-  {tag} takes the playlist off the iPod at the next sync.
+  To add a playlist, put {tag} at the end of its name on the music
+  server (e.g. "Road Trip {tag}"), or in its comment (in Navidrome: edit
+  the playlist; the "Comment" field is easy to miss). The iPod shows the
+  name without the tag. Removing {tag} takes the playlist off the iPod
+  at the next sync.
 """ if tag else "")
 
     if kind == "generic":
@@ -70,21 +73,23 @@ favorites it once. Taking it off the list leaves the favorite as it is."""
         hands_off = """Don't add music with Finder, iTunes or the Apple Music app: they replace
 the iPod's music list, and the dock loses track of everything it added.
 Don't change the hidden iPod_Control folder."""
-    lossless_how = (f"""Songs in a playlist whose Navidrome comment has {lossless} are lossless when
-the server has a lossless copy (ALAC on stock iPods, about 3 times the
-space; FLAC on Rockbox). The song replaces its MP3, so it's never on the
-iPod twice. The playlist needn't be synced; only songs that are get
-this. This needs an iPod the dock has synced (a Rockbox player on a
-Rockbox-only dock); music players on the same dock get these files too,
+    lossless_how = (f"""Songs in a playlist with {lossless} in its name or comment are
+lossless when the server has a lossless copy (ALAC on stock iPods, about
+3 times the space; FLAC on Rockbox). The song replaces its MP3, so it's
+never on the iPod twice. The playlist needn't be synced; only songs that
+are get this. This needs an iPod the dock has synced (a Rockbox player on
+a Rockbox-only dock); music players on the same dock get these files too,
 and basic ones may not play them.""" if lossless
                     else "Songs are not made lossless by playlist on this dock.")
-    singles_how = (f"""A playlist whose comment has {singles} syncs too, and each of its songs that
-is the only song of its album on the iPod goes in one album named after the
-playlist, "<Playlist> Singles", instead of an album of its own (an artist's
-own singles stay in "<Artist> Singles"). Add more of that album and the song
-is back on its own album at the next sync.
-(SinglesTag=, below, changes the tag.)
-""" if singles else "")
+    which = ("Each synced playlist's songs" if all_singles else
+             f"A playlist with {singles} in its name or comment syncs too, and its songs")
+    singles_how = (f"""{which}
+that are the only song of their album on the iPod go in one album named
+after the playlist, "<Playlist> Singles", instead of an album of their own
+(an artist's own singles stay in "<Artist> Singles"). Add more of that
+album and the song is back on its own album at the next sync.
+(PlaylistSingles= and SinglesTag=, below, change this.)
+""" if all_singles or singles else "")
     return f"""SONGDOCK - HOW TO USE AND RECONFIGURE IT FROM THIS IPOD
 ==========================================================
 
@@ -156,7 +161,7 @@ Create it with one or more of the lines below, then dock the iPod. Lines
 starting with # are ignored.
 
 Which music syncs:
-  PlaylistTag=#car       sync the playlists whose Navidrome comment has
+  PlaylistTag=#car       sync the playlists whose name or comment has
                          #car (instead of {tag or "no tag"}); PlaylistTag=none stops
                          syncing tagged playlists
   CompilationAlbums=Now That's What I Call Music; Monthly Mix = My Mixes
@@ -188,8 +193,10 @@ Which music syncs:
 Music format (stock iPods and Rockbox players):
   LosslessTag=none       ignore {lossless or "the lossless tag"} on this dock, e.g. one serving a
                          small iPod; LosslessTag=#hifi uses another tag
-  SinglesTag=#loose      gather lone songs from playlists with this tag in
-                         "<Playlist> Singles" (SinglesTag=none: never)
+  PlaylistSingles=no     gather lone songs in "<Playlist> Singles" only for
+                         playlists tagged {singles or "#singles"} (=yes: every playlist)
+  SinglesTag=#loose      the tag that gathers a playlist's lone songs and
+                         syncs it (SinglesTag=none: no tag)
   StockCompatible=no     for a dock that only serves Rockbox players: copy
                          music as it is on the server, FLAC included
                          (lossless, about 2-3 times the space). Refused

@@ -500,6 +500,44 @@ class PrepareTests(unittest.TestCase):
         pls = [p for p in self.manifest()["playlists"] if p["via"] != "starred"]
         self.assertEqual([(p["name"], p["via"]) for p in pls], [("Mel Test", "tag")])
 
+    def test_tag_in_the_name_counts_and_is_left_off_on_the_player(self):
+        """Aurral's web UI can't edit comments (user, 2026-11-25): "#ipod" may go in
+        the name, and the player shows the name without it."""
+        server = FakeServer(playlists={
+            "P1": ("Future Funk #iPod", [song("b1")]),
+            "P2": ("Top 2024  #ipod #lossless", [song("c1")]),
+            "P3": ("#ipodcast picks", [song("d1")]),                  # not the tag
+            "P4": ("#ipod", [song("e1")])})                           # nothing else
+        cfg = self.tagged_cfg()
+        cfg["sync"]["lossless_tag"] = "#lossless"
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.files(), ["b1.mp3", "c1.m4a", "e1.mp3"])   # c1: #lossless
+        pls = {p["id"]: (p["target"], p["name"]) for p in self.manifest()["playlists"]
+               if p["via"] == "tag"}
+        self.assertEqual(pls, {"P1": ("playlist:Future Funk", "Future Funk"),
+                               "P2": ("playlist:Top 2024", "Top 2024"),
+                               "P4": ("playlist:#ipod", "#ipod")})
+
+    def test_moving_the_tag_from_comment_to_name_keeps_the_playlist(self):
+        server = FakeServer(playlists={"P1": ("Mel Test", [song("b1")], "#ipod")})
+        self.run_prepare(server, self.tagged_cfg())
+        before = [p for p in self.manifest()["playlists"] if p["via"] == "tag"]
+        server.playlists["P1"] = ("Mel Test #ipod", [song("b1")], "")
+        summary = self.run_prepare(server, self.tagged_cfg())
+        after = [p for p in self.manifest()["playlists"] if p["via"] == "tag"]
+        self.assertEqual(after, before)            # same target and name: no re-add
+        self.assertEqual(summary["removed"], 0)
+
+    def test_removing_the_tag_from_the_name_unsyncs_playlist(self):
+        server = FakeServer(songs=[song("a1")],
+                            playlists={"P1": ("Mel Test #ipod", [song("b1")])})
+        self.run_prepare(server, self.tagged_cfg())
+        server.playlists["P1"] = ("Mel Test", [song("b1")])
+        cfg = self.tagged_cfg()
+        cfg["sync"]["removal_grace_days"] = 0
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.files(), ["a1.mp3"])
+
     def test_tagged_and_configured_playlist_counted_once(self):
         server = FakeServer(playlists={"P1": ("Mel Test", [song("b1")], "#ipod")})
         self.run_prepare(server, self.tagged_cfg(["playlist:Mel Test"]))
@@ -595,6 +633,15 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(self.manifest()["tracks"][0]["encoding"], "alac 16")
         self.run_prepare(self.lossless_server(flac, comment="#ipod"), cfg)
         self.assertEqual(self.files(), ["f.mp3"])
+
+    def test_lossless_tag_in_a_playlist_name(self):
+        flac = song("f", "flac")
+        server = FakeServer(songs=[flac], playlists={"L": ("Lossless #lossless", [flac])})
+        cfg = self.lossless_config()
+        cfg["sync"]["targets"] = ["starred"]
+        self.run_prepare(server, cfg)
+        self.assertEqual(self.files(), ["f.m4a"])
+        self.assertEqual([p["name"] for p in self.manifest()["playlists"]], ["Favorites"])
 
     def test_unsynced_lossless_playlist_flags_but_adds_nothing(self):
         wanted, other = song("f", "flac"), song("x", "flac")
@@ -1152,6 +1199,25 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(server, self.singles_config())
         albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
         self.assertEqual(albums, {"x1": "X Album", "x2": "X Album", "y1": "Discovery Singles"})
+
+    def test_every_synced_playlist_gathers_lone_songs_by_default(self):
+        """playlist_singles (user, 2026-11-25): no #singles tag needed. Favorites
+        (starred) is never a singles list."""
+        def server():                                   # fresh dicts, as a server sends
+            return FakeServer(
+                songs=[song("s1", albumId="as", album="S Album", artist="Sa")],
+                playlists={"p1": ("Road Trip #ipod",
+                                  [song("x1", albumId="ax", album="X Album", artist="Xa")])})
+        cfg = config()
+        cfg["sync"].update(playlist_tag="#ipod", singles_tag="#singles",
+                           playlist_singles=True)
+        self.run_prepare(server(), cfg)
+        albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
+        self.assertEqual(albums, {"x1": "Road Trip Singles", "s1": "S Album"})
+        cfg["sync"]["playlist_singles"] = False             # back to tagged only
+        self.run_prepare(server(), cfg)
+        albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
+        self.assertEqual(albums, {"x1": "X Album", "s1": "S Album"})
 
     def test_a_tools_prefix_comes_off_playlist_names_on_the_player(self):
         name = __import__("dock_prepare").player_playlist_name
@@ -1920,6 +1986,19 @@ class NoClippingTests(unittest.TestCase):
     def encodings(self):
         with open(os.path.join(self.cache, "manifest.json")) as f:
             return {t["id"]: t["encoding"] for t in json.load(f)["tracks"]}
+
+    def test_peak_survives_tags_that_are_not_utf8(self):
+        """ffmpeg echoes tags byte for byte; one that isn't UTF-8 failed the song
+        on every run (Virtual Riot - We're Not Alone, 2026-11-25)."""
+        bin_dir = os.path.join(self.cache, "bin")
+        os.makedirs(bin_dir)
+        fake = os.path.join(bin_dir, "ffmpeg")
+        with open(fake, "w") as f:
+            f.write("#!/bin/sh\nprintf '    title : We\\222re Not Alone\\n' >&2\n"
+                    "printf '[Parsed_astats_1] Peak level dB: -1.25\\n' >&2\n")
+        os.chmod(fake, 0o755)
+        with mock.patch.dict(os.environ, {"PATH": bin_dir + os.pathsep + os.environ["PATH"]}):
+            self.assertEqual(dock_prepare.decoded_peak("song.mp3"), -1.25)
 
     def test_labels(self):
         self.assertEqual(dock_prepare.steps_needed(-3.0), 0)
