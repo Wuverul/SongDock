@@ -134,12 +134,16 @@ class FavoriteTests(unittest.TestCase):
         self.rec.note_ratings("G", ["a", "b", "c"], [])
         self.stars = []
 
-    def client(self, fail=None, gone=()):
+    def client(self, fail=None, gone=(), albums=None):
         def call(method, id=None, **params):
             if method == "getSong":
                 if id in gone:
                     raise SubsonicError("getSong: Song not found (code 70)", code=70)
-                return {"song": {"id": id}}
+                return {"song": {"id": id, **({"albumId": albums[id]}
+                                              if albums and id in albums else {})}}
+            if method == "star" and "albumId" in params:
+                self.stars.append(("star album", params["albumId"]))
+                return {}
             if method == "search3":
                 return {"searchResult3": {}}
             if fail and id in fail:
@@ -162,6 +166,30 @@ class FavoriteTests(unittest.TestCase):
         c = self.client({"b": SubsonicError("no", code=50)}, gone={"a"})
         self.assertEqual(dock_plays.upload_favorites(c, self.rec), 1)
         self.assertEqual(self.rec.unsent_favorites(), ["b"])
+
+    def test_a_flow_song_favorites_its_album_too(self):
+        """user, 2026-11-25: rated from an Aurral Flow = the album comes too."""
+        self.rec.note_ratings("G", ["f1", "f2"], [], with_album={"f1", "f2"})
+        sent = dock_plays.upload_favorites(self.client(albums={"f1": "alb1"}), self.rec)
+        self.assertEqual(sent, 5)
+        self.assertIn(("star album", "alb1"), self.stars)
+        self.assertIn(("star", "f2"), self.stars)        # no album: the song still goes
+        self.assertEqual([s for s in self.stars if s[0] == "star album"], [("star album", "alb1")])
+        self.assertEqual(self.rec.unsent_favorites(), [])
+
+    def test_a_flow_album_waits_with_its_song_when_the_server_is_down(self):
+        self.rec.note_ratings("G", ["f1"], [], with_album={"f1"})
+        c = self.client({None: SubsonicError("down", network=True)}, albums={"f1": "alb1"})
+        orig = c.call
+
+        def call(method, id=None, **params):
+            if method == "star" and "albumId" in params:
+                raise SubsonicError("down", network=True)
+            return orig(method, id, **params)
+        c.call = call
+        dock_plays.upload_favorites(c, self.rec)
+        self.assertIn("f1", self.rec.unsent_favorites())
+        self.assertEqual(self.rec.favorite_albums_wanted(), {"f1"})
 
     def test_two_players_rating_one_song_favorite_it_once(self):
         self.rec.note_ratings("H", ["a"], [])

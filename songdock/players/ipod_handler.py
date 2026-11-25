@@ -90,6 +90,17 @@ def already_favorites(manifest):
             if "starred" in t.get("sources", ())}
 
 
+def flow_songs(manifest):
+    """Songs the plan has from an Aurral Flow, when favorite_flow_albums is on:
+    rating one favorites its album too (user, 2026-11-25)."""
+    plan = manifest or {}
+    if not plan.get("favorite_flow_albums"):
+        return set()
+    flows = {p["target"] for p in plan.get("playlists", []) if p.get("flow")}
+    return {t["id"] for key in ("tracks", "on_player") for t in plan.get(key, [])
+            if flows & set(t.get("sources", ()))}
+
+
 def queue_favorites(db, record, guid, stars, manifest=None):
     """Songs newly rated `stars` or more on the iPod get favorited on the server,
     once each: after that a favorite removed in Navidrome stays removed, unless
@@ -102,7 +113,8 @@ def queue_favorites(db, record, guid, stars, manifest=None):
         nid = ids.get(t.dbid) or navidrome_id_from(t)
         if nid:
             (high if t.rating >= stars * 20 else low).append(nid)
-    queued = record.note_ratings(guid, high, low, already_favorites(manifest))
+    queued = record.note_ratings(guid, high, low, already_favorites(manifest),
+                                 flow_songs(manifest))
     if queued:
         log_info(f"Rated {stars}+ stars on the iPod: favoriting {queued} song(s)")
     return queued

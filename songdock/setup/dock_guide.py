@@ -253,6 +253,9 @@ Albums neither knows are under "Other".
 A song you rate 4 or 5 stars on a stock iPod gets favorited in Navidrome, once.
 Lowering the rating or removing the favorite afterwards is left as you set it.
   FavoriteRating=5  only 5 stars (FavoriteRating=0: ratings never favorite)
+A song from an Aurral Flow (a playlist that refills itself) gets its album
+favorited too, so the whole album comes to the iPod.
+  FavoriteFlowAlbums=no  favorite only the song
 
 New versions of SongDock install by themselves. DOCK READY shows the version
 and time 4 hours ahead; it waits if a player is connected or music is being

@@ -281,6 +281,12 @@ def playlist_has_tag(playlist, tag):
     return has_tag(playlist.get("comment"), tag) or has_tag(playlist.get("name"), tag)
 
 
+def flow_mark(playlist):
+    """{"flow": True} for an Aurral Flow (a playlist that refills itself; its ID
+    starts "flow:"): a song rated from one also gets its album favorited."""
+    return {"flow": True} if str(playlist.get("id", "")).startswith("flow:") else {}
+
+
 def dock_tags(cfg):
     """Every playlist tag the dock reads, for taking them off names."""
     return [t for t in (cfg["sync"].get(k, "") for k in
@@ -399,7 +405,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
                 key = f"playlist:{pl['name']} [{pid}]"
             playlists.append({"target": key, "id": pl["id"],
                               "name": player_playlist_name(pl["name"], prefixes, name_tags),
-                              "via": "tag", **singles(pl, target[1]),
+                              "via": "tag", **singles(pl, target[1]), **flow_mark(pl),
                               "song_ids": [s["id"] for s in songs]})
             add(key, songs)
             continue
@@ -420,7 +426,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             songs = pl.get("entry", [])
             playlists.append({"target": target, "id": pl["id"],
                               "name": player_playlist_name(pl["name"], prefixes, name_tags),
-                              "via": "config", **singles(pl),
+                              "via": "config", **singles(pl), **flow_mark(pl),
                               "song_ids": [s["id"] for s in songs]})
         else:
             raise PrepareError(f"unknown target {target!r} "
@@ -2087,6 +2093,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                and cfg["sync"].get("make_room_albums", True) else {}),
             **({"favorite_rating": cfg["sync"].get("favorite_rating", 4)}
                if cfg["sync"].get("favorite_rating", 4) else {}),
+            **({"favorite_flow_albums": True}
+               if cfg["sync"].get("favorite_flow_albums", False) else {}),
             **({"lossless_playlists": lossless_lists} if lossless_lists else {}),
             **({"unsplit_artists": sorted(unsplit_artists)} if unsplit_artists else {}),
             "tracks": ready, "on_player": uncached, "playlists": playlists,

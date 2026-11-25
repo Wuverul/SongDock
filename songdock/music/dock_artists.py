@@ -384,9 +384,11 @@ def playlist_singles(songs, playlists, shapes=None, max_tracks=1):
     for pl in lists:
         for sid in pl.get("song_ids", ()):
             s = by_id.get(sid)
-            album = per_album.get((s or {}).get("albumId"), [])
+            # No album ID (some Aurral songs, 2026-11-25): the only song of its album.
+            album_id = (s or {}).get("albumId")
+            album = per_album.get(album_id, []) if album_id else [s] if s else []
             if not s or sid in moved or s.get("folder_album") or not (
-                    len(album) == 1 or is_single(s["albumId"], shapes, max_tracks)):
+                    len(album) == 1 or is_single(album_id, shapes, max_tracks)):
                 continue                       # (folder_album: in "<Artist> Singles")
             for t in album:
                 if t["id"] in moved or t.get("folder_album"):

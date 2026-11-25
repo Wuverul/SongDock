@@ -152,6 +152,24 @@ def _scrobble(client, plays):
                 submission="true")
 
 
+def star_album(client, nid):
+    """Favorite the album of song `nid` (a Flow song rated on a player). Only a
+    network failure raises; a song with no album is logged and left at that."""
+    try:
+        song = client.call("getSong", id=nid).get("song", {})
+        if not song.get("albumId"):
+            log.warning("Couldn't favorite the album of %s - %s: the server gives none",
+                        song.get("artist"), song.get("title"))
+            return
+        client.call("star", albumId=song["albumId"])
+        log.info("Favorited album %s - %s (rated from a Flow)",
+                 song.get("albumArtist") or song.get("artist"), song.get("album"))
+    except SubsonicError as e:
+        if e.network:
+            raise
+        log.warning("Couldn't favorite the album of song %s: %s", nid, e)
+
+
 def upload_favorites(client, record):
     """Favorite the songs ratings queued (Record.note_ratings). Returns how many
     went out. The server being down keeps them queued; a song it no longer has
@@ -159,6 +177,7 @@ def upload_favorites(client, record):
     sent = 0
     try:
         found = check_songs(client, record, record.unsent_favorites())
+        albums = record.favorite_albums_wanted()
     except SubsonicError as e:
         log.warning("Server unreachable; rated songs stay queued to favorite: %s", e)
         return 0
@@ -168,6 +187,8 @@ def upload_favorites(client, record):
             record.mark_favorited(nid)
             continue
         try:
+            if nid in albums:                    # from a Flow: its album too (stars repeat safely)
+                star_album(client, nid)
             client.call("star", id=nid)
         except SubsonicError as e:
             if e.network:

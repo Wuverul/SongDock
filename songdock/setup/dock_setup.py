@@ -31,6 +31,8 @@ and the list of known iPods written into its MediaDock.txt.
     SinglesAlbum=4               singles before "<Artist> Singles" (0 = off)
     SinglesTracks=2              untagged releases up to this many tracks are singles
     FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
+    FavoriteFlowAlbums=no        a song rated from an Aurral Flow favorites only the
+                                 song, not its album too
     AutoUpdate=no                new releases are announced, not installed
     PlaylistSingles=no           only #singles playlists gather lone songs in
                                  "<Playlist> Singles" (yes = every synced playlist)
@@ -78,7 +80,7 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "singles
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
             "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate", "genrelookup": "GenreLookup", "playlistsingles": "PlaylistSingles",
-            "favoriterating": "FavoriteRating", "singlesalbum": "SinglesAlbum",
+            "favoriterating": "FavoriteRating", "favoriteflowalbums": "FavoriteFlowAlbums", "singlesalbum": "SinglesAlbum",
             "singlestracks": "SinglesTracks"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
@@ -331,6 +333,14 @@ def plan_settings(settings, cfg):
             done.append("Genre lookups " + ("on" if on else "off"))
         else:
             done.append("Genre lookups already " + ("on" if on else "off"))
+    if "FavoriteFlowAlbums" in settings:
+        on = yes_no("FavoriteFlowAlbums", settings["FavoriteFlowAlbums"])
+        if on != cfg["sync"].get("favorite_flow_albums", True):
+            changes[("sync", "favorite_flow_albums")] = on
+            done.append("Rating a Flow song favorites " + ("its album too" if on else "the song only"))
+        else:
+            done.append("Rating a Flow song already favorites " +
+                        ("its album too" if on else "the song only"))
     if "PlaylistSingles" in settings:
         on = yes_no("PlaylistSingles", settings["PlaylistSingles"])
         if on != cfg["sync"].get("playlist_singles", True):

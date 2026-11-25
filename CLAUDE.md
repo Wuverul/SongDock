@@ -1102,6 +1102,12 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   another. Sent with `star` by the sync and every prepare check. Stock iPods only.
   **Only ever adds (user):** no code may send `unstar`; a test fails if any does. A song
   already a favorite (the plan's "starred" source, song or album) gets nothing sent.
+  **Flow songs bring their album (user, 2026-11-25):** a song rated from an Aurral Flow
+  (playlist ID `flow:...`, marked `"flow": true` in the plan by `dock_prepare.flow_mark`)
+  also gets its album starred, so the whole album syncs. `[sync] favorite_flow_albums`
+  (default true, `FavoriteFlowAlbums=`; the plan carries it). `ipod_handler.flow_songs` ->
+  `rated_favorites.with_album`; `dock_plays.star_album` reads the album from getSong (no
+  album ID: the song alone) and stars it before the song, so a network failure keeps both.
 - **Making room on a full player (`dock_room.py`, user, 2026-10-30):** new songs
   that don't fit push off the oldest songs, just enough, and never one dated
   within `recent_play_months` (date = latest of last play, added to the player,

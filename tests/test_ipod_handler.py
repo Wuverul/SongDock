@@ -995,6 +995,19 @@ class HandlerTests(unittest.TestCase):
         h.queue_favorites(self.rate(5), self.rec, G, 4, plan)
         self.assertEqual(self.rec.unsent_favorites(), [])
 
+    def test_a_song_from_a_flow_queues_its_album_too(self):
+        song = self.song("n1", "One")
+        self.apply(self.manifest([song]))
+        plan = self.manifest([dict(song, sources=["playlist:Trending DnB Mix"])])
+        plan["playlists"] = [{"target": "playlist:Trending DnB Mix", "id": "flow:x",
+                              "flow": True, "song_ids": ["n1"]}]
+        h.queue_favorites(self.rate(5), self.rec, G, 4, plan)
+        self.assertEqual(self.rec.favorite_albums_wanted(), set())      # setting off
+        plan["favorite_flow_albums"] = True
+        self.rec.db.execute("DELETE FROM rated_favorites")
+        h.queue_favorites(self.rate(5), self.rec, G, 4, plan)
+        self.assertEqual(self.rec.favorite_albums_wanted(), {"n1"})
+
     def test_no_rating_can_remove_a_favorite(self):
         # 1 star on a favorite, then every other rating: only "star" is ever sent,
         # and no code in the dock can send anything else about favorites.

@@ -536,7 +536,8 @@ def queue_keep_list(record, guid, mount, manifest):
     if unknown:
         log_info(f"{KEEP_LIST}: {unknown} line(s) aren't songs the dock put on this player")
     queued = record.note_ratings(guid, found, set(known.values()) - found,
-                                 ipod_handler.already_favorites(manifest))
+                                 ipod_handler.already_favorites(manifest),
+                                 ipod_handler.flow_songs(manifest))
     if queued:
         log_info(f"{KEEP_LIST}: favoriting {queued} song(s)")
     return queued

@@ -315,6 +315,14 @@ class SettingsTests(PlayersBase):
         self.assertIs(self.settings()["sync"]["make_room_albums"], True)
         self.assertIn("MakeRoomAlbums", self.apply("MakeRoomAlbums=maybe\n")["reason"])
 
+    def test_favorite_flow_albums_from_the_ipod(self):
+        self.assertEqual(self.apply("FavoriteFlowAlbums=no\n")["done"],
+                         ["Rating a Flow song favorites the song only"])
+        self.assertIs(self.settings()["sync"]["favorite_flow_albums"], False)
+        self.assertEqual(self.apply("FavoriteFlowAlbums=yes\n")["done"],
+                         ["Rating a Flow song favorites its album too"])
+        self.assertIs(self.settings()["sync"]["favorite_flow_albums"], True)
+
     def test_playlist_singles_from_the_ipod(self):
         self.assertEqual(self.apply("PlaylistSingles=no\n")["done"],
                          ["Playlist singles albums for tagged playlists only"])

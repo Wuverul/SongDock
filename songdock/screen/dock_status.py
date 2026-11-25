@@ -513,14 +513,17 @@ def render(screen, args):
         d.text((8, 106), bottom, font=small_f, fill=0)
 
     elif screen == "preparing":
-        count = f"  {args.done}/{args.total}" if args.total else ""
+        # One song: no "0/1" and no bar that sits empty until it's done (user,
+        # 2026-11-25); the detail line names the song.
+        several = (args.total or 0) > 1
+        count = f"  {args.done}/{args.total}" if several else ""
         header(f"PREPARING{count}", inverted=False)
         rows = [("Player safe to remove", body_f)]
         if args.detail:
             rows.append((fit(args.detail, body_f), body_f))
         rows.append((f"Updated {now}", small_f))
         lines(rows)
-        if args.total:
+        if several:
             progress_bar(args.done or 0, args.total)
 
     else:  # idle

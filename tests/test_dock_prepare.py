@@ -518,6 +518,18 @@ class PrepareTests(unittest.TestCase):
                                "P2": ("playlist:Top 2024", "Top 2024"),
                                "P4": ("playlist:#ipod", "#ipod")})
 
+    def test_aurral_flows_are_marked_in_the_plan(self):
+        server = FakeServer(playlists={
+            "flow:abc": ("Trending DnB Mix #iPod", [song("b1")]),
+            "shared:def": ("Future Funk #iPod", [song("c1")])})
+        cfg = self.tagged_cfg()
+        cfg["sync"]["favorite_flow_albums"] = True
+        self.run_prepare(server, cfg)
+        m = self.manifest()
+        self.assertEqual({p["id"]: p.get("flow", False) for p in m["playlists"]
+                          if p["via"] == "tag"}, {"flow:abc": True, "shared:def": False})
+        self.assertIs(m["favorite_flow_albums"], True)
+
     def test_moving_the_tag_from_comment_to_name_keeps_the_playlist(self):
         server = FakeServer(playlists={"P1": ("Mel Test", [song("b1")], "#ipod")})
         self.run_prepare(server, self.tagged_cfg())
@@ -1218,6 +1230,18 @@ class PrepareTests(unittest.TestCase):
         self.run_prepare(server(), cfg)
         albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
         self.assertEqual(albums, {"x1": "X Album", "s1": "S Album"})
+
+    def test_playlist_singles_with_songs_that_have_no_album_id(self):
+        """Some Aurral songs come without albumId (2026-11-25): such a song is the
+        only song of its album, and the run doesn't stop."""
+        bare = song("x1", album="Loose", artist="Xa")
+        bare.pop("albumId", None)
+        server = FakeServer(playlists={"p1": ("Road Trip #ipod", [bare])})
+        cfg = config()
+        cfg["sync"].update(playlist_tag="#ipod", playlist_singles=True)
+        self.run_prepare(server, cfg)
+        albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
+        self.assertEqual(albums, {"x1": "Road Trip Singles"})
 
     def test_a_tools_prefix_comes_off_playlist_names_on_the_player(self):
         name = __import__("dock_prepare").player_playlist_name

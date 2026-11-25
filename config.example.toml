@@ -85,6 +85,9 @@ display.theme = "light"
 # A song you rate this many stars on the iPod gets starred in Navidrome, once
 # (0 = never). Rockbox players use their Keep playlist instead.
 # sync.favorite_rating = 4
+# ...and a song rated from an Aurral Flow (a playlist that refills itself) gets
+# its album starred too, so the whole album comes to the iPod.
+# sync.favorite_flow_albums = true
 
 # --- When the iPod is full ---
 # Normally new songs wait and the screen says PLAYER FULL. With make_room,

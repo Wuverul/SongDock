@@ -28,6 +28,9 @@ DEFAULTS = {
              # Every synced playlist gathers its lone songs in "<Playlist> Singles",
              # no #singles tag needed (user, 2026-11-25).
              "playlist_singles": True,
+             # A rated song from an Aurral Flow (playlist ID "flow:...") also gets its
+             # album favorited (user, 2026-11-25).
+             "favorite_flow_albums": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -215,6 +218,8 @@ def load(path=None):
         raise ConfigError(f"{path}: genre_lookup must be true or false")
     if not isinstance(cfg["sync"]["playlist_singles"], bool):
         raise ConfigError(f"{path}: playlist_singles must be true or false")
+    if not isinstance(cfg["sync"]["favorite_flow_albums"], bool):
+        raise ConfigError(f"{path}: favorite_flow_albums must be true or false")
     if not isinstance(cfg["sync"]["auto_update"], bool):
         raise ConfigError(f"{path}: auto_update must be true or false")
     w = cfg["sync"]["workers"]

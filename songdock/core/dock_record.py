@@ -148,6 +148,7 @@ class Record:
         self._add_column("players", "swaps_no_room INTEGER")     # format swaps held back (2026-10-30)
         self._add_column("players", "full INTEGER")              # last sync ran out of room (2026-10-30)
         self._add_column("players", "model_source TEXT")         # sysinfo/serial/guess/manual (2026-11-09)
+        self._add_column("rated_favorites", "with_album INTEGER")  # Flow songs (2026-11-25)
         self._add_column("pending_plays", "gone_at INTEGER")     # song gone from the server (2026-11-10)
         if new and os.geteuid() == 0:
             # Created by the root sync job: hand it to the folder's owner (the
@@ -347,12 +348,14 @@ class Record:
                                               if n in held}
         return held or {}
 
-    def note_ratings(self, guid, high, low, favorited=()):
+    def note_ratings(self, guid, high, low, favorited=(), with_album=()):
         """Songs on this player rated at the favorite level (`high`) or below it
         (`low`). A song newly high is queued once, and only a song that drops
         low can be queued again. `favorited`: songs already favorites, directly
-        or by album: noted as done, with nothing to send. Returns how many were
+        or by album: noted as done, with nothing to send. `with_album`: songs
+        whose album is favorited too (from an Aurral Flow). Returns how many were
         queued."""
+        with_album = set(with_album)
         now = int(time.time())
         with self.db:
             before = self.db.total_changes
@@ -361,8 +364,9 @@ class Record:
                                 [(guid, n, now, now) for n in high if n in favorited])
             noted = self.db.total_changes - before
             self.db.executemany("INSERT OR IGNORE INTO rated_favorites (guid, navidrome_id, "
-                                "queued_at) VALUES (?, ?, ?)",
-                                [(guid, n, now) for n in high if n not in favorited])
+                                "queued_at, with_album) VALUES (?, ?, ?, ?)",
+                                [(guid, n, now, 1 if n in with_album else None)
+                                 for n in high if n not in favorited])
             queued = self.db.total_changes - before - noted
             self.db.executemany("DELETE FROM rated_favorites WHERE guid = ? AND "
                                 "navidrome_id = ? AND sent_at IS NOT NULL",
@@ -372,6 +376,12 @@ class Record:
     def unsent_favorites(self):
         return [r[0] for r in self.db.execute("SELECT DISTINCT navidrome_id FROM rated_favorites "
                                               "WHERE sent_at IS NULL ORDER BY queued_at")]
+
+    def favorite_albums_wanted(self):
+        """Queued songs whose album is to be favorited too."""
+        return {r[0] for r in self.db.execute("SELECT DISTINCT navidrome_id FROM "
+                                              "rated_favorites WHERE sent_at IS NULL "
+                                              "AND with_album = 1")}
 
     def mark_favorited(self, nid):
         with self.db:
