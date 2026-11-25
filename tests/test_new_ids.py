@@ -50,6 +50,27 @@ class MatchTests(unittest.TestCase):
         twice = targets + [song("n2", title="One", album="Album (Live)", track=2, discNumber=1)]
         self.assertEqual(dock_prepare.match_new_ids(earlier, twice), {})   # which one? neither
 
+    def test_another_server_rounding_lengths_differently_still_matches(self):
+        """Aurral, 2026-11-25: 140 of 299 songs a second longer than Navidrome said."""
+        earlier = [self.entry("o1", "One", mbid="AAA"), self.entry("o2", "Two", track=2)]
+        targets = [song("n1", title="One", musicBrainzId="aaa", duration=201),
+                   song("n2", title="Two", track=2, discNumber=1, duration=199)]
+        self.assertEqual(dock_prepare.match_new_ids(earlier, targets), {"o1": "n1", "o2": "n2"})
+
+    def test_within_two_seconds_only(self):
+        earlier = [self.entry("o1", "One", mbid="AAA")]
+        targets = [song("n1", title="One", musicBrainzId="aaa", duration=203)]
+        self.assertEqual(dock_prepare.match_new_ids(earlier, targets), {})
+
+    def test_loose_lengths_never_confuse_two_songs_of_one_name(self):
+        # Studio and live take, no recording IDs, other album names: the loose
+        # (artist + title) match needs one of each, or the lengths to tell them apart.
+        earlier = [self.entry("o1", "Song", album="Studio", duration=200),
+                   self.entry("o2", "Song", album="Live", duration=260)]
+        targets = [song("n1", title="Song", album="Studio (2024)", duration=201),
+                   song("n2", title="Song", album="Live (2024)", duration=261)]
+        self.assertEqual(dock_prepare.match_new_ids(earlier, targets), {})
+
     def test_songs_still_under_their_id_are_left_alone(self):
         earlier = [self.entry("s1", "Kept")]
         self.assertEqual(dock_prepare.match_new_ids(earlier, [song("s1", title="Kept")]), {})

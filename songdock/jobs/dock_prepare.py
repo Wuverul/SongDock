@@ -926,22 +926,38 @@ def match_new_ids(earlier, targets):
     gone = {e["id"]: e for e in earlier if e["id"] not in now}
     new = {t["id"]: t for t in targets if t["id"] not in before}
     mapping = {}
-    for which in (0, 1, 2):
-        olds, news = {}, {}
-        for i, e in gone.items():
-            if i not in mapping and song_identity(e)[which]:
-                olds.setdefault(song_identity(e)[which], []).append(i)
-        taken = set(mapping.values())
-        for i, t in new.items():
-            if i not in taken and song_identity(t)[which]:
-                news.setdefault(song_identity(t)[which], []).append(i)
-        for key, ids in olds.items():
-            if len(ids) == 1 and len(news.get(key, ())) == 1:
-                mapping[ids[0]] = news[key][0]
-            elif which == 1 and len(ids) == len(news.get(key, ())):
-                # Copies alike in every field (two editions of one album, both selected:
-                # Nightwish's Dark Passion Play, 2026-11-04): any pairing is the same.
-                mapping.update(zip(sorted(ids), sorted(news[key])))
+
+    def close(old_id, new_id):
+        return abs(int(gone[old_id].get("duration") or 0)
+                   - int(new[new_id].get("duration") or 0)) <= SAME_LENGTH
+
+    # Exact lengths first; then the same keys without the length, lengths within
+    # SAME_LENGTH: another server rounds them its own way (Aurral, 2026-11-25: 140
+    # of 299 songs a second longer than Navidrome said, so half the library looked new).
+    for exact in (True, False):
+        for which in (0, 1, 2):
+            olds, news = {}, {}
+            for i, e in gone.items():
+                key = song_identity(e)[which]
+                if i not in mapping and key:
+                    olds.setdefault(key if exact else key[:-1], []).append(i)
+            taken = set(mapping.values())
+            for i, t in new.items():
+                key = song_identity(t)[which]
+                if i not in taken and key:
+                    news.setdefault(key if exact else key[:-1], []).append(i)
+            for key, ids in olds.items():
+                found = news.get(key, ())
+                if len(ids) == 1 and len(found) == 1:
+                    if exact or close(ids[0], found[0]):
+                        mapping[ids[0]] = found[0]
+                elif which == 1 and len(ids) == len(found):
+                    # Copies alike in every field (two editions of one album, both
+                    # selected: Nightwish's Dark Passion Play, 2026-11-04): any pairing
+                    # is the same.
+                    pairs = list(zip(sorted(ids), sorted(found)))
+                    if exact or all(close(a, b) for a, b in pairs):
+                        mapping.update(pairs)
     return mapping
 
 

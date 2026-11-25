@@ -1534,6 +1534,11 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   copied incl. its entry JSON, rated_favorites), coming_back.json; the iPod's ID comment
   follows in `fill_missing_names` (no re-copy). Dry runs only report. Plan entries carry
   `mbid`. Unmatched ones are logged ("gone ... without a match").
+  **Another server (Aurral, 2026-11-25):** lengths are rounded differently (140 of 299
+  songs a second longer than Navidrome said), so after an exact pass `match_new_ids`
+  matches the same keys without the length, lengths within `SAME_LENGTH` (2 s), still
+  one-to-one. Dry run before the switch: 6,943 followed, 525 gone (untagged playlists,
+  albums not on Aurral).
 - **No clipping (user, 2026-11-04; built, not on hardware yet):** loud masters made
   into MP3 decode above 0 dBFS and the player clips them (33 of 40 sampled converted
   songs, up to +3 dB; why the user's ALACs sounded better). `dock_prepare`: every
