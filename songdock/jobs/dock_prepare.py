@@ -1025,9 +1025,16 @@ def follow_new_ids(previous, targets, cache_dir, rename_fn=None, dry_run=False):
     except (OSError, ValueError):
         pass
     changed = rename_fn(mapping) if rename_fn else 0
-    log.warning("Navidrome gave %d songs new IDs (a server update re-indexing the library?): "
-                "followed them; %d cache files kept, %d record rows updated, nothing fetched "
-                "or copied again", len(mapping), moved, changed or 0)
+    # The plan on disk follows at once (2026-11-25, the move to Aurral): the record now
+    # has the new IDs, and a sync before this run wrote its next plan compared them with
+    # the old plan's - 6,967 songs would have looked gone and been removed from the iPod.
+    # After the record: a crash between the two leaves the old plan, and the next run
+    # follows again (the record's rename is then a no-op).
+    if rename_fn and previous.get("tracks") is not None:
+        write_json_atomic(os.path.join(cache_dir, "manifest.json"), previous)
+    log.warning("The server gave %d songs new IDs (a re-index after an update, or another "
+                "server): followed them; %d cache files kept, %d record rows updated, "
+                "nothing fetched or copied again", len(mapping), moved, changed or 0)
     return mapping
 
 

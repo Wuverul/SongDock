@@ -1539,6 +1539,10 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   matches the same keys without the length, lengths within `SAME_LENGTH` (2 s), still
   one-to-one. Dry run before the switch: 6,943 followed, 525 gone (untagged playlists,
   albums not on Aurral).
+  **The plan file follows at once:** `follow_new_ids` rewrites manifest.json with the
+  re-keyed plan right after the record (found on the real switch: the record had new
+  IDs while the plan kept the old ones until the run's first batch, ~1.5 h, and a sync
+  then would have removed 6,967 songs; the dock was set to write = false meanwhile).
 - **No clipping (user, 2026-11-04; built, not on hardware yet):** loud masters made
   into MP3 decode above 0 dBFS and the player clips them (33 of 40 sampled converted
   songs, up to +3 dB; why the user's ALACs sounded better). `dock_prepare`: every

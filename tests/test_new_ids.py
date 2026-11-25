@@ -122,6 +122,24 @@ class FollowTests(unittest.TestCase):
             self.assertTrue(f.read().endswith(b"|lowered"))
         self.assertEqual(made["o1"]["file"], "tracks/o1.mp3")
 
+    def test_the_plan_on_disk_follows_before_the_run_goes_on(self):
+        """2026-11-25: the record had the new IDs while manifest.json kept the old ones
+        until the run's first new plan; a sync in between would remove every song."""
+        server = FakeServer(songs=[song("o1", title="One", track=1, discNumber=1)])
+        self.run_prepare(server)
+        seen = {}
+
+        def convert(src, dst, *a, **kw):           # runs after the follow step
+            seen["ids"] = {t["id"] for t in self.manifest()["tracks"]}
+            return fake_convert(src, dst, *a, **kw)
+        server = FakeServer(songs=[song("n1", title="One", track=1, discNumber=1),
+                                   song("n3", title="New", track=3, discNumber=1)])
+        dock_prepare.prepare(server, config(), self.cache, convert_fn=convert,
+                             disk_usage=ROOMY, player_kinds={"stock"}, lower_fn=None,
+                             rename_fn=lambda m: self.renamed.update(m) or len(m))
+        self.assertEqual(self.renamed, {"o1": "n1"})
+        self.assertEqual(seen["ids"], {"n1"})
+
     def test_files_a_run_set_aside_come_back(self):
         # 2026-11-04: the run that saw the new IDs moved the old files to the grace
         # list and downloaded new copies before it was stopped.
