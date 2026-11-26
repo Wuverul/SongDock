@@ -1539,6 +1539,12 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   matches the same keys without the length, lengths within `SAME_LENGTH` (2 s), still
   one-to-one. Dry run before the switch: 6,943 followed, 525 gone (untagged playlists,
   albums not on Aurral).
+  **Starred albums cached (user, 2026-11-25):** `starred_songs` keeps each starred
+  album's getAlbum answer in `cache/albums.json` with getStarred2's summary of it
+  (`album_summary`: songCount, duration, name, artist, year, MBID). A check re-reads only
+  albums whose summary changed, new ones, and the `REFRESH_EACH_CHECK` (20, or 1/40)
+  stalest copies, so every album is re-read about daily. No songCount = read every time.
+  Dry runs don't write it. On Aurral: 765 albums 560 s -> 12.6 s (20 read, same 6,287 songs).
   **The plan file follows at once:** `follow_new_ids` rewrites manifest.json with the
   re-keyed plan right after the record (found on the real switch: the record had new
   IDs while the plan kept the old ones until the run's first batch, ~1.5 h, and a sync

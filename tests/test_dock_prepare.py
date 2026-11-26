@@ -49,8 +49,10 @@ class FakeServer:
 
     def call(self, endpoint, **params):
         if endpoint == "getStarred2":
-            return {"starred2": {"song": self.songs,
-                                 "album": [{"id": a} for a in self.albums]}}
+            return {"starred2": {"song": self.songs, "album": [
+                {"id": a, **{k: v for k, v in self.album_meta.get(a, {}).items()
+                             if k in ("songCount", "duration", "name")}}
+                for a in self.albums]}}
         if endpoint == "getAlbum":
             self.album_lookups = getattr(self, "album_lookups", []) + [params["id"]]
             return {"album": {"name": self.album_names.get(params["id"]),
@@ -473,6 +475,43 @@ class PrepareTests(unittest.TestCase):
         self.assertIn("iPod playlist 'Favorites': 2 songs from 1 album(s): Album", plan)
         self.assertIn("iPod playlist 'Mel Test' [config]: 3 songs from 2 album(s): "
                       "Album, Other", plan)
+
+    def test_starred_albums_are_read_again_only_when_they_change(self):
+        """user, 2026-11-25: all 763 starred albums took ~6 min of every check on
+        Aurral. The dock keeps their track lists; getStarred2's summary says which
+        changed, and the 20 stalest copies are re-read anyway."""
+        def server(extra=False):
+            albums = {f"al{i}": [song(f"s{i}", albumId=f"al{i}", album=f"A{i}")]
+                      for i in range(60)}
+            meta = {a: {"songCount": 1, "duration": 200} for a in albums}
+            if extra:                                   # al5 gains a track
+                albums["al5"].append(song("s5b", albumId="al5", album="A5", track=2))
+                meta["al5"] = {"songCount": 2, "duration": 400}
+            albums["plain"] = [song("p1", albumId="plain", album="P")]   # no songCount
+            return FakeServer(albums=albums, album_meta=meta)
+        first = server()
+        self.run_prepare(first)
+        self.assertEqual(len(first.album_lookups), 61)
+        second = server()
+        self.run_prepare(second)
+        self.assertEqual(len(second.album_lookups), 21)           # 20 stalest + "plain"
+        self.assertIn("plain", second.album_lookups)
+        third = server(extra=True)
+        self.run_prepare(third)
+        self.assertIn("al5", third.album_lookups)
+        self.assertLessEqual(len(third.album_lookups), 22)
+        self.assertIn("s5b", {t["id"] for t in self.manifest()["tracks"]})
+        # Copies are re-read in turn: the third check refreshes others than the second,
+        # besides "plain" (no summary) and al5 (changed).
+        self.assertEqual(set(second.album_lookups) & set(third.album_lookups), {"plain", "al5"})
+
+    def test_an_unstarred_album_leaves_the_dock_copy(self):
+        albums = {"a1": [song("s1", albumId="a1")], "a2": [song("s2", albumId="a2")]}
+        meta = {a: {"songCount": 1} for a in albums}
+        self.run_prepare(FakeServer(albums=albums, album_meta=meta))
+        self.run_prepare(FakeServer(albums={"a1": albums["a1"]}, album_meta=meta))
+        with open(os.path.join(self.cache, dock_prepare.ALBUM_CACHE)) as f:
+            self.assertEqual(set(json.load(f)["albums"]), {"a1"})
 
     def test_favorites_playlist_dedupes_and_can_be_turned_off(self):
         # A starred song that's also on a starred album appears once.

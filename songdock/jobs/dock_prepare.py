@@ -180,16 +180,62 @@ class PrepareError(Exception):
 
 
 # --------------------------------------------------------------- targets ----
-def starred_songs(client, album_info=None):
+ALBUM_CACHE = "albums.json"     # in the cache folder: starred albums' track lists
+ALBUM_CACHE_VERSION = 1
+ALBUM_SUMMARY = ("songCount", "duration", "name", "artist", "year", "musicBrainzId")
+REFRESH_EACH_CHECK = 20         # cached albums re-read per check anyway, stalest first
+REFRESH_SHARE = 40              # ...or 1/40 of them, if more: each about once a day at 30 min
+
+
+def album_summary(entry):
+    """What getStarred2 says of a starred album that changes with its tracks (a
+    track added or removed changes the count and length); None if the server
+    gives no song count, and the album is read every time."""
+    if entry.get("songCount") is None:
+        return None
+    return [entry.get(k) for k in ALBUM_SUMMARY]
+
+
+def starred_songs(client, album_info=None, cache=None, clock=time.time):
     """Starred songs plus every track of a starred album. Fills
-    `album_info` ({album id: album fields}) from the albums it reads."""
+    `album_info` ({album id: album fields}) from the albums it reads.
+
+    cache: the dock's copy of starred albums (ALBUM_CACHE, user 2026-11-25: on Aurral,
+    reading all 763 took ~6 min of every check). An album is read again only when
+    getStarred2's summary of it changed, when it's new, or when it's among the
+    REFRESH_EACH_CHECK stalest copies (edits the summary can't show, e.g. a retitled
+    track, arrive within about a day). Updated in place; albums no longer starred
+    leave it."""
     starred = client.call("getStarred2").get("starred2", {})
     songs = list(starred.get("song", []))
-    for album in starred.get("album", []):
-        info = client.call("getAlbum", id=album["id"]).get("album", {})
+    albums = starred.get("album", [])
+    copies = {}
+    if cache is not None and cache.get("version") == ALBUM_CACHE_VERSION:
+        copies = cache.get("albums", {})
+    held = sorted((a["id"] for a in albums if a["id"] in copies),
+                  key=lambda i: copies[i].get("read", 0))
+    refresh = set(held[:max(REFRESH_EACH_CHECK, math.ceil(len(albums) / REFRESH_SHARE))])
+    kept, reads = {}, 0
+    for album in albums:
+        summary = album_summary(album)
+        copy = copies.get(album["id"])
+        if summary is not None and copy and copy.get("summary") == summary \
+                and album["id"] not in refresh:
+            info, read_at = copy["album"], copy["read"]
+        else:
+            info = client.call("getAlbum", id=album["id"]).get("album", {})
+            read_at, reads = clock(), reads + 1
+        if summary is not None:
+            kept[album["id"]] = {"summary": summary, "read": read_at, "album": info}
         if album_info is not None:
             album_info[album["id"]] = album_record(info)
         songs += info.get("song", [])
+    if cache is not None:
+        cache.clear()
+        cache.update(version=ALBUM_CACHE_VERSION, albums=kept)
+        if albums:
+            log.info("Starred albums: %d read from the server, %d from the dock's copy",
+                     reads, len(albums) - reads)
     if starred.get("artist"):
         log.info("Ignoring %d starred artist(s): only songs and albums are synced",
                  len(starred["artist"]))
@@ -330,7 +376,8 @@ def lossless_songs(client, tag, targets, playlists, previous_ids=()):
 
 def target_tracks(client, targets, known_playlists=None, favorites_name="Favorites",
                   tag="", previously_tagged=(), album_info=None, album_copies=None,
-                  singles_tag="", prefixes=(), name_tags=(), all_singles=False):
+                  singles_tag="", prefixes=(), name_tags=(), all_singles=False,
+                  album_cache=None):
     """Resolve the configured targets into one de-duplicated set of tracks.
 
     targets: e.g. ["starred", "playlist:Mel Test"].
@@ -344,6 +391,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
     album a single is on; last run's answers go in, this run's come out.
     singles_tag: playlists with this in their comment (e.g. "#singles") sync too,
     and are marked "singles" in their record (playlist_singles).
+    album_cache: the dock's copy of starred albums (starred_songs), updated in place.
     all_singles: [sync] playlist_singles: every synced playlist is marked "singles",
     tagged or not (user, 2026-11-25); Favorites never is.
     prefixes: [sync] playlist_prefixes, taken off playlist names on the player
@@ -410,7 +458,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             add(key, songs)
             continue
         if target == "starred":
-            songs = starred_songs(client, album_info)
+            songs = starred_songs(client, album_info, album_cache)
             if favorites_name:
                 playlists.append({"target": target, "id": None, "name": favorites_name,
                                   "via": "starred",
@@ -1625,12 +1673,21 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                          if p.get("via") == "tag"]
     album_info = {}                 # album records read this run, shared
     album_copies = dict(previous.get("album_copies", {}))
+    album_cache_path = os.path.join(cache_dir, ALBUM_CACHE)
+    try:
+        with open(album_cache_path) as f:
+            album_cache = json.load(f)
+    except (OSError, ValueError):
+        album_cache = {}                # none yet, or unreadable: every album is read
     targets, sources, playlists = target_tracks(
         client, cfg["sync"]["targets"], known,
         cfg["sync"].get("favorites_playlist", "Favorites"),
         cfg["sync"].get("playlist_tag", ""), previously_tagged, album_info, album_copies,
         cfg["sync"].get("singles_tag", ""), cfg["sync"].get("playlist_prefixes", ()),
-        name_tags=dock_tags(cfg), all_singles=cfg["sync"].get("playlist_singles", False))
+        name_tags=dock_tags(cfg), all_singles=cfg["sync"].get("playlist_singles", False),
+        album_cache=album_cache)
+    if not dry_run and album_cache:
+        write_json_atomic(album_cache_path, album_cache)
     unsplit_artists = set()
     dock_artists.apply_aliases(targets, cfg["sync"].get("artist_aliases", ()))
     album_labels = {}
