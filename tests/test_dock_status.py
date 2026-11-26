@@ -405,7 +405,7 @@ class PartialRefreshTests(unittest.TestCase):
                  "--ip", "192.168.20.57", "--wifi", "-61"])
             dock_status.render("wifi", args)
         self.assertIn("IP 192.168.20.57", drawn)
-        self.assertIn("Navidrome reachable", drawn)
+        self.assertIn("Server reachable", drawn)
         self.assertNotIn("Safe to remove", drawn)
 
     def test_sync_progress_flashes_only_on_screen_change_and_every_n(self):

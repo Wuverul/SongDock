@@ -323,6 +323,16 @@ class SettingsTests(PlayersBase):
                          ["Rating a Flow song favorites its album too"])
         self.assertIs(self.settings()["sync"]["favorite_flow_albums"], True)
 
+    def test_server_type_from_the_ipod(self):
+        # The test config has no type line: navidrome, and the line gets added.
+        self.assertEqual(self.apply("ServerType=subsonic\n")["done"],
+                         ["Server type: Subsonic (Aurral or another)"])
+        self.assertEqual(self.settings()["server"]["type"], "subsonic")
+        self.assertEqual(self.settings()["server"]["url"], "https://old.example.com")
+        self.assertEqual(self.apply("ServerType=Navidrome\n")["done"], ["Server type: Navidrome"])
+        self.assertEqual(self.settings()["server"]["type"], "navidrome")
+        self.assertIn("ServerType", self.apply("ServerType=plex\n")["reason"])
+
     def test_favorite_on_the_go_from_the_ipod(self):
         self.assertEqual(self.apply("FavoriteOnTheGo=no\n")["done"],
                          ["Songs in On-The-Go aren't favorited"])
@@ -393,9 +403,9 @@ class SettingsTests(PlayersBase):
         result = self.apply("Server=https://new.example.com/\nUsername=jo\n"
                             "Password=new-secret\n")
         self.assertTrue(result["ok"])
-        self.assertEqual(self.settings()["server"], {"url": "https://new.example.com",
-                                                     "username": "jo",
-                                                     "password": "new-secret"})
+        server = {k: v for k, v in self.settings()["server"].items() if k != "type"}
+        self.assertEqual(server, {"url": "https://new.example.com", "username": "jo",
+                                  "password": "new-secret"})
         self.assertNotIn("new-secret", " ".join(result["done"]))
         self.assertEqual(self.server.logins, [("https://new.example.com", "jo")])
 

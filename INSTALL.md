@@ -32,7 +32,9 @@ exactly what to type.
 
 **Also:**
 - A computer (Mac, Windows or Linux) on the same Wi-Fi
-- A **Navidrome** server and an account on it, reachable from the dock's Wi-Fi
+- A music server and an account on it, reachable from the dock's Wi-Fi:
+  [Navidrome](https://www.navidrome.org/), [Aurral](https://aurral.org/), or another
+  Subsonic server (only those two are tested)
   - Use either `http://` on your local network, or `https://` with a properly
     signed certificate. A self-signed certificate will be refused.
 
@@ -49,7 +51,7 @@ exactly what to type.
    **`MediaDock.txt`**. Without it the dock won't touch the iPod.
 3. Eject it.
 
-> **Whose music and plays:** the dock fills this iPod from the Navidrome account in
+> **Whose music and plays:** the dock fills this iPod from the server account in
 > its settings, and sends the iPod's plays to that account. Only add `MediaDock.txt`
 > to an iPod if that's what its owner wants. After you add the file, keep the iPod
 > away from Finder and iTunes syncing: they replace its whole music database.
@@ -128,7 +130,7 @@ sudo reboot
 
 After the reboot the screen shows **STARTING UP...** and then **DOCK READY**.
 
-## 6. Enter your Navidrome details
+## 6. Enter your server details
 
 Log back in (`ssh yourname@musicdock.local`) and open the settings file:
 
@@ -140,9 +142,10 @@ The file is in four parts, from "must set" to "change only if you know you
 need to". Fill in part **1. REQUIRED**:
 
 ```toml
-server.url = "http://192.168.1.50:4533"     # your Navidrome address
-server.username = "your-navidrome-username"
-server.password = "your-navidrome-password"
+server.type = "navidrome"                   # or "subsonic": Aurral or another Subsonic server
+server.url = "http://192.168.1.50:4533"     # your music server's address
+server.username = "your-username"
+server.password = "your-password"
 sync.safe_hours = "07:00-10:00"             # no syncing in this daily window, or "off"
 device.write = false                        # leave false for now: step 9 turns it on
 ```
@@ -169,7 +172,7 @@ On your music server (Navidrome, Aurral, or another Subsonic server):
 - **Favorites:** star songs or whole albums. Starred albums sync all their tracks.
 - **Playlists:** add **`#ipod`** to the end of a playlist's name ("Road Trip #ipod"), or
   put it in the playlist's **Comment** (in Navidrome: the edit (pencil) button; the
-  field is easy to miss). The iPod shows the name without the tag. Remove the tag to
+  field is easy to miss. Aurral can't edit comments: use the name). The iPod shows the name without the tag. Remove the tag to
   stop syncing that playlist.
 - **Lossless (optional):** put **`#lossless`** in a playlist's name or comment, and its songs
   sync as ALAC if the server's copy is lossless. It takes about 3 times the space, so
@@ -186,7 +189,7 @@ days (Zero W). The iPod doesn't need to be docked for this.
 ## 8. First dock: a read-only check
 
 Plug the iPod into the dock. The screen shows **SYNCING**, then **SAFE TO
-REMOVE**. This first time the dock only reads: it logs any plays to Navidrome
+REMOVE**. This first time the dock only reads: it logs any plays to the server
 but doesn't change the iPod. To watch what it's doing:
 
 ```sh
@@ -216,13 +219,13 @@ and album art.
   your plays and brings the iPod up to date.
 - **DOCK READY** shows what the next sync will do. For more detail, run
   `musicdock-status` on the Pi (see Troubleshooting).
-- If Navidrome is offline, music still syncs and plays are sent later.
+- If the server is offline, music still syncs and plays are sent later.
 - An iPod left on the dock syncs again by itself when new music has been
   prepared (it briefly reconnects; playback stops until the sync is done).
   To turn that off: `device.auto_resync = false` in the settings.
 - From 7 to 10 AM the dock doesn't sync (see "Safe hours" below). It shows **SAFE
   HOURS** while a player is connected, and the iPod is free to take.
-- Rate a song 4 or 5 stars on the iPod and the next sync favorites it in Navidrome, once.
+- Rate a song 4 or 5 stars on the iPod and the next sync favorites it on the server, once.
   It never removes a favorite. To change the stars, set `favorite_rating`; 0 turns it off.
   Adding a song to On-The-Go does the same (`favorite_on_the_go = false` turns that off).
 - If the iPod fills up, new songs wait and the screen shows **PLAYER FULL**. Nothing is
@@ -275,10 +278,11 @@ opens stops copying and finishes (SAFE HOURS on screen). Either way, a
 still-docked iPod syncs when the window ends. Other players stop too, but need
 plugging in again to get the rest.
 
-**Making room on a full player** (off by default): with this on, new songs that don't
+**Making room on a full player** (experimental, off by default; not yet tried on a
+real full iPod): with this on, new songs that don't
 fit push off the oldest songs, only as many as needed. Songs played, added or in an
 updated playlist within `recent_play_months` are safe, and removed songs come back when
-there's room, or as soon as you play one in Navidrome's web or desktop app (a docked iPod
+there's room, or as soon as you play one in the server's own apps (a docked iPod
 syncs to bring it back). `MediaDock.txt` on the iPod lists what was taken off. Whole albums go, dated by their newest song, so one recent play keeps an
 album; `make_room_albums = false` removes songs one by one instead:
 
@@ -289,7 +293,7 @@ sync.recent_play_months = 3
 ```
 
 **Names on the player:** a song lists under its album's artist, with guests moved to the
-title. These only change the player, not Navidrome:
+title. These only change the player, not the server:
 
 ```toml
 sync.primary_artist = true                 # false: keep the credits as they are
@@ -334,7 +338,7 @@ by its `.rockbox` folder and then:
   emptied once its plays are saved on the dock;
 - for browsing by artist/album, turn on **Settings > General Settings >
   Database > Auto Update** (or use **Update Now** after a sync);
-- to favorite songs in Navidrome, add them to the **`Keep`** playlist the dock makes in
+- to favorite songs on the server, add them to the **`Keep`** playlist the dock makes in
   `Playlists`. The next sync favorites each one, once.
 
 **Music format:** by default Rockbox gets the same files as stock iPods (MP3,

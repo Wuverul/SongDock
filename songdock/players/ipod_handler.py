@@ -1211,7 +1211,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         t = planned[nid]
         fields = fill_missing_names(on_player[int(r["dbid"])], t)
         if fields - {"genre", "id"}:
-            log_info(f"Updated names from Navidrome: {t.get('artist')} - "
+            log_info(f"Updated names from the server: {t.get('artist')} - "
                      f"{t.get('title')} ({t.get('album')})")
         renamed += bool(fields)
         regenred += "genre" in fields

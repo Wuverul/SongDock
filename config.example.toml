@@ -21,14 +21,18 @@
 # 1. REQUIRED: set these before the first sync
 # =====================================================================
 
-# Your Navidrome server: its address as the dock can reach it, and your own
-# account (plays are counted per account). The password is only used to sign
-# requests, never sent as is. https needs a properly signed certificate.
+# Your music server: which kind it is, its address as the dock can reach it,
+# and your own account (plays are counted per account). The password is only
+# used to sign requests, never sent as is. https needs a properly signed
+# certificate.
+# type: "navidrome", or "subsonic" for Aurral or any other Subsonic server.
+# The dock checks it against what the server says it is.
 # Several addresses for the same server, tried in order, also work:
 # ["http://192.168.1.50:4533", "https://music.example.com"]
+server.type = "navidrome"
 server.url = "http://192.168.1.50:4533"
-server.username = "your-navidrome-username"
-server.password = "your-navidrome-password"
+server.username = "your-username"
+server.password = "your-password"
 
 # Safe hours: a daily window when the dock doesn't sync, so you can grab the
 # iPod (say, for a morning commute) without waiting for a sync to finish. A
@@ -72,7 +76,7 @@ display.theme = "light"
 
 # --- Lossless songs ---
 # Songs in a playlist with this tag in its name or comment go on the iPod lossless
-# (ALAC; FLAC on Rockbox) when Navidrome has them lossless. About 3x the
+# (ALAC; FLAC on Rockbox) when the server has them lossless. About 3x the
 # space: "" turns it off, e.g. for a small iPod.
 # sync.lossless_tag = "#lossless"
 # Songs of a synced playlist that are the only song of their album, or from a
@@ -82,7 +86,7 @@ display.theme = "light"
 # sync.singles_tag = "#singles"          # "" = off
 
 # --- Favorites from the iPod ---
-# A song you rate this many stars on the iPod gets starred in Navidrome, once
+# A song you rate this many stars on the iPod gets starred on the server, once
 # (0 = never). Rockbox players use their Keep playlist instead.
 # sync.favorite_rating = 4
 # ...and a song rated from an Aurral Flow (a playlist that refills itself) gets
@@ -103,7 +107,7 @@ display.theme = "light"
 #   cache first when it's full.
 # sync.recent_play_months = 3
 
-# --- Artist and album names on the iPod (Navidrome is never changed) ---
+# --- Artist and album names on the iPod (the server is never changed) ---
 # One artist per song: the album's artist, with guests moved to the title
 # ("Song (feat. B)"). false = keep the names exactly as tagged.
 # sync.primary_artist = true
@@ -136,7 +140,7 @@ display.theme = "light"
 # An iPod left docked syncs again by itself when new music is ready
 # (playback stops while it syncs).
 # device.auto_resync = true
-# How often the dock checks Navidrome for new music, in minutes (1-1440).
+# How often the dock checks the server for new music, in minutes (1-1440).
 # sync.check_interval_minutes = 5
 
 # --- Genres ---

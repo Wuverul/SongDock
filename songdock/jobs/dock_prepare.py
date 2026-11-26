@@ -53,6 +53,7 @@ import dock_paths  # noqa: E402
 
 import argparse
 import fcntl
+import hashlib
 import json
 import logging
 import math
@@ -63,6 +64,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -123,6 +125,30 @@ def alac_rate(track):
     return 44100 if rate % 44100 == 0 else 48000
 
 
+def probe_audio(path):
+    """{"samplingRate", "bitDepth"} of a file's audio, read by ffprobe, for servers
+    that don't say (Aurral). {} if it can't tell."""
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a:0",
+                            "-show_entries", "stream=sample_rate,bits_per_raw_sample,"
+                            "bits_per_sample", "-of", "json", path],
+                           capture_output=True, text=True, timeout=60)
+        stream = json.loads(r.stdout or "{}").get("streams", [{}])[0]
+    except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+        return {}
+    out = {}
+    try:
+        if int(stream.get("sample_rate") or 0):
+            out["samplingRate"] = int(stream["sample_rate"])
+        depth = int(stream.get("bits_per_raw_sample") or 0) or int(
+            stream.get("bits_per_sample") or 0)
+        if depth:
+            out["bitDepth"] = depth
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
 # LAME's published average bitrates for -V0 to -V9.
 MP3_VBR_KBPS = (245, 225, 190, 175, 165, 130, 115, 100, 85, 65)
 
@@ -177,6 +203,10 @@ DRAW_OVER = "none,idle,preparing,restoring"   # never over syncing/safe/failed/b
 
 class PrepareError(Exception):
     pass
+
+
+class WrongFormat(PrepareError):
+    """A download wasn't the format the server listed (see sniff_suffix)."""
 
 
 # --------------------------------------------------------------- targets ----
@@ -698,7 +728,7 @@ def unify_album_names(client, songs, album_info):
             continue
         for s in songs:
             if s.get("albumId") == album_id and s.get("album") != name:
-                log.info("Album name from Navidrome's album: %s - %s: %r -> %r",
+                log.info("Album name from the server's album: %s - %s: %r -> %r",
                          s.get("artist"), s.get("title"), s.get("album"), name)
                 s["album"] = name
 
@@ -972,12 +1002,80 @@ def song_format(track, device_type, convert_to, lossless=(), loud=()):
     return convert_to
 
 
+MAX_NAME = 230        # cache file names: room for the temp names' prefixes and suffixes
+                      # within ext4's 255 bytes (Errno 36 on Aurral's longest IDs)
+
+
+def safe_name(song_id, ext):
+    """A cache file name for a song ID: its letters and digits as they are, or, for
+    an ID too long for a file name, the start of it plus a hash of the whole (IDs
+    that fit keep the names they always had)."""
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", song_id)
+    if len(safe) + 1 + len(ext) > MAX_NAME:
+        digest = hashlib.sha1(song_id.encode("utf-8")).hexdigest()[:16]
+        safe = f"{safe[:MAX_NAME - 2 - len(ext) - len(digest)]}_{digest}"
+    return f"{safe}.{ext}"
+
+
 def output_name(track, target):
     """The cache file for a song; target from song_format."""
     suffix = (track.get("suffix") or "bin").lower()
     ext = EXTENSIONS[target] if target else suffix
-    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", track["id"])
-    return f"{safe_id}.{ext}"
+    return safe_name(track["id"], ext)
+
+
+# What a downloaded file really is: a server may list a song in one format and send
+# another (Aurral, 2026-11-26: two songs listed as MP3 came as FLAC, after it got
+# better copies, and mp3gain refused them).
+FORMATS_FILE = "formats.json"     # cache/: {song id: the format really sent}
+_FAMILIES = {"m4a": "mp4", "mp4": "mp4", "m4b": "mp4", "aac": "mp4", "alac": "mp4",
+             "ogg": "ogg", "oga": "ogg", "opus": "ogg"}
+
+
+def format_family(suffix):
+    s = (suffix or "").lower()
+    return _FAMILIES.get(s, s)
+
+
+def sniff_suffix(path):
+    """The format a file's first bytes say it is (flac, mp3, m4a, ogg, wav), or None."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(64)
+    except OSError:
+        return None
+    if head[:4] == b"fLaC":
+        return "flac"
+    if head[4:8] == b"ftyp":
+        return "m4a"
+    if head[:4] == b"OggS":
+        return "opus" if b"OpusHead" in head else "ogg"
+    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+        return "wav"
+    if head[:3] == b"ID3" or (len(head) > 1 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0
+                              and head[1] & 0x06):        # an MPEG audio frame, not AAC
+        return "mp3"
+    return None
+
+
+def correct_formats(targets, cache_dir, dry_run=False):
+    """Songs a download showed to be another format than listed (FORMATS_FILE) get
+    their real one, so they're converted as they should be. A song the server now
+    lists right, or that left the targets, is forgotten."""
+    path = os.path.join(cache_dir, FORMATS_FILE)
+    try:
+        with open(path) as f:
+            known = json.load(f)
+    except (OSError, ValueError):
+        return
+    kept = {}
+    for t in targets:
+        real = known.get(t["id"])
+        if real and format_family(real) != format_family(t.get("suffix")):
+            t["suffix"] = real
+            kept[t["id"]] = real
+    if kept != known and not dry_run:
+        write_json_atomic(path, kept)
 
 
 def song_identity(e):
@@ -999,7 +1097,7 @@ def song_identity(e):
             ("loose", norm(e.get("artist")), norm(e.get("title")), length))
 
 
-def match_new_ids(earlier, targets):
+def match_new_ids(earlier, targets, sources=None):
     """{old id: new id} for songs the plan had that Navidrome now lists under
     another ID (a re-index, e.g. after an update: 2026-11-04, 3,572 songs). By
     recording first, then by names; only one-to-one matches, so two songs that
@@ -1042,10 +1140,61 @@ def match_new_ids(earlier, targets):
                     pairs = list(zip(sorted(ids), sorted(found)))
                     if exact or all(close(a, b) for a, b in pairs):
                         mapping.update(pairs)
+    mapping.update(match_renamed(gone, new, mapping, sources))
     return mapping
 
 
-def follow_new_ids(previous, targets, cache_dir, rename_fn=None, dry_run=False):
+NOT_TITLE_WORDS = {"feat", "ft", "featuring"}
+
+
+def _words(text):
+    """A name's words, case and punctuation aside ("You’ve" = "You've", "J‐Man" = "J-Man")."""
+    return re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", str(text or "")).casefold())
+
+
+def match_renamed(gone, new, mapping, sources=None):
+    """The last pass of match_new_ids: songs a server renamed when it gave them new
+    IDs (Aurral, 2026-11-26, matching songs to MusicBrainz: "Sam Binga - Proud feat.
+    Tiffanie Malvo - Enei Remix" came back as "Sam Binga & Rider Shafique - Proud (Enei
+    remix) (feat. Tiffanie Malvo)"; 20 of 21 such songs were removed and copied again).
+    The same title words in any order, one artist's words all in the other's, lengths
+    within SAME_LENGTH, a target in common (when both name theirs: `sources`, {new
+    id: targets}, or the song's own "sources"), and one-to-one."""
+    taken = set(mapping.values())
+    by_title = {}
+    for i, t in new.items():
+        if i not in taken:
+            key = frozenset(_words(t.get("title"))) - NOT_TITLE_WORDS
+            if key:
+                by_title.setdefault(key, []).append(i)
+
+    def same_names(e, t):
+        a, b = set(_words(e.get("artist"))), set(_words(t.get("artist")))
+        return bool(a and b and (a <= b or b <= a))
+
+    def confirmed(e, t):
+        if abs(int(e.get("duration") or 0) - int(t.get("duration") or 0)) > SAME_LENGTH:
+            return False
+        sources_e = set(e.get("sources") or ())
+        sources_t = set((sources or {}).get(t["id"]) or t.get("sources") or ())
+        return not (sources_e and sources_t) or bool(sources_e & sources_t)
+
+    # The names must pick out one song on each side by themselves; the length and the
+    # list only confirm it. Two songs of one name (a studio and a live take) are never
+    # told apart by their lengths here.
+    found = {}
+    for i, e in gone.items():
+        if i in mapping:
+            continue
+        key = frozenset(_words(e.get("title"))) - NOT_TITLE_WORDS
+        found[i] = [j for j in by_title.get(key, ()) if same_names(e, new[j])]
+    wanted = Counter(j for js in found.values() for j in js)
+    return {i: js[0] for i, js in found.items()
+            if len(js) == 1 and wanted[js[0]] == 1 and confirmed(gone[i], new[js[0]])}
+
+
+def follow_new_ids(previous, targets, cache_dir, rename_fn=None, dry_run=False,
+                   sources=None):
     """Songs Navidrome re-numbered keep their cache files (converted, lowered)
     and, through rename_fn(mapping) (Record.rename_songs), everything
     the record knows, so nothing is fetched or copied to a player again and no
@@ -1066,18 +1215,18 @@ def follow_new_ids(previous, targets, cache_dir, rename_fn=None, dry_run=False):
         earlier[e["id"]] = e
         if e.get("file"):
             files[e["id"]] = e["file"].split("/", 1)[-1]
-    mapping = match_new_ids(list(earlier.values()), targets)
+    mapping = match_new_ids(list(earlier.values()), targets, sources)
     now = {t["id"] for t in targets}
     lost = [e for i, e in earlier.items() if i not in now and i not in mapping]
     if mapping and lost:
         # Gone without a match: really left the library, or changed beyond recognition.
-        log.info("%d song(s) gone from Navidrome without a match under a new ID, e.g. %s",
+        log.info("%d song(s) gone from the server without a match under a new ID, e.g. %s",
                  len(lost), "; ".join(f"{e.get('artist')} - {e.get('title')} "
                                       f"({e.get('album')}, {e.get('duration')} s)" for e in lost[:8]))
     if not mapping:
         return {}
     if dry_run:
-        log.info("  would follow %d songs Navidrome gave new IDs (no fetching or copying)",
+        log.info("  would follow %d songs the server gave new IDs (no fetching or copying)",
                  len(mapping))
         return {}
     tracks_dir = os.path.join(cache_dir, "tracks")
@@ -1087,7 +1236,7 @@ def follow_new_ids(previous, targets, cache_dir, rename_fn=None, dry_run=False):
         if not name:
             continue
         path = os.path.join(tracks_dir, name)
-        new_name = re.sub(r"[^A-Za-z0-9_-]", "_", new) + os.path.splitext(name)[1]
+        new_name = safe_name(new, os.path.splitext(name)[1].lstrip("."))
         if os.path.exists(path):
             os.replace(path, os.path.join(tracks_dir, new_name))   # over a fresh download too
             moved += 1
@@ -1189,7 +1338,7 @@ def shrink_cover(path, cache=None):
             im.draft("RGB", (COVER_MAX, COVER_MAX))   # JPEG: decode at reduced scale
             width, height = im.size
             if width * height > max_cover_pixels():
-                log.info("Cover too big to decode here (%dx%d): using Navidrome's instead",
+                log.info("Cover too big to decode here (%dx%d): using the server's instead",
                          width, height)
                 new = False
                 if cache is not None:
@@ -1296,6 +1445,8 @@ def add_server_cover(path, t, client, images, cache=None):
     data = images[cover_id]
     if not data:
         return "missing"
+    # Whatever the server sends (Aurral: WebP) goes in as the JPEG the iPod reads.
+    data = normalize_cover(data) or data
     png = data.startswith(b"\x89PNG")
     if ext == ".mp3":
         try:
@@ -1804,11 +1955,28 @@ def last_played_at(track, plays):
         return played
 
 
+def identify_server(client, cfg):
+    """{"type", "version"} as the server calls itself (its ping answer: Navidrome says
+    "navidrome", Aurral "Aurral"), with a warning when server.type doesn't fit it. None
+    if it couldn't be asked (the run then meets the same problem and says so)."""
+    try:
+        answer = client.call("ping")
+    except Exception:
+        return None
+    reported = str(answer.get("type") or "").strip()
+    problem = dock_config.type_mismatch((cfg.get("server") or {}).get("type", "navidrome"),
+                                        reported)
+    if problem:
+        log.warning("%s", problem)
+    return {"type": reported or "subsonic",
+            "version": str(answer.get("serverVersion") or answer.get("version") or "")}
+
+
 def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             dry_run=False, disk_usage=shutil.disk_usage, clock=time.time,
             on_player=None, on_batch=None, cpu_count=None, on_progress=None,
             player_kinds=None, plays=None, players_full=False, peak_fn=None,
-            lower_fn="auto", rename_fn=None, genre_fetch=None):
+            lower_fn="auto", rename_fn=None, genre_fetch=None, probe_fn=probe_audio):
     """Bring the cache in line with the target. Returns a summary dict.
 
     show(screen, *args) draws a progress screen (optional).
@@ -1843,6 +2011,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     tmp_dir = os.path.join(cache_dir, "tmp")
 
     previous = read_manifest(cache_dir)
+    server = identify_server(client, cfg)
     device = serves_basic_player(format_mode(cfg["device"]), player_kinds, previous)
     known = {p["target"]: p["id"] for p in previous.get("playlists", []) if p.get("id")}
     previously_tagged = [p["id"] for p in previous.get("playlists", [])
@@ -1891,10 +2060,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     separate_album_names(targets)        # after every other name change
     # Songs Navidrome re-numbered are followed, not fetched again (needs the final
     # names, which the plan's entries have).
-    renamed = follow_new_ids(previous, targets, cache_dir, rename_fn, dry_run)
+    renamed = follow_new_ids(previous, targets, cache_dir, rename_fn, dry_run, sources)
     if renamed:
         on_player = {renamed.get(k, k): v for k, v in (on_player or {}).items()}
         plays = {renamed.get(k, k): v for k, v in (plays or {}).items()}
+    correct_formats(targets, cache_dir, dry_run)
     lossless_on = (bool(previous.get("lossless_playlists")) if player_kinds is None else
                    bool(LOSSLESS_PLAYERS.get(device, set()) & set(player_kinds)))
     lossless, lossless_lists = lossless_songs(
@@ -2131,7 +2301,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                     log.warning("Can't get covers from the server (%s); next run tries again", e)
                     offline = True
                 if result == "navidrome":
-                    log.info("Added Navidrome's cover: %s", label(t))
+                    log.info("Added the server's cover: %s", label(t))
             if result in ("shrunk", "navidrome"):
                 fsync_file(tmp)
                 os.replace(tmp, os.path.join(tracks_dir, name))
@@ -2205,7 +2375,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 if fill_missing_tags(tmp, t):
                     fsync_file(tmp)
                     os.replace(tmp, os.path.join(tracks_dir, name))
-                    log.info("Filled in missing tags from Navidrome: %s", label(t))
+                    log.info("Filled in missing tags from the server: %s", label(t))
             except Exception:
                 log.exception("Couldn't check the tags of %s (left as is)", label(t))
             finally:
@@ -2268,6 +2438,22 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             log.info("Downloading %s (%s, %.1f MB)", label(t), t.get("suffix"),
                      int(t.get("size") or 0) / 1e6)
             client.download(t["id"], src)
+            real = sniff_suffix(src)
+            if real and format_family(real) != format_family(t.get("suffix")):
+                with lock:
+                    formats_path = os.path.join(cache_dir, FORMATS_FILE)
+                    try:
+                        with open(formats_path) as f:
+                            known = json.load(f)
+                    except (OSError, ValueError):
+                        known = {}
+                    known[t["id"]] = real
+                    write_json_atomic(formats_path, known)
+                os.remove(src)
+                raise WrongFormat(f"the server lists it as {t.get('suffix')} but sent "
+                                  f"{real}: prepared as {real} next check")
+            if conv == "alac" and not t.get("samplingRate"):
+                t = {**t, **probe_fn(src)}      # the rate to keep (alac_rate)
             if conv:
                 out = os.path.join(tmp_dir, name)
                 with slots:
@@ -2311,7 +2497,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                     covers[t["id"]] = add_server_cover(out, t, client, server_images,
                                                        cover_cache)
             except SubsonicError as e:
-                log.warning("Couldn't get Navidrome's cover for %s (%s); next run "
+                log.warning("Couldn't get the server's cover for %s (%s); next run "
                             "tries again", label(t), e)
             except Exception:
                 log.exception("Couldn't shrink the cover of %s (kept as is)", label(t))
@@ -2325,7 +2511,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                                   label(t))
             try:
                 if fill_missing_tags(out, t):
-                    log.info("Filled in missing tags from Navidrome: %s", label(t))
+                    log.info("Filled in missing tags from the server: %s", label(t))
             except Exception:
                 log.exception("Couldn't check the tags of %s (kept as is)", label(t))
             fsync_file(out)
@@ -2343,6 +2529,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                     log.warning("Couldn't download %s: %s", label(t), e)
                 skipped.append({"id": t["id"], "title": label(t), "reason": str(e),
                                 "error": not e.network})
+        except WrongFormat as e:
+            log.warning("%s: %s", label(t), e)
+            with lock:
+                skipped.append({"id": t["id"], "title": label(t), "reason": str(e),
+                                "error": False})
         except Exception as e:      # one bad track shouldn't block the rest
             log.exception("Couldn't prepare %s", label(t))
             with lock:
@@ -2418,6 +2609,7 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                if cfg["sync"].get("favorite_flow_albums", False) else {}),
             **({"favorite_on_the_go": True}
                if cfg["sync"].get("favorite_on_the_go", False) else {}),
+            **({"server": server} if server else {}),
             **({"lossless_playlists": lossless_lists} if lossless_lists else {}),
             **({"unsplit_artists": sorted(unsplit_artists)} if unsplit_artists else {}),
             "tracks": ready, "on_player": uncached, "playlists": playlists,

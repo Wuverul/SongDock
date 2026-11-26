@@ -310,7 +310,7 @@ def ipod_section(record_path, manifest, now=None):
     if unmatched:
         plays += f", {unmatched} unmatched (songs the dock didn't add)"
     if gone:
-        plays += f", {gone} kept back (their songs are gone from Navidrome)"
+        plays += f", {gone} kept back (their songs are gone from the server)"
     lines.append(plays)
     keys = p.keys()
     player = {"on_player": len(set(present)),
@@ -328,7 +328,16 @@ def music_section(manifest, cfg, cache_dir):
     names = []
     for pl in manifest.get("playlists", []):
         names.append(pl["name"] + (" (tagged)" if pl.get("via") == "tag" else ""))
-    lines = ["Syncing: " + (", ".join(names) or "nothing")]
+    lines, found = [], {}
+    server = manifest.get("server")
+    setting = ((cfg or {}).get("server") or {}).get("type", "navidrome")
+    if server:
+        version = f" {server['version']}" if server.get("version") else ""
+        lines.append(f"Server: {server['type']}{version} (server.type = \"{setting}\")")
+        import dock_config
+        found["server_type"] = dock_config.type_mismatch(
+            setting, "" if server["type"] == "subsonic" else server["type"])
+    lines.append("Syncing: " + (", ".join(names) or "nothing"))
     ready = len(manifest.get("tracks", []))
     skipped = manifest.get("skipped", [])
     kept = manifest.get("kept_after_removal", 0)
@@ -353,7 +362,7 @@ def music_section(manifest, cfg, cache_dir):
     if limit:
         cache += f" of {human_size(limit)} limit ({size * 100 / limit:.0f}%)"
     lines.append(cache)
-    return lines, {"cache_pct": size * 100 / limit if limit else 0}
+    return lines, {**found, "cache_pct": size * 100 / limit if limit else 0}
 
 
 def next_check():
@@ -417,6 +426,8 @@ def problems(facts, now=None):
     if facts.get("sd_card"):                    # first: everything else depends on it
         import dock_sdcard
         out.append(dock_sdcard.describe(facts["sd_card"]))
+    if facts.get("server_type"):
+        out.append(facts["server_type"])
     if facts.get("failed_units"):
         out.append("Failed services: " + ", ".join(facts["failed_units"]))
     if facts.get("throttled") not in (None, "0x0", "?"):
@@ -431,7 +442,7 @@ def problems(facts, now=None):
     if facts.get("cache_pct", 0) >= 90:
         out.append(f"Cache at {facts['cache_pct']:.0f}% of max_cache_gb")
     if facts.get("plays_gone"):
-        out.append(f"{facts['plays_gone']} plays not sent: their songs are gone from Navidrome "
+        out.append(f"{facts['plays_gone']} plays not sent: their songs are gone from the server "
                    "(see the log for which)")
     if facts.get("plays_waiting") and facts.get("oldest_waiting") and \
             now - facts["oldest_waiting"] > 86400:

@@ -12,7 +12,9 @@ and the list of known iPods written into its MediaDock.txt.
     ArtistNames=Now, Now; A & B  these credits are one artist, never split ("none" = off)
     ArtistAliases=Beatles = The Beatles   list that spelling under this name ("none" = off)
     SyncStarred=no               don't sync starred songs (also SyncFavorites=)
-    Server=https://music.example.com      a new Navidrome address (or several,
+    ServerType=subsonic          the server is Aurral or another Subsonic server
+                                 (ServerType=navidrome: it's Navidrome)
+    Server=https://music.example.com      a new music server address (or several,
                                           comma-separated, in the order to try); needs
     Username=jo                           Username= and Password= with it
     Password=...                          (each also works alone, but Server
@@ -81,7 +83,7 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "singles
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
             "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate", "genrelookup": "GenreLookup", "playlistsingles": "PlaylistSingles",
-            "favoriterating": "FavoriteRating", "favoriteflowalbums": "FavoriteFlowAlbums", "favoriteonthego": "FavoriteOnTheGo", "singlesalbum": "SinglesAlbum",
+            "favoriterating": "FavoriteRating", "favoriteflowalbums": "FavoriteFlowAlbums", "favoriteonthego": "FavoriteOnTheGo", "servertype": "ServerType", "singlesalbum": "SinglesAlbum",
             "singlestracks": "SinglesTracks"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
@@ -342,6 +344,16 @@ def plan_settings(settings, cfg):
         else:
             done.append("Rating a Flow song already favorites " +
                         ("its album too" if on else "the song only"))
+    if "ServerType" in settings:
+        import dock_config
+        kind = settings["ServerType"].strip().lower()
+        if kind not in dock_config.SERVER_TYPES:
+            raise SetupFileError("ServerType must be navidrome or subsonic (Aurral or "
+                                 "another Subsonic server)")
+        if kind != cfg["server"].get("type", "navidrome"):
+            changes[("server", "type")] = kind
+        done.append("Server type: " + ("Navidrome" if kind == "navidrome"
+                                       else "Subsonic (Aurral or another)"))
     if "FavoriteOnTheGo" in settings:
         on = yes_no("FavoriteOnTheGo", settings["FavoriteOnTheGo"])
         if on != cfg["sync"].get("favorite_on_the_go", True):
@@ -549,7 +561,7 @@ def removed_lines(removed, shown=ROOM_LISTED):
     if not removed:
         return []
     lines = ["", f"Taken off this iPod to make room ({len(removed)}; newest first). They come",
-             "back when there's room, or when played again in Navidrome:"]
+             "back when there's room, or when played again on the server:"]
     for r in removed[:shown]:
         day = datetime.fromtimestamp(r["removed_at"]).strftime("%Y-%m-%d")
         name = f"{r.get('artist') or '?'} - {r.get('title') or r['navidrome_id']}"

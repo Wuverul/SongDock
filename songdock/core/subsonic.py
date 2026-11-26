@@ -92,7 +92,7 @@ class Client:
         for address in self.addresses:
             if self._probe(address):
                 if address != self.addresses[0]:
-                    log.info("Navidrome: %s can't be reached; using %s",
+                    log.info("Server: %s can't be reached; using %s",
                              self.addresses[0], address)
                 self.address = address
                 return
@@ -144,7 +144,7 @@ class Client:
                 if e.network:
                     continue
                 raise
-            log.info("Navidrome: %s stopped answering; using %s", failed, address)
+            log.info("Server: %s stopped answering; using %s", failed, address)
             self.address = address
             return r
         raise first_error

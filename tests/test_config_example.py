@@ -65,7 +65,7 @@ class ExampleConfigTests(unittest.TestCase):
     def test_loads_as_a_dock_config_once_filled_in(self):
         path = os.path.join(os.environ.get("TMPDIR", "/tmp"), f"songdock-example-{os.getpid()}.toml")
         with open(path, "w") as f:
-            f.write(self.text.replace("your-navidrome-password", "secret"))
+            f.write(self.text.replace("your-password", "secret"))
         os.chmod(path, 0o600)
         try:
             cfg = dock_config.load(path)

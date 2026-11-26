@@ -58,6 +58,9 @@ class FakeServer:
             return {"album": {"name": self.album_names.get(params["id"]),
                               **self.album_meta.get(params["id"], {}),
                               "song": self.albums.get(params["id"], [])}}
+        if endpoint == "ping":
+            return {"status": "ok", "type": getattr(self, "server_type", "navidrome"),
+                    "serverVersion": getattr(self, "server_version", "0.64.2")}
         if endpoint == "getPlaylists":
             return {"playlists": {"playlist": [
                 {"id": pid, "name": v[0], **({"comment": v[2]} if len(v) > 2 else {})}
@@ -97,7 +100,7 @@ class FakeServer:
         if song_id in self.fail_download:
             raise SubsonicError("download: HTTP 500")
         with open(dest, "wb") as f:
-            f.write(b"audio-" + song_id.encode())
+            f.write(getattr(self, "sent_as", {}).get(song_id, b"") + b"audio-" + song_id.encode())
 
 
 def fake_convert(src, dst, options, duration=None):
@@ -140,6 +143,55 @@ class PrepareTests(unittest.TestCase):
     def manifest(self):
         with open(os.path.join(self.cache, "manifest.json")) as f:
             return json.load(f)
+
+    def test_a_song_id_too_long_for_a_file_name_still_prepares(self):
+        # Aurral names songs it couldn't match by their tags: IDs of 200+ characters,
+        # and the temp names made from them passed ext4's 255 bytes (Errno 36).
+        long_id = "song:name:track:name%20album%20mbid%20" + "x%20remix%20" * 30
+        server = FakeServer(songs=[song(long_id)])
+        self.run_prepare(server)
+        t = self.manifest()["tracks"][0]
+        self.assertEqual(t["id"], long_id)
+        self.assertLessEqual(len(os.path.basename(t["file"])), dock_prepare.MAX_NAME)
+        self.run_prepare(server)
+        self.assertEqual(server.downloads, [long_id])                 # found again
+        # Every ID that fits keeps the name it always had.
+        self.assertEqual(dock_prepare.output_name(song("song:recording:ab-1"), "mp3"),
+                         "song_recording_ab-1.mp3")
+
+    def test_a_song_sent_in_another_format_than_listed_is_prepared_as_sent(self):
+        # Aurral listed two songs as MP3 and sent FLAC (better copies it got since):
+        # they were kept as "MP3", and mp3gain refused them on every check.
+        server = FakeServer(songs=[song("m1", suffix="mp3"), song("m2", suffix="mp3")])
+        server.sent_as = {"m1": b"fLaC"}
+        self.run_prepare(server)
+        m = self.manifest()
+        self.assertEqual([s["id"] for s in m["skipped"]], ["m1"])
+        self.assertIn("sent flac", m["skipped"][0]["reason"])
+        self.assertFalse(m["skipped"][0]["error"])
+        self.run_prepare(server)
+        t = {t["id"]: t for t in self.manifest()["tracks"]}
+        self.assertEqual((t["m1"]["source_suffix"], t["m1"]["converted"]), ("flac", True))
+        self.assertTrue(t["m1"]["file"].endswith(".mp3"))
+        self.assertEqual((t["m2"]["source_suffix"], t["m2"]["converted"]), ("mp3", False))
+        # The server lists it right later: nothing left to correct.
+        server.songs[0]["suffix"] = "flac"
+        self.run_prepare(server)
+        with open(os.path.join(self.cache, dock_prepare.FORMATS_FILE)) as f:
+            self.assertEqual(json.load(f), {})
+
+    def test_file_formats_are_told_by_their_first_bytes(self):
+        import tempfile as tf
+        cases = {b"fLaC\0\0": "flac", b"ID3\4\0": "mp3", b"\xff\xfb\x90\x00": "mp3",
+                 b"\xff\xf1\x50\x80": None,                    # AAC (ADTS), not MP3
+                 b"\0\0\0\x20ftypM4A ": "m4a", b"OggS\0\2" + b"\0" * 22 + b"OpusHead": "opus",
+                 b"OggS\0\2" + b"\0" * 22 + b"\x01vorbis": "ogg",
+                 b"RIFF\0\0\0\0WAVE": "wav", b"audio-x": None}
+        for head, want in cases.items():
+            with tf.NamedTemporaryFile(dir=self.cache) as f:
+                f.write(head)
+                f.flush()
+                self.assertEqual(dock_prepare.sniff_suffix(f.name), want, head)
 
     def test_starred_album_expands_and_duplicates_collapse(self):
         server = FakeServer(songs=[song("a1")],
@@ -817,6 +869,21 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(self.run_prepare(server, config(convert_to="alac"))["added"], 1)
         with open(os.path.join(self.cache, "tracks", "f.m4a"), "rb") as f:
             self.assertIn(b"aresample=48000:osf=s16p", f.read())
+
+    def test_a_server_without_sample_rates_gets_the_files_own(self):
+        # Aurral sends no samplingRate: a 48 kHz FLAC was turned into 44.1 kHz ALAC.
+        server = FakeServer(songs=[song("f", "flac"), song("k", "flac", samplingRate=44100)])
+        probed = []
+
+        def probe(path):
+            probed.append(os.path.basename(path))
+            return {"samplingRate": 48000, "bitDepth": 24}
+        self.run_prepare(server, config(convert_to="alac"), probe_fn=probe)
+        self.assertEqual(len(probed), 1)                     # only where the server didn't say
+        with open(os.path.join(self.cache, "tracks", "f.m4a"), "rb") as f:
+            self.assertIn(b"aresample=48000:osf=s16p", f.read())
+        with open(os.path.join(self.cache, "tracks", "k.m4a"), "rb") as f:
+            self.assertIn(b"aresample=44100:osf=s16p", f.read())
 
     def test_hires_alac_source_is_brought_down_and_aac_is_left_alone(self):
         hires = [song("d", "m4a", bitDepth=24, samplingRate=44100),
@@ -1673,6 +1740,20 @@ class ShrinkCoverTests(unittest.TestCase):
         buf = io.BytesIO()
         Image.new("RGB", (px, px), (10, 200, 90)).save(buf, "PNG")
         return buf.getvalue()
+
+    def test_a_webp_cover_from_the_server_goes_in_as_jpeg(self):
+        # Aurral sends covers as WebP; the iPod reads only JPEG (and PNG).
+        from PIL import features
+        if not features.check("webp"):
+            self.skipTest("Pillow without WebP")
+        buf = io.BytesIO()
+        Image.new("RGB", (300, 300), (200, 20, 90)).save(buf, "WEBP")
+        path = self.bare_mp3()
+        t = {"id": "s1", "coverArt": "al-1", "albumId": "alb"}
+        self.assertEqual(dock_prepare.add_server_cover(path, t, self.CoverServer(buf.getvalue()),
+                                                       {}), "navidrome")
+        im, pic = self.cover(path)
+        self.assertEqual((im.format, pic.mime, im.size), ("JPEG", "image/jpeg", (300, 300)))
 
     def test_server_cover_embedded_as_600px_jpeg(self):
         path = self.bare_mp3()

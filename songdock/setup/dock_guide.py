@@ -3,7 +3,7 @@ dock_guide.py - the user manual kept on every synced iPod.
 
 `MediaDock README.txt` in the iPod's top folder explains the files a person
 can add or edit there (MediaDock.txt, wifi.txt, DockSetup.txt), how music is
-chosen in Navidrome, and what the screens mean. It's built from the dock's
+chosen on the server, and what the screens mean. It's built from the dock's
 own settings (playlist tag, Favorites name, ...), so it can't drift from
 them, and rewritten on a write sync only when its text changes.
 """
@@ -28,7 +28,7 @@ def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
     targets = sync.get("targets", [])
     lists = []
     if "starred" in targets:
-        lists.append("songs and albums you star (heart) in Navidrome"
+        lists.append("songs and albums you star (heart) on your music server"
                      + (f",\n    gathered on the iPod in a playlist called \"{favorites}\""
                         if favorites else ""))
     if tag:
@@ -38,20 +38,30 @@ def guide_text(cfg, marker="MediaDock.txt", wifi="wifi.txt",
     chosen = "\n".join(f"  - {item}" for item in lists) or "  - (nothing is set up yet)"
     removal = (f"its copy on the dock is kept {grace} days in case you add it back."
                if grace else "its copy on the dock is deleted right away.")
-    tag_how = (f"""
+    # Where the tag goes depends on the server: Navidrome edits comments, Aurral can't.
+    if (cfg.get("server") or {}).get("type", "navidrome") == "navidrome":
+        tag_how = f"""
   To add a playlist, put {tag} at the end of its name on the music
   server (e.g. "Road Trip {tag}"), or in its comment (in Navidrome: edit
   the playlist; the "Comment" field is easy to miss). The iPod shows the
   name without the tag. Removing {tag} takes the playlist off the iPod
   at the next sync.
-""" if tag else "")
+"""
+    else:
+        tag_how = f"""
+  To add a playlist, put {tag} at the end of its name on the music
+  server (e.g. "Road Trip {tag}"), or in its comment if your server lets
+  you edit one. The iPod shows the name without the tag. Removing {tag}
+  takes the playlist off the iPod at the next sync.
+"""
+    tag_how = tag_how if tag else ""
 
     if kind == "generic":
         hands_off = """This is a simple music player that plays from folders. The dock's music
 goes in the MediaDock folder (one folder per artist and album, with
 cover.jpg). Music you put anywhere else is left alone; don't add or change
 files inside MediaDock. This player keeps no play history the dock can
-read, so plays aren't sent to Navidrome ("No play count - unsupported" on
+read, so plays aren't sent to the server ("No play count - unsupported" on
 the dock's screen), and no playlists are made: songs from your tagged
 playlists are simply part of the music library. To get new music, unplug
 the player and plug it back in (only iPods are synced again by themselves
@@ -66,7 +76,7 @@ run Update Now after a sync). Plays are read from Rockbox's .scrobbler.log
 (Settings > Playback Settings > Last.fm Log: on); skipped songs aren't
 counted.
 
-To favorite a song in Navidrome, add it to the Keep playlist while it plays
+To favorite a song on the server, add it to the Keep playlist while it plays
 (context menu > Playlist > Add to Existing Playlist > Keep). The next sync
 favorites it once. Taking it off the list leaves the favorite as it is."""
     else:
@@ -93,9 +103,10 @@ album and the song is back on its own album at the next sync.
     return f"""SONGDOCK - HOW TO USE AND RECONFIGURE IT FROM THIS IPOD
 ==========================================================
 
-The SongDock keeps this iPod in step with a Navidrome music server: when
-you dock it, it sends what you played to Navidrome, copies new music onto
-the iPod, removes music you took off your lists, and charges the iPod.
+The SongDock keeps this iPod in step with your music server (Navidrome,
+Aurral...): when you dock it, it sends what you played to the server,
+copies new music onto the iPod, removes music you took off your lists,
+and charges the iPod.
 The dock rewrites this file after a sync; editing it changes nothing.
 
 To edit the files below, connect the iPod to a computer in disk mode (on a
@@ -109,7 +120,7 @@ any mix of upper and lower case.
 
 WHAT ENDS UP ON THE IPOD
 ------------------------
-Chosen in Navidrome, not on the iPod:
+Chosen on the server, not on the iPod:
 {chosen}
 {tag_how}
 {lossless_how}
@@ -117,7 +128,7 @@ Chosen in Navidrome, not on the iPod:
 album the first name in its credit. A song by "A feat. B", "A, B" or "A & B"
 lists under A and is titled "Song (feat. B)". A comma, & or / stays part of
 the name if nothing shows two people (MediaDock.txt lists these).
-This only changes the names on the iPod, not in Navidrome.
+This only changes the names on the iPod, not on the server.
 Compilations can list as one artist instead: see CompilationAlbums below.
 A name split by mistake can be kept whole: see ArtistNames below.
 One artist spelled two ways can list as one: see ArtistAliases below.
@@ -221,14 +232,15 @@ A daily window with no syncs, e.g. to grab the iPod for a morning commute:
   players stop early too, but need plugging in again to get the rest.
 
 When new songs don't fit on a player, they wait and the screen shows PLAYER
-FULL. Nothing is removed unless you turn this on:
+FULL. Nothing is removed unless you turn this on (experimental: not yet
+tried on a real full player):
   MakeRoom=yes        the player loses its oldest songs, only as many as it
                       takes. A song's date is its last play, when it reached
                       the player, or when a playlist holding it changed,
                       whichever is newest. Favorites go by plays like the
                       rest. A removed song returns when there's free room,
-                      or as soon as it's played again in Navidrome (web or
-                      desktop app). MediaDock.txt lists what was taken off.
+                      or as soon as it's played again in the server's own
+                      apps. MediaDock.txt lists what was taken off.
                       Whole albums go: an album's date is its newest song's,
                       so one recent play keeps it, or brings it back whole.
   MakeRoomAlbums=no   songs go one by one instead of whole albums
@@ -250,7 +262,7 @@ by, gets its genre from MusicBrainz, or else Deezer (only song IDs are sent).
 Albums neither knows are under "Other".
   GenreLookup=no  don't ask; such albums stay under "Other"
 
-A song you rate 4 or 5 stars on a stock iPod gets favorited in Navidrome, once.
+A song you rate 4 or 5 stars on a stock iPod gets favorited on the server, once.
 Lowering the rating or removing the favorite afterwards is left as you set it.
   FavoriteRating=5  only 5 stars (FavoriteRating=0: ratings never favorite)
 A song you add to On-The-Go (or to a playlist saved from it on the iPod) gets
@@ -266,7 +278,7 @@ and time 4 hours ahead; it waits if a player is connected or music is being
 prepared. It never touches a player, and settings and music stay as they are.
   AutoUpdate=no  announces new versions without installing them
 
-The Navidrome server and the account the dock signs in with:
+The music server and the account the dock signs in with:
   Server=https://music.example.com
   Username=your-name
   Password=your-password
@@ -312,7 +324,7 @@ Retiring an iPod you've replaced:
     last characters of the ID, e.g. (AB12), work too.
   - You can't retire the iPod you're docking.
   Retiring changes nothing on any iPod. A retired iPod's plays are still
-  sent to Navidrome, and docking it again brings it back by itself.
+  sent to the server, and docking it again brings it back by itself.
 
 After the music (and any {wifi}) is done:
   - Done: the screen says DOCK UPDATED, {setup} is deleted, and the
@@ -349,7 +361,7 @@ WHAT THE SCREEN MEANS
                      players. Unplug the dock's power briefly to restart it.
   SAFE HOURS         No syncs right now (SafeHours=, see above). Safe to
                      unplug; shows when syncing resumes.
-Plays are never lost: if Navidrome can't be reached, the dock keeps them
+Plays are never lost: if the server can't be reached, the dock keeps them
 and sends them later.
 
 

@@ -899,6 +899,29 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   failed restore never hides the error. FAILED shows `dock_sync.failure_text`: what
   happened + what to do (`--detail`, small line), e.g. "Player disconnected" / "Plug it
   in again to finish"; the dock's own messages pass through.
+- **`server.type` (user, 2026-11-26: keep Navidrome a first-class choice, add generic
+  Subsonic):** `"navidrome"` (default; a config without the line, i.e. every older one)
+  or `"subsonic"` (Aurral and other Subsonic servers); `ServerType=` in DockSetup.txt.
+  `dock_prepare.identify_server` pings at the start of each run: Navidrome answers
+  `type: "navidrome"`, Aurral `type: "Aurral"` (3.1.0); `dock_config.type_mismatch` -> a
+  log warning, and musicdock-status Problems (from the plan's `"server": {type,
+  version}`). The run carries on either way. Most behavior adapts to what the server
+  sends (missing release types/sample rates/labels), so the type mostly decides the
+  iPod guide's tag advice (comment field on Navidrome, name elsewhere) and the check.
+  `tests/test_server_types.py` runs the whole prepare job against a Navidrome-like and
+  an Aurral-like fake. Wording is "the server" in logs/screens/guides; Navidrome is
+  named only where it's about Navidrome. Placeholder password now "your-password"
+  (the old "your-navidrome-password" still refused).
+- **Aurral fixes (2026-11-26):** `safe_name`: cache names over `MAX_NAME` (230) get the
+  ID's start + a SHA-1 (Errno 36 on 255-byte names; names that fit unchanged).
+  `sniff_suffix`: a download whose first bytes aren't the listed format (Aurral listed
+  2 FLACs as MP3; mp3gain refused them) is skipped (`WrongFormat`, error False) and its
+  real format kept in `cache/formats.json`, applied by `correct_formats` next run.
+  `match_renamed` (last pass of `match_new_ids`): same title words any order, one
+  artist's words inside the other's, unique by name on both sides, then length within
+  2 s and a target in common; on the real 21 re-matched songs: 10 followed, all right.
+  `probe_audio` (ffprobe) gives the sample rate for ALAC when the server has none.
+  `add_server_cover` runs `normalize_cover` first (WebP -> JPEG).
 - `dock_sdcard.py` (2026-11-26, user request; core, stdlib only): **SD card failing
   warning.** `dock_usbport.check` (root, every 30 s) passes it the new kernel lines:
   errors naming `mmcblk0` (I/O, `error -110`, recovery failed, `EXT4-fs error (device
@@ -1176,7 +1199,7 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   that don't fit push off the oldest songs, just enough, and never one dated
   within `recent_play_months` (date = latest of last play, added to the player,
   a playlist holding it changing; favorites have no date of their own). Not
-  enough = PLAYER FULL (`nospace`). `make_room` (default **off**, user's call before 0.7.2: removing music should be a choice; `MakeRoom=`). Removed
+  enough = PLAYER FULL (`nospace`). `make_room` (default **off**, user's call before 0.7.2: removing music should be a choice; `MakeRoom=`). **Experimental (user, 2026-11-26):** no good way to fill an iPod for a test, so it's marked experimental in README, INSTALL and the iPod guide and off the 0.8.0 list. Removed
   songs stay in the plan, listed in `room_removed` with their iPod counts: they
   count as held, return only into free room (counts restored) or as new songs
   once their date is recent. Format swaps never push songs off. Dates live in

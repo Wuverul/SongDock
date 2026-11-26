@@ -50,6 +50,39 @@ class MatchTests(unittest.TestCase):
         twice = targets + [song("n2", title="One", album="Album (Live)", track=2, discNumber=1)]
         self.assertEqual(dock_prepare.match_new_ids(earlier, twice), {})   # which one? neither
 
+    def test_a_song_renamed_with_its_new_id_is_followed(self):
+        # Aurral, 2026-11-26: songs re-matched to MusicBrainz came back renamed.
+        earlier = [self.entry("o1", "Proud feat. Tiffanie Malvo - Enei Remix",
+                              artist="Sam Binga", sources=["playlist:Jungle"]),
+                   self.entry("o2", "Look What You've Done - Selecta J-Man Remix feat. "
+                              "General Levy", artist="Emeli Sandé", duration=201,
+                              sources=["playlist:Jungle"])]
+        targets = [song("n1", title="Proud (Enei remix) (feat. Tiffanie Malvo)",
+                        artist="Sam Binga & Rider Shafique", duration=201),
+                   song("n2", title="Look What You’ve Done (Selecta J‐Man remix) "
+                        "(feat. General Levy)", artist="Emeli Sandé", duration=201)]
+        sources = {"n1": ["playlist:Jungle"], "n2": ["playlist:Jungle"]}
+        self.assertEqual(dock_prepare.match_new_ids(earlier, targets, sources),
+                         {"o1": "n1", "o2": "n2"})
+
+    def test_a_renamed_song_needs_its_words_artist_length_and_a_list_in_common(self):
+        earlier = [self.entry("o1", "Proud - Enei Remix", artist="Sam Binga",
+                              sources=["playlist:Jungle"])]
+
+        def match(title="Proud (Enei remix)", artist="Sam Binga", duration=200,
+                  where="playlist:Jungle"):
+            targets = [song("n1", title=title, artist=artist, duration=duration)]
+            return dock_prepare.match_new_ids(earlier, targets, {"n1": [where]})
+        self.assertEqual(match(), {"o1": "n1"})
+        self.assertEqual(match(title="Proud"), {})                    # not the remix
+        self.assertEqual(match(artist="Someone Else"), {})
+        self.assertEqual(match(duration=230), {})
+        self.assertEqual(match(where="playlist:Other"), {})
+        # Two candidates: neither.
+        targets = [song("n1", title="Proud (Enei remix)", artist="Sam Binga"),
+                   song("n2", title="Proud (Enei Remix)", artist="Sam Binga")]
+        self.assertEqual(dock_prepare.match_new_ids(earlier, targets), {})
+
     def test_another_server_rounding_lengths_differently_still_matches(self):
         """Aurral, 2026-11-25: 140 of 299 songs a second longer than Navidrome said."""
         earlier = [self.entry("o1", "One", mbid="AAA"), self.entry("o2", "Two", track=2)]

@@ -1,20 +1,21 @@
 # SongDock
 
 A Raspberry Pi dock that keeps a stock-firmware iPod, a Rockbox player or a
-simple music-folder player in sync with a [Navidrome](https://www.navidrome.org/) music server. Plug the iPod in, and
+simple music-folder player in sync with your own music server ([Navidrome](https://www.navidrome.org/),
+[Aurral](https://aurral.org/) or another Subsonic server). Plug the iPod in, and
 the dock:
 
-1. **Logs what you played** on the iPod to your Navidrome account (play counts
+1. **Logs what you played** on the iPod to your account on the server (play counts
    and "last played"). If the server is offline, plays wait on the dock and are
    sent later. Nothing is lost.
-2. **Copies new music** from your Navidrome **Favorites** and/or from any playlist
+2. **Copies new music** from your **Favorites** on the server and/or from any playlist
    you tag with `#ipod`, converted for the iPod (MP3), with album art.
 3. **Removes music** that has left those lists.
 4. **Keeps your playlists** on the iPod (Favorites plus each tagged playlist).
 5. **Favorites songs you rate** 4 or 5 stars on the iPod.
 6. **Charges the iPod**, and shows on its e-ink screen when it's safe to unplug.
 
-Between docks it quietly checks Navidrome every 5 minutes (adjustable) and prepares new
+Between docks it quietly checks the server every 5 minutes (adjustable) and prepares new
 music in the background, so syncs are quick.
 
 **To set one up, follow [INSTALL.md](INSTALL.md).**
@@ -60,7 +61,7 @@ music in the background, so syncs are quick.
   your lists. Songs from tagged playlists are copied too, but into the
   music library only: there are no playlists on the player. These players
   don't keep a play history the dock can read, so **no plays reach
-  Navidrome**; SAFE TO REMOVE says "No play count - unsupported". Like
+  the server**; SAFE TO REMOVE says "No play count - unsupported". Like
   Rockbox players, they need an unplug and replug to sync new music. Tried
   so far with a USB flash drive standing in for one, not with a real
   player.
@@ -83,7 +84,7 @@ music in the background, so syncs are quick.
   | How the dock spots it | Apple's firmware folders | its `.rockbox` folder | neither, but a `MediaDock.txt` |
   | Where music goes | the iPod's own music database | files in a `MediaDock` folder (artist/album), with `cover.jpg` art; your other files are left alone | the same as Rockbox |
   | Playlists | in the iPod's database | `.m3u8` files in `Playlists` | none (their songs go in the library) |
-  | Plays sent to Navidrome | a play count and the last play's time (earlier plays get estimated times) | every play with its exact time; skips don't count (turn on Rockbox's Last.fm log) | none |
+  | Plays sent to the server | a play count and the last play's time (earlier plays get estimated times) | every play with its exact time; skips don't count (turn on Rockbox's Last.fm log) | none |
   | Music formats | MP3 (default), ALAC or AAC | the same by default; FLAC, Ogg and Opus as-is on a Rockbox-only dock (below) | MP3 on a Rockbox-only dock: while one of these is in the dock's player list, everything but MP3 and M4A is converted (for every player there, Rockbox too) |
   | Favoriting songs from the player | rate 4 or 5 stars | add to the `Keep` playlist | not available |
   | Browsing by artist/album | built in | turn on Rockbox's database auto-update | up to the player (most read the tags) |
@@ -160,7 +161,7 @@ Everything here changes only what's on the player, unless it says otherwise.
   `SinglesAlbum=` in a `DockSetup.txt`) sets how many singles it takes, 0 turns it
   off; `singles_max_tracks` (or `SinglesTracks=`) also counts untagged releases of
   different songs up to that many tracks (default 1).
-- **Ratings become favorites (this one does change Navidrome):** rate a song 4 or 5
+- **Ratings become favorites (this one does change the server):** rate a song 4 or 5
   stars on a stock iPod and the next sync favorites it, once, so it stays on the iPod
   after leaving its playlists. It only ever adds a favorite: lowering a rating changes
   nothing, and a favorite you remove stays removed. `favorite_rating` (or
@@ -182,11 +183,12 @@ Everything here changes only what's on the player, unless it says otherwise.
   loudest song's, so quiet and loud moments keep their balance. Albums that don't clip
   are left as they are. ALAC and songs copied as-is (FLAC on Rockbox, AAC) aren't changed.
 - **When a player fills up:** new songs wait, and the screen shows PLAYER FULL. Nothing
-  is removed unless you set `make_room = true` (off by default). Then the oldest songs
+  is removed unless you set `make_room = true` (experimental, off by default: not yet
+  tried on a real full iPod). Then the oldest songs
   make way, only as many as needed, oldest by last play, arrival on the player, or a
   change to a playlist holding them. Nothing newer than `recent_play_months` (default 3)
   goes. Removed songs come back, with their iPod counts, when there's room, or as soon
-  as you play them in Navidrome's web or desktop app. `MediaDock.txt` on the iPod lists
+  as you play them in the server's own apps (web or desktop). `MediaDock.txt` on the iPod lists
   what was taken off. Whole
   albums go and come back together, dated by their newest song
   (`make_room_albums = false` for song by song).
@@ -377,7 +379,7 @@ key, and goes back to the old version if the install fails, which
 | `songdock/screen` | The e-ink screens |
 | `songdock/setup` | `DockSetup.txt`, `wifi.txt` and the guide written to each player |
 | `songdock/report` | `musicdock-status` and `--share` |
-| `songdock/core` | Settings, the dock's record, safe hours and the Navidrome client |
+| `songdock/core` | Settings, the dock's record, safe hours and the server (Subsonic) client |
 | `pi` | The installer and system services |
 | `scripts` | Tools for developing and releasing |
 | `tests`, `docs`, `vendor` | Tests, README images and the bundled display driver |
@@ -389,7 +391,7 @@ proven yet:
 
 **Tested on real hardware:** an iPod nano 4th generation on a Pi Zero W and
 a Pi Zero 2 W, and an iPod classic 7th generation (a 160 GB model fitted with
-about 460 GB of flash storage) on the Pi Zero 2 W, with a Navidrome server:
+about 460 GB of flash storage) on the Pi Zero 2 W, with Navidrome and then Aurral:
 music, album art, menus, playlists, lossless (ALAC) songs, a full rebuild of a
 wiped iPod, and a first fill bigger than the dock's storage. Everything else
 below is either untested on hardware or not built.
@@ -429,8 +431,10 @@ below is either untested on hardware or not built.
   `MediaDock.txt` on the iPod) warn from 20,000, and near the model's limit. The iPod's database was measured fine at 40,000 songs on a
   Pi Zero 2 W; album art and the music preparation haven't been measured at
   that size yet.
-- **Navidrome only, one library per dock.** Other Subsonic-compatible
-  servers may work but aren't tested. Several addresses for the same server
+- **One server and library per dock.** Tested with Navidrome and Aurral; other
+  Subsonic-compatible servers may work but aren't tested. Say which kind in the
+  settings: `server.type = "navidrome"` (the default) or `"subsonic"` (Aurral and the
+  rest); the dock checks it against what the server reports and warns if it's wrong. Several addresses for the same server
   (e.g. at home and away) are fine; combining several servers' libraries
   isn't supported.
 - **Play times from a stock iPod are partly estimated.** The iPod only
@@ -458,7 +462,7 @@ below is either untested on hardware or not built.
   restored). The dock now repairs that by itself before syncing, but the repair
   hasn't run on a real unplugged iPod yet.
 - **Written but not yet tried on real hardware:** `make_room` on
-  a full player; a sync stopped by safe hours; plays waiting while Navidrome is
+  a full player; a sync stopped by safe hours; plays waiting while the server is
   down; `Keep.m3u8` on a real Rockbox player. (PLAYER FULL and an automatic update
   have now run on a real dock.)
 - **Restart the iPod once after its album art is converted.** The dock
@@ -473,10 +477,10 @@ below is either untested on hardware or not built.
 - **Not affiliated with Apple.** SongDock is an independent project, not
   affiliated with, endorsed by, or sponsored by Apple Inc. iPod, iTunes,
   Finder and Apple Music are trademarks of Apple Inc., used here only to say
-  which devices and software the dock works with. Rockbox and Navidrome are
-  the names of their respective projects.
+  which devices and software the dock works with. Rockbox, Navidrome and
+  Aurral are the names of their respective projects.
 - **Your own music, on your own devices.** The dock copies music from your
-  Navidrome server to iPods you've opted in. It's meant for music you have
+  music server to iPods you've opted in. It's meant for music you have
   the right to use and copy. It doesn't remove copy protection (DRM) and
   can't play or copy protected purchases. Putting your library on other
   people's iPods may not be allowed where you live; that's up to you.
@@ -486,7 +490,7 @@ below is either untested on hardware or not built.
 - [iOpenPod](https://github.com/TheRealSavi/iOpenPod): an open-source
   desktop app for managing an iPod without iTunes, syncing music from a
   folder on your computer. SongDock instead keeps an iPod in step with a
-  Navidrome server, hands-off, from a dock.
+  music server, hands-off, from a dock.
 
 ## License
 

@@ -16,7 +16,26 @@ import dock_genres
 log = logging.getLogger("dock_config")
 
 DEFAULT_PATH = os.environ.get("MUSICDOCK_CONFIG", "~/.config/musicdock/config.toml")
-PLACEHOLDER_PASSWORD = "your-navidrome-password"
+PLACEHOLDER_PASSWORD = "your-password"
+PLACEHOLDERS = {PLACEHOLDER_PASSWORD, "your-navidrome-password"}   # older examples
+# server.type (user, 2026-11-26): Navidrome, as the dock was built for (also what a
+# config without the line means), or any other Subsonic server (Aurral...).
+SERVER_TYPES = ("navidrome", "subsonic")
+
+def type_mismatch(setting, reported):
+    """What to say when server.type (`setting`) doesn't fit what the server calls
+    itself (`reported`: the "type" of its ping answer, "" if it gives none), else
+    None. Navidrome says "navidrome"; Aurral says "Aurral"."""
+    navidrome = (reported or "").strip().lower() == "navidrome"
+    if setting == "navidrome" and not navidrome:
+        return (f'server.type is "navidrome", but the server says it is '
+                f'{reported or "another Subsonic server"}: set server.type = "subsonic" '
+                f'in config.toml (or ServerType=subsonic in DockSetup.txt)')
+    if setting == "subsonic" and navidrome:
+        return ('server.type is "subsonic", but the server is Navidrome: set server.type = '
+                '"navidrome" in config.toml (or ServerType=navidrome in DockSetup.txt)')
+    return None
+
 
 DEFAULTS = {
     "sync": {"targets": ["starred"], "favorites_playlist": "Favorites",
@@ -98,7 +117,7 @@ def load(path=None):
     missing = [k for k in ("url", "username", "password") if not server.get(k)]
     if missing:
         raise ConfigError(f"{path}: [server] is missing {', '.join(missing)}")
-    if server["password"] == PLACEHOLDER_PASSWORD:
+    if server["password"] in PLACEHOLDERS:
         raise ConfigError(f"{path}: still has the placeholder password")
     urls = [server["url"]] if isinstance(server["url"], str) else server["url"]
     if not (isinstance(urls, list) and urls and all(
@@ -107,6 +126,10 @@ def load(path=None):
                           f'"https://music.example.com", or a list of them in the '
                           f'order to try, e.g. ["http://192.168.1.50:4533", '
                           f'"https://music.example.com"]')
+    server = {"type": "navidrome", **server}
+    if server["type"] not in SERVER_TYPES:
+        raise ConfigError(f'{path}: server.type must be "navidrome" or "subsonic" (Aurral or '
+                          f'another Subsonic server), not {server["type"]!r}')
     cfg["server"] = server
 
     cfg["sync"]["cache_dir"] = expand_home(cfg["sync"]["cache_dir"], path)

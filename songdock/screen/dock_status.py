@@ -387,8 +387,8 @@ def render(screen, args):
             # can be found again (the header's check mark says it's done).
             header(f"{check}WI-FI CHANGED", inverted=False)
             rows = [(fit(f"Now on \u201c{args.ssid}\u201d", body_f), body_f)]
-            server = {"yes": "Navidrome reachable",
-                      "no": "Navidrome NOT reachable"}.get(args.server)
+            server = {"yes": "Server reachable",
+                      "no": "Server NOT reachable"}.get(args.server)
             if server:
                 rows.append((fit(server, body_f), body_f))
             rows.append((f"Synced {now}", small_f))
@@ -895,7 +895,7 @@ def build_parser():
                    help="offline: what's missing")
     p.add_argument("--ssid", help="offline/wifi: the Wi-Fi network")
     p.add_argument("--server", choices=["yes", "no", "unknown"], default="unknown",
-                   help="wifi: whether Navidrome is reachable on the new network")
+                   help="wifi: whether the server is reachable on the new network")
     p.add_argument("--only-over", metavar="SCREENS",
                    help="draw only if the current screen is one of these "
                         "(comma-separated; 'none' = nothing drawn yet)")

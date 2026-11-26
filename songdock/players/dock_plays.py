@@ -142,7 +142,7 @@ def upload_plays(client, record, limit=None):
                 log.warning("Play of %s - %s rejected, kept in queue: %s",
                             p.get("artist"), p.get("title"), e)
     if sent:
-        log.info("Sent %d play(s) to Navidrome", sent)
+        log.info("Sent %d play(s) to the server", sent)
     return sent, failed, False
 
 

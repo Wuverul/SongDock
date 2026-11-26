@@ -185,7 +185,7 @@ def apply_wifi_file(root, wifi=None, server_check=None):
 
     _delete(path)
     server = server_check() if server_check else None
-    log.info("Now on %r (Navidrome reachable: %s); wifi.txt removed", ssid, server)
+    log.info("Now on %r (server reachable: %s); wifi.txt removed", ssid, server)
     return {"ok": True, "ssid": ssid, "reason": "", "server": server}
 
 
