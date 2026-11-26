@@ -63,7 +63,9 @@ class FakeServer:
                     "serverVersion": getattr(self, "server_version", "0.64.2")}
         if endpoint == "getPlaylists":
             return {"playlists": {"playlist": [
-                {"id": pid, "name": v[0], **({"comment": v[2]} if len(v) > 2 else {})}
+                {"id": pid, "name": v[0], **({"comment": v[2]} if len(v) > 2 else {}),
+                 **({"songCount": self.listed[pid]} if pid in getattr(self, "listed", {})
+                    else {})}
                 for pid, v in self.playlists.items()]}}
         if endpoint == "search3":
             self.searches = getattr(self, "searches", []) + [params["query"]]
@@ -83,6 +85,8 @@ class FakeServer:
             self.reads = getattr(self, "reads", 0) + 1
             return {"playlist": {"id": params["id"], "name": name,
                                  "changed": f"2026-10-18T11:{self.reads:02d}",
+                                 **({"songCount": self.listed[params["id"]]}
+                                    if params["id"] in getattr(self, "listed", {}) else {}),
                                  "entry": songs}}
         raise AssertionError(endpoint)
 

@@ -205,6 +205,11 @@ class PrepareError(Exception):
     pass
 
 
+class HeldBack(PrepareError):
+    """The server's answer looks like a library being rescanned (check_shrink): the run
+    stops with nothing changed. Not a failure: it says so and waits."""
+
+
 class WrongFormat(PrepareError):
     """A download wasn't the format the server listed (see sniff_suffix)."""
 
@@ -461,6 +466,12 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
                 sources[song["id"]].append(target)
         log.info("Target %s: %d songs", target, len(songs))
 
+    def listed(*records):
+        """How many songs the server says the playlist has (check_shrink compares it
+        with the songs it returned)."""
+        count = max((int(r.get("songCount") or 0) for r in records), default=0)
+        return {"listed": count} if count else {}
+
     seen_playlists = set()
     for target in targets:
         if isinstance(target, tuple):                  # found by tag
@@ -484,6 +495,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             playlists.append({"target": key, "id": pl["id"],
                               "name": player_playlist_name(pl["name"], prefixes, name_tags),
                               "via": "tag", **singles(pl, target[1]), **flow_mark(pl),
+                              **listed(pl, target[1]),
                               "song_ids": [s["id"] for s in songs]})
             add(key, songs)
             continue
@@ -505,6 +517,7 @@ def target_tracks(client, targets, known_playlists=None, favorites_name="Favorit
             playlists.append({"target": target, "id": pl["id"],
                               "name": player_playlist_name(pl["name"], prefixes, name_tags),
                               "via": "config", **singles(pl), **flow_mark(pl),
+                              **listed(pl),
                               "song_ids": [s["id"] for s in songs]})
         else:
             raise PrepareError(f"unknown target {target!r} "
@@ -1056,6 +1069,55 @@ def sniff_suffix(path):
                               and head[1] & 0x06):        # an MPEG audio frame, not AAC
         return "mp3"
     return None
+
+
+SHRINK_SHARE = 0.5         # more than this share of the last plan gone at once...
+SHRINK_MIN = 100           # ...from a plan at least this big, looks like a rescan
+SHRINK_HOLD = 24 * 3600    # still so after this long: taken as a real change
+SHRINK_FILE = "shrink.json"   # cache/: since when, and why (musicdock-status shows it)
+
+
+def check_shrink(previous, targets, playlists, cache_dir, clock=time.time, dry_run=False):
+    """Stop (HeldBack) when the server's answer looks like a library half-way through a
+    rescan rather than a change of mind (2026-11-26: Navidrome rescanning after its music
+    folders changed listed every playlist with its song count but returned no songs, and
+    no favorites; the plan would have taken everything off a docked iPod):
+      * a playlist says it has songs but returns none, or
+      * more than SHRINK_SHARE of the songs planned last time are gone at once.
+    Nothing changes while it holds. A rescan ends within hours; the same answer still
+    there after SHRINK_HOLD is taken as meant, and the run carries on. Called after new
+    IDs are followed, so a move to another server, which keeps the songs, passes."""
+    reasons = []
+    empty = [p["name"] for p in playlists if p.get("listed") and not p.get("song_ids")]
+    if empty:
+        reasons.append(f"{len(empty)} playlist(s) say they have songs but return none "
+                       f"({', '.join(empty[:3])}{', ...' if len(empty) > 3 else ''})")
+    before = {t["id"] for key in ("tracks", "on_player", "skipped")
+              for t in previous.get(key, [])}
+    gone = len(before - {t["id"] for t in targets})
+    if len(before) >= SHRINK_MIN and gone > SHRINK_SHARE * len(before):
+        reasons.append(f"{gone} of the {len(before)} songs planned last time are gone")
+    path = os.path.join(cache_dir, SHRINK_FILE)
+    if not reasons:
+        if os.path.exists(path) and not dry_run:
+            os.remove(path)
+        return
+    try:
+        with open(path) as f:
+            since = float(json.load(f)["since"])
+    except (OSError, ValueError, KeyError, TypeError):
+        since = clock()
+    if not dry_run:
+        write_json_atomic(path, {"since": since, "until": since + SHRINK_HOLD,
+                                 "why": reasons})
+    if clock() - since >= SHRINK_HOLD:
+        log.warning("Still so after %d hours (%s): taken as a real change, carrying on",
+                    SHRINK_HOLD // 3600, "; ".join(reasons))
+        return
+    until = time.strftime("%a %H:%M", time.localtime(since + SHRINK_HOLD))
+    raise HeldBack(f"nothing changed: {'; '.join(reasons)}. A server rescanning its "
+                   f"library looks like this; if it's still so at {until}, the dock takes "
+                   f"it as a real change and carries on")
 
 
 def correct_formats(targets, cache_dir, dry_run=False):
@@ -2031,8 +2093,6 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         cfg["sync"].get("singles_tag", ""), cfg["sync"].get("playlist_prefixes", ()),
         name_tags=dock_tags(cfg), all_singles=cfg["sync"].get("playlist_singles", False),
         album_cache=album_cache)
-    if not dry_run and album_cache:
-        write_json_atomic(album_cache_path, album_cache)
     unsplit_artists = set()
     dock_artists.apply_aliases(targets, cfg["sync"].get("artist_aliases", ()))
     album_labels = {}
@@ -2064,6 +2124,9 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     if renamed:
         on_player = {renamed.get(k, k): v for k, v in (on_player or {}).items()}
         plays = {renamed.get(k, k): v for k, v in (plays or {}).items()}
+    check_shrink(previous, targets, playlists, cache_dir, clock, dry_run)
+    if not dry_run and album_cache:      # after the check: a rescan's empty answer isn't kept
+        write_json_atomic(album_cache_path, album_cache)
     correct_formats(targets, cache_dir, dry_run)
     lossless_on = (bool(previous.get("lossless_playlists")) if player_kinds is None else
                    bool(LOSSLESS_PLAYERS.get(device, set()) & set(player_kinds)))
@@ -3169,6 +3232,9 @@ def main(argv=None):
             return 0
         log.error("Prepare failed: %s", e)
         return 1
+    except HeldBack as e:
+        log.warning("Held back, %s", e)
+        return 0
     except PrepareError as e:
         log.error("Prepare failed: %s", e)
         return 1

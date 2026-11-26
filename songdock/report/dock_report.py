@@ -428,6 +428,11 @@ def problems(facts, now=None):
         out.append(dock_sdcard.describe(facts["sd_card"]))
     if facts.get("server_type"):
         out.append(facts["server_type"])
+    held = facts.get("held_back")
+    if held and held.get("until", 0) > now:
+        out.append(f"Music changes held back since {when(held['since'])}: "
+                   f"{'; '.join(held.get('why', []))}. The server may be rescanning its "
+                   f"library; if it's still so at {when(held['until'])}, the dock goes ahead")
     if facts.get("failed_units"):
         out.append("Failed services: " + ", ".join(facts["failed_units"]))
     if facts.get("throttled") not in (None, "0x0", "?"):
@@ -538,6 +543,11 @@ def main(argv=None):
                               f"{update.get('failed_why')}") if update.get("failed") else None
     import dock_sdcard
     facts["sd_card"] = dock_sdcard.warning()
+    try:
+        with open(os.path.join(cache_dir, "shrink.json")) as f:
+            facts["held_back"] = json.load(f)
+    except (OSError, ValueError):
+        pass
     print("\nProblems")
     for line in problems(facts) or ["none"]:
         print(f"  {line}")

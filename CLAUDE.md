@@ -912,6 +912,18 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   an Aurral-like fake. Wording is "the server" in logs/screens/guides; Navidrome is
   named only where it's about Navidrome. Placeholder password now "your-password"
   (the old "your-navidrome-password" still refused).
+- **Rescan guard (user, 2026-11-26; `dock_prepare.check_shrink`):** found on the real
+  Navidrome mid-rescan (music folders changed): getPlaylists/getPlaylist kept each
+  playlist's `songCount` (e.g. 1605) but returned 0 entries, and getStarred2 nothing; a run
+  would have planned an empty iPod. After `follow_new_ids` (so a server move passes), the
+  run raises `HeldBack` (a `PrepareError`; main logs a warning and exits 0, not failed)
+  when a playlist has `listed` (its songCount, now kept in the plan's playlist records)
+  but no songs, or more than `SHRINK_SHARE` (half) of the last plan's songs (tracks +
+  on_player + skipped, if >= `SHRINK_MIN` 100) are gone. Nothing changes; `cache/
+  shrink.json` keeps since/until/why (musicdock-status Problems shows it). Still so after
+  `SHRINK_HOLD` (24 h) = taken as meant, the run carries on; the file goes once the
+  answer is normal. albums.json is now saved after the check (a rescan's empty favorites
+  would have cost a re-read of every album). `tests/test_rescan_guard.py`.
 - **Aurral fixes (2026-11-26):** `safe_name`: cache names over `MAX_NAME` (230) get the
   ID's start + a SHA-1 (Errno 36 on 255-byte names; names that fit unchanged).
   `sniff_suffix`: a download whose first bytes aren't the listed format (Aurral listed
