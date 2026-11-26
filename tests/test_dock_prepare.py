@@ -569,6 +569,15 @@ class PrepareTests(unittest.TestCase):
                           if p["via"] == "tag"}, {"flow:abc": True, "shared:def": False})
         self.assertIs(m["favorite_flow_albums"], True)
 
+    def test_the_plan_says_whether_on_the_go_favorites(self):
+        server = FakeServer(playlists={"P1": ("Mel Test #iPod", [song("b1")])})
+        cfg = self.tagged_cfg()
+        self.run_prepare(server, cfg)
+        self.assertNotIn("favorite_on_the_go", self.manifest())     # hand-made config: off
+        cfg["sync"]["favorite_on_the_go"] = True
+        self.run_prepare(server, cfg)
+        self.assertIs(self.manifest()["favorite_on_the_go"], True)
+
     def test_moving_the_tag_from_comment_to_name_keeps_the_playlist(self):
         server = FakeServer(playlists={"P1": ("Mel Test", [song("b1")], "#ipod")})
         self.run_prepare(server, self.tagged_cfg())
@@ -1233,6 +1242,44 @@ class PrepareTests(unittest.TestCase):
         self.assertEqual(len(calls), made)                    # remembered
         self.assertEqual(self.manifest().get("generated"), generated)   # plan unchanged
 
+    def test_release_types_come_from_musicbrainz_when_the_server_sends_none(self):
+        # Aurral (2026-11-25) sends no releaseTypes: a 2-song single (two different
+        # titles) and a 1-song album were told apart only by track counts. MusicBrainz
+        # names them, asked once per release group; the answers stay in the plan.
+        rg = "album:release-group:%s-0000-0000-0000-000000000000"
+        songs = ([song(f"s{i}", albumId=rg % f"0000000{i}", album=f"Single {i}")
+                  for i in range(3)]
+                 + [song("t1", albumId=rg % "00000003", album="Single 3", title="One"),
+                    song("t2", albumId=rg % "00000003", album="Single 3", title="Two"),
+                    song("lp", albumId=rg % "00000004", album="Album")])
+
+        class Server(FakeServer):
+            def call(self, method, **kw):
+                if method == "getAlbum":
+                    n = sum(s["albumId"] == kw["id"] for s in songs)
+                    return {"album": {"id": kw["id"], "name": "x", "songCount": n,
+                                      "song": [{"title": s["title"]} for s in songs
+                                               if s["albumId"] == kw["id"]]}}
+                return super().call(method, **kw)
+        asked = []
+
+        def fetch(url):
+            asked.append(url)
+            return {"primary-type": "Album" if "00000004" in url else "Single"}
+        cfg = config()
+        cfg["sync"]["genre_lookup"] = True
+        self.run_prepare(Server(songs=songs), cfg, genre_fetch=fetch)
+        albums = {t["id"]: t["album"] for t in self.manifest()["tracks"]}
+        self.assertEqual(albums["t1"], "Artist Singles")      # two titles, but a single
+        self.assertEqual(albums["t2"], "Artist Singles")
+        self.assertEqual(albums["lp"], "Album")               # one song, but an album
+        self.assertEqual(len([u for u in asked if "release-group/" in u]), 5)
+        self.assertTrue(all(sh.get("asked") for sh in
+                            self.manifest()["release_shapes"].values()))
+        asked.clear()
+        self.run_prepare(Server(songs=[dict(s) for s in songs]), cfg, genre_fetch=fetch)
+        self.assertFalse([u for u in asked if "release-group/" in u])   # remembered
+
     def test_a_singles_playlist_gathers_lone_songs_until_their_album_comes(self):
         loose = [song("x1", albumId="ax", album="X Album", artist="Xa"),
                  song("y1", albumId="ay", album="Y Album", artist="Ya")]
@@ -1685,6 +1732,43 @@ class ShrinkCoverTests(unittest.TestCase):
         with self.assertRaises(SubsonicError):
             dock_prepare.add_server_cover(self.bare_mp3(), {"id": "s1", "albumId": "a"},
                                           self.CoverServer(network=True), {})
+
+
+    def test_album_cover_from_the_server_wins_and_follows_changes(self):
+        # Aurral (2026-11-25): RAVEPOP's files carried other singles' covers; every song
+        # names its album's coverArt, the cover a person picks there.
+        with tempfile.TemporaryDirectory() as cache:
+            server = FakeServer(songs=[
+                song("a1", suffix="mp3", albumId="alb", coverArt="alb"),
+                song("a2", suffix="mp3", albumId="alb", coverArt="alb"),
+                song("own", suffix="mp3", albumId="nav", coverArt="mf-own_1")])  # its own
+            server.covers = {"alb": self.png(800), "mf-own_1": self.png(300)}
+
+            def run():
+                prepare(server, config(), cache, convert_fn=fake_convert, disk_usage=ROOMY,
+                        lower_fn=None)
+                with open(os.path.join(cache, "manifest.json")) as f:
+                    return {t["id"]: t for t in json.load(f)["tracks"]}
+
+            def shown(nid):
+                return self.cover(os.path.join(cache, "tracks", f"{nid}.mp3"))[1].data
+            tracks = run()
+            art = tracks["a1"]["art"]
+            self.assertEqual(tracks["a2"]["art"], art)
+            self.assertNotIn("art", tracks["own"])             # Navidrome-style: as before
+            with open(os.path.join(cache, "covers", art + ".jpg"), "rb") as f:
+                self.assertEqual(shown("a1"), f.read())
+            self.assertEqual(shown("a1"), shown("a2"))
+            self.assertEqual(os.listdir(os.path.join(cache, "covers")), [art + ".jpg"])
+
+            server.cover_fetches = []
+            server.covers["alb"] = self.png(500)              # a new variant picked
+            tracks = run()                                    # stalest covers re-read
+            self.assertIn("alb", server.cover_fetches)
+            self.assertNotEqual(tracks["a1"]["art"], art)
+            self.assertEqual(shown("a1"), shown("a2"))
+            self.assertEqual(os.listdir(os.path.join(cache, "covers")),
+                             [tracks["a1"]["art"] + ".jpg"])  # the old one is gone
 
 
 class WorkerTests(unittest.TestCase):

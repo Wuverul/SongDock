@@ -88,6 +88,9 @@ display.theme = "light"
 # ...and a song rated from an Aurral Flow (a playlist that refills itself) gets
 # its album starred too, so the whole album comes to the iPod.
 # sync.favorite_flow_albums = true
+# A song you add to On-The-Go on the iPod (or to a playlist saved from it there)
+# gets starred the same way.
+# sync.favorite_on_the_go = true
 
 # --- When the iPod is full ---
 # Normally new songs wait and the screen says PLAYER FULL. With make_room,

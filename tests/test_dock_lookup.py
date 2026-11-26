@@ -49,6 +49,17 @@ def recording(rid, genres=(), isrcs=(), groups=(), artist=None):
 
 
 class LookupTests(unittest.TestCase):
+    def test_release_types_by_release_group_or_release(self):
+        rg = "469f9762-7c38-4502-8ff9-418a3178826a"
+        fetch = FakeFetch({f"{MB}release-group/{rg}?": {"primary-type": "Single"},
+                           f"{MB}release/r1?": {"release-group": {
+                               "primary-type": "Album", "secondary-types": ["Live"]}}})
+        self.assertEqual(lk.release_group_types(f"album:release-group:{rg}", "x", fetch),
+                         ["single"])                       # Aurral's album ID names it
+        self.assertEqual(lk.release_group_types("al-123", "r1", fetch), ["album", "live"])
+        self.assertEqual(lk.release_group_types("al-123", None, fetch), [])
+        self.assertEqual(len(fetch.urls), 2)
+
     def test_a_recordings_own_genres_come_first(self):
         fetch = FakeFetch(recording("r1", ["drum and bass", "jungle"], groups=["g1"]))
         self.assertEqual(lk.musicbrainz("r1", fetch), (["drum and bass", "jungle"], []))

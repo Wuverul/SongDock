@@ -612,12 +612,14 @@ def size_notes(record, guid, root, manifest, cfg, kind):
         import dock_restore
         capacity = shutil.disk_usage(root).total
         record.set_player_capacity(guid, capacity)
+        player = record.player(guid) or {}
         on_player = len({r["navidrome_id"] for r in record.tracks(guid)})
         planned = len(dock_restore.targets(manifest or {}))
         notes = dock_limits.player_notes(on_player, planned, capacity, cfg, kind,
                                          dock_limits.plan_bytes(manifest or {}),
                                          dock_limits.alac_bytes(manifest or {}),
-                                         model=(record.player(guid) or {}).get("model"))
+                                         model=player.get("model"),
+                                         model_source=player.get("model_source"))
         for note in notes:
             log.warning("%s", note)
         import dock_artists

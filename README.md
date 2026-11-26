@@ -164,8 +164,14 @@ Everything here changes only what's on the player, unless it says otherwise.
   stars on a stock iPod and the next sync favorites it, once, so it stays on the iPod
   after leaving its playlists. It only ever adds a favorite: lowering a rating changes
   nothing, and a favorite you remove stays removed. `favorite_rating` (or
-  `FavoriteRating=` in a `DockSetup.txt`) sets the stars; 0 turns it off. On Rockbox,
+  `FavoriteRating=` in a `DockSetup.txt`) sets the stars; 0 turns it off. Adding a
+  song to On-The-Go (or a playlist saved from it on the iPod) does the same, and
+  On-The-Go stays as you left it across syncs; `favorite_on_the_go = false` (or
+  `FavoriteOnTheGo=no`) turns that off. On Rockbox,
   add songs to the `Keep` playlist the dock makes in `Playlists` instead.
+- **Looks after itself:** DOCK READY says "SD card failing: replace" if the Pi's SD card
+  shows read/write or filesystem errors, and `scripts/backup_dock.sh` keeps daily copies
+  of the dock's settings and records on your computer (INSTALL.md, "Backups").
 - **Safe hours:** no syncs from 7 to 10 AM by default, so the iPod is free for a morning
   commute. A sync running when the window opens stops early, leaving nothing missing,
   and a docked iPod syncs afterwards. Other players need plugging in again. Set
@@ -414,7 +420,12 @@ below is either untested on hardware or not built.
   iPod that handles about 50,000 (every classic, the bigger iPod videos), and
   18,800 to one that handles about 20,000 (the 30 GB iPod videos), going by
   [iFlash's table](https://www.iflash.xyz/store/iflash-compatibility/); the
-  real limit depends on the iPod and its songs. `musicdock-status` (and
+  real limit depends on the iPod and its songs. A 6th-gen classic (80 GB, 120 GB or the
+  thick 160 GB; MB029, MB147, MB145, MB150, MB565, MB562) can only use 128 GB, even
+  flash-modded with more: the same table says its firmware addresses no more. Once its
+  model is known (not a guess), the dock fills it only to 128 GB, and warns when the
+  storage is bigger: restoring it in iTunes or Finder formats just the 128 GB, the safe
+  size. `musicdock-status` (and
   `MediaDock.txt` on the iPod) warn from 20,000, and near the model's limit. The iPod's database was measured fine at 40,000 songs on a
   Pi Zero 2 W; album art and the music preparation haven't been measured at
   that size yet.

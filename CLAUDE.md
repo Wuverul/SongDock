@@ -175,7 +175,8 @@ description (API only) and sends it back when set.
 - **Read the iPod's play data before any database write.** `Play Counts`
   entries have no track IDs; they match tracks by position in `iTunesDB`, so
   after the DB changes they would be credited to the wrong tracks. Never leave
-  a `Play Counts` file behind across a DB rewrite.
+  a `Play Counts` file behind across a DB rewrite. On-The-Go files
+  (`OTGPlaylistInfo*`) are positions too: every save rewrites them (`ipod_db.OnTheGo`).
 - **Show `syncing` before mounting.** A crash then leaves "do not remove" on
   screen, which is the safe failure.
 - **The prepare job never draws over `syncing`** (nor `safe`, `failed`, or
@@ -835,6 +836,17 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   in MediaDock.txt and musicdock-status (`dock_players.model_text`) until `Model=` in
   DockSetup.txt (`ipod_handler.model_change` / `set_model`) sets it, only to a model with
   the same signature, database version, music folders and cover formats.
+  **128 GB on a 6th-gen Classic (user, 2026-11-25, 0.8.0):** iFlash's same page: the 6th
+  and 6.5th gen (B029, B147, B145, B150, B565, B562) address the disk with LBA28, so they
+  "only show and use up to 128Gb"; the rest use LBA48. `storage_cap` = 2^37 bytes for those
+  models when `model_source` is sysinfo/serial/manual; a guess or None (older records)
+  caps nothing, because every Classic shares a USB ID (the user's 7th gen is recorded as a
+  guessed xB029). `usable_free` replaces the handler's free-space reads (apply_plan): free
+  below the cap = total used vs the cap, so a capped iPod fills to 128 GB and the rest is
+  "player full". `storage_note` (in `player_notes`) warns when the storage is bigger, or
+  says the model is a guess; `fit_note`/`alac_note` use the capped size. Filling under the
+  cap doesn't place clusters under it (vfat allocates anywhere in a bigger partition), so
+  the note says to restore in iTunes/Finder, which formats 128 GB.
 - `dock_safehours.py` (2026-10-26, user request: "grab your iPod before a
   morning commute"): `[sync] safe_hours`, **default "07:00-10:00"** (user's
   choice; existing configs without the key get it too), "off" (or "") =
@@ -887,6 +899,25 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   failed restore never hides the error. FAILED shows `dock_sync.failure_text`: what
   happened + what to do (`--detail`, small line), e.g. "Player disconnected" / "Plug it
   in again to finish"; the dock's own messages pass through.
+- `dock_sdcard.py` (2026-11-26, user request; core, stdlib only): **SD card failing
+  warning.** `dock_usbport.check` (root, every 30 s) passes it the new kernel lines:
+  errors naming `mmcblk0` (I/O, `error -110`, recovery failed, `EXT4-fs error (device
+  mmcblk0...`, remount read-only; never `mmc1` = Wi-Fi, nor bare `mmc0` timeouts), plus
+  ext4's `errors_count` (kept in the superblock: survives restarts) and a read-only root,
+  each counted only when new (a failing card isn't written every 30 s). Kept in
+  `/var/lib/musicdock/sdcard.json` and `/run/musicdock/sdcard.json` (RAM, for a card that
+  can't be written), tied to the card's CID (a new card starts clean); `dock_sdcard.py
+  --ok` (sudo) clears it, keeping counted ext4 errors behind it. DOCK READY shows
+  "SD card failing: replace" white on black in place of the IP (`--sd-warning on|off`
+  fakes it for previews); `--refresh` redraws when it comes or goes; musicdock-status
+  lists it first in Problems. Only DOCK READY shows it (other resting screens return to it).
+- `scripts/backup_dock.sh` (2026-11-26, user: no budget for a new card): pulls a
+  `.tar.gz` over SSH to `~/SongDock-backups` (mode 700, newest 30): config `*.toml`,
+  `/var/lib/musicdock/*.json`, cache `*.json`, and the record via SQLite's backup API
+  (copied in the Pi's /tmp = RAM). `--install` = launchd agent `com.songdock.backup`,
+  daily at noon (catches up after sleep); it runs a copy in `~/Library/Application
+  Support/SongDock/` because launchd jobs can't read ~/Documents (TCC: "Operation not
+  permitted", exit 126). Shipped in releases. Restore steps in INSTALL.md "Backups".
 - `dock_wifiprefer.py` (2026-10-26, user request, after the dock sat on
   the far fallback network for ~14 h at 0.15 MB/s): NetworkManager joins
   the best saved network but never leaves a working one. Root timer
@@ -1048,6 +1079,29 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   songs). `release_shapes` looks up releases with <= 12 plan songs (getAlbum; album_info keeps
   `_titles`), kept in the plan's `release_shapes` (`SHAPE_VERSION`). Every plan song of a single
   moves together. Hand-made configs (tests) default to 1.
+- **Release types from MusicBrainz (user, 2026-11-25):** Aurral sends no `releaseTypes`
+  at all, so `is_single` fell back to track counts (DRESS TO IMPRESS, Forever Young: singles
+  of several versions, never grouped). `release_shapes(type_fetch=)` asks
+  `dock_lookup.release_group_types` for a release the server gives no type: the release group
+  named in Aurral's album ID (`album:release-group:<mbid>`), else the album's MBID (a release)
+  -> its group. Behind `genre_lookup` (the outside-lookups setting); <= `MAX_TYPE_LOOKUPS`
+  (200) a check; answered shapes keep `"asked": True`; a failure keeps last run's shape.
+  `SHAPE_VERSION` 2 made every shape be looked up again once.
+- **Album covers from the server (user, 2026-11-25):** a song shows its album's cover (a
+  single on an album: the album's; a single on none: its own release's), and a cover changed
+  on the server reaches the player. Aurral gives every song its album's `coverArt`, but its
+  files carry whatever release they came from (RAVEPOP's 10 had 5 covers, mostly another
+  single's). `album_cover_id`: the song's coverArt when it isn't its own (Navidrome's
+  `mf-<song id>_...` is the file's own: unchanged there). `album_art` fetches each once into
+  `cache/covers/<art>.jpg` (`normalize_cover`: <= 600 px JPEG, server bytes kept when already
+  one, so the hash is stable), `cache/covers.json` (not the plan: its times would rewrite the
+  plan every check) remembers them, and the stalest 20 (or 1/40) are fetched again each check:
+  a server can't say a cover changed. Cached files get it embedded (`embed_cover`, tmp copy +
+  swap; new conversions as they're made); the plan's `art` = what the file carries (`on_player`
+  entries: what they should show). **Stock iPods:** the record's `tracks.art` says what each
+  shows; `apply_plan` swaps others in place (`StreamDatabase.replace_artwork`: old image freed
+  once unused, shared per album as before), recorded at the next save. Rockbox/generic: new
+  copies get it, files already there keep theirs.
 - **Singles albums (user, 2026-10-31):** `dock_artists.group_singles`: an artist with
   `[sync] singles_album_min` (default 4, 0 off; `SinglesAlbum=`) albums whose real track count
   is 1 (`album_song_counts` in the plan) gets them as "<Artist> Singles", after the genres. Names
@@ -1108,6 +1162,16 @@ acceptable; a normal sync over ~50 GB is unlikely but must work.
   (default true, `FavoriteFlowAlbums=`; the plan carries it). `ipod_handler.flow_songs` ->
   `rated_favorites.with_album`; `dock_plays.star_album` reads the album from getSong (no
   album ID: the song alone) and stars it before the song, so a network failure keeps both.
+  **On-The-Go favorites too (user, 2026-11-26):** a song in an On-The-Go list
+  (`OTGPlaylistInfo`, and lists saved from it, `_1`, `_2`...) counts like a rating at the
+  favorite level (`[sync] favorite_on_the_go`, default true, `FavoriteOnTheGo=`; the plan
+  carries it; hand-made configs: off). Kept out of `low` while in a list, so it isn't
+  re-sent each sync. **Lists stay on the iPod (user's choice over clearing them like
+  iTunes) and must follow every DB rewrite:** their entries are track-list positions, like
+  Play Counts. `ipod_db.OnTheGo` reads them as (dbid, comment) when the DB opens; `save()`
+  rewrites them after the rename (a song gone from the iPod leaves the list; a swapped one
+  is followed by its comment). `iPod_Control/musicdock/otg.json` (file sha256 -> songs) is
+  written before the rename, so a cut between the two writes still reads right.
 - **Making room on a full player (`dock_room.py`, user, 2026-10-30):** new songs
   that don't fit push off the oldest songs, just enough, and never one dated
   within `recent_play_months` (date = latest of last play, added to the player,

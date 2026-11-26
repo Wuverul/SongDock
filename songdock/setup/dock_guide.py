@@ -253,6 +253,10 @@ Albums neither knows are under "Other".
 A song you rate 4 or 5 stars on a stock iPod gets favorited in Navidrome, once.
 Lowering the rating or removing the favorite afterwards is left as you set it.
   FavoriteRating=5  only 5 stars (FavoriteRating=0: ratings never favorite)
+A song you add to On-The-Go (or to a playlist saved from it on the iPod) gets
+favorited the same way. On-The-Go stays as you left it across syncs; clear it
+on the iPod when you're done with it.
+  FavoriteOnTheGo=no  On-The-Go doesn't favorite songs
 A song from an Aurral Flow (a playlist that refills itself) gets its album
 favorited too, so the whole album comes to the iPod.
   FavoriteFlowAlbums=no  favorite only the song
@@ -290,6 +294,8 @@ This iPod's model (MediaDock.txt shows the one the dock found):
     it's a guess.
   - It sets how many songs the dock puts on this iPod: about 20,000 for
     a 30 GB iPod video, about 50,000 for bigger ones and every classic.
+  - A 6th-gen classic (2007-2008: 80, 120 or the thick 160 GB) can only
+    use 128 GB, even with bigger storage fitted: the dock fills no more.
   - Only a model of the same kind is accepted (a classic for a classic):
     one that would change how the iPod's music list is written is
     refused.
@@ -335,6 +341,8 @@ WHAT THE SCREEN MEANS
                      "No room to convert 7": 7 songs keep their format
                      until the player has space. "Player full: 72
                      waiting": songs that come once there's room.
+                     "SD card failing: replace": the dock's own SD card
+                     showed errors. Back it up and replace it soon.
   WI-FI CHANGED / WI-FI UNCHANGED, DOCK UPDATED / SETUP NOT USED
                      Results of {wifi} and {setup} (see above).
   USB NOT WORKING    A plug-in failed and the dock stopped noticing

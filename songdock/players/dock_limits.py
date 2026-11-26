@@ -42,6 +42,13 @@ MODEL_SONGS = {
     **dict.fromkeys(("B565", "B562"), 50_000),                    # Classic 6.5th gen 120 GB
     **dict.fromkeys(("C297", "C293"), 50_000),                    # Classic 7th gen 160 GB
 }
+# Classic 6th gen (80 GB, thick 160 GB) and 6.5th gen (120 GB): Apple's firmware addresses
+# the disk with 28-bit sector numbers (LBA28), so it "will only show and use up to 128Gb of
+# the storage installed" (iFlash, same page, read 2026-11-25); the others use LBA48.
+LBA28_MODELS = {"B029", "B147", "B145", "B150", "B565", "B562"}
+LBA28_BYTES = 2 ** 28 * 512   # 128 GiB (137.4 GB)
+KNOWN_SOURCES = ("sysinfo", "serial", "manual")   # not "guess", not None (unknown)
+
 ALAC_FROM = 250e9             # bytes of player storage
 ALAC_VS_MP3 = 3.3             # ALAC is about this many times the size of MP3 V0
 ALAC_FILL = 0.8               # suggest ALAC only if it would fill at most this much
@@ -62,6 +69,37 @@ def song_limits(model=None):
     if not songs:
         return STOCK_WARN, STOCK_LIMIT
     return round(songs * STOCK_WARN / 50_000), round(songs * STOCK_LIMIT / 50_000)
+
+
+def storage_cap(model, source="sysinfo"):
+    """Bytes of the disk this iPod's firmware can use: LBA28_BYTES for a 6th/6.5th
+    gen Classic, None for no limit. A guessed model (USB product IDs are shared by
+    every Classic) or one from before models had sources (None, older records:
+    the developer's 7th gen was recorded as a 6th gen guess) caps nothing."""
+    if model_number(model) not in LBA28_MODELS or source not in KNOWN_SOURCES:
+        return None
+    return LBA28_BYTES
+
+
+def usable_free(usage, cap):
+    """Free bytes the dock may fill: all of it, or for a capped iPod what's left
+    below the cap (usage: shutil.disk_usage's answer)."""
+    if not cap:
+        return usage.free
+    return max(0, min(usage.free, cap - (usage.total - usage.free)))
+
+
+def storage_note(capacity, model, source="sysinfo"):
+    """A note when a 6th/6.5th gen Classic has more storage than it can use."""
+    if not capacity or capacity <= LBA28_BYTES or model_number(model) not in LBA28_MODELS:
+        return None
+    if storage_cap(model, source):
+        return (f"This iPod (Classic 6th gen) can only use 128 GB of its "
+                f"{capacity / 1e9:,.0f} GB: the dock fills only that much. Files past it can "
+                "still be lost, so restore it in iTunes or Finder (that formats 128 GB)")
+    return (f"This iPod's model ({model_number(model)}, a Classic 6th gen) is a guess: if "
+            f"right, it can only use 128 GB of its {capacity / 1e9:,.0f} GB. Put its "
+            "model in a DockSetup.txt (Model=MC297, from Settings > About) to be sure")
 
 
 def library_note(songs, stock=True, model=None):
@@ -129,10 +167,14 @@ def fit_note(capacity, music_bytes):
 
 
 def player_notes(on_player, planned, capacity, cfg, kind="stock", music_bytes=None,
-                 alac_size=None, model=None):
-    """The notes for one player: [line, ...]. model: its model number, for its limit."""
+                 alac_size=None, model=None, model_source="sysinfo"):
+    """The notes for one player: [line, ...]. model: its model number, for its limit
+    and storage cap; model_source: where it came from (a guess caps nothing)."""
     stock = kind in (None, "stock")
+    cap = storage_cap(model, model_source) if stock else None
+    usable = min(capacity, cap) if capacity and cap else capacity
     notes = [library_note(max(on_player or 0, planned or 0), stock, model),
-             fit_note(capacity, music_bytes),
-             alac_note(capacity, cfg, stock, alac_size)]
+             storage_note(capacity, model, model_source) if stock else None,
+             fit_note(usable, music_bytes),
+             alac_note(usable, cfg, stock, alac_size)]
     return [n for n in notes if n]

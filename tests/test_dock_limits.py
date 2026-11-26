@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s tests -v
 """
 
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -85,6 +86,34 @@ class LimitTests(unittest.TestCase):
         self.assertIn("won't fit", lim.fit_note(16e9, 18e9))
         self.assertIsNone(lim.fit_note(16e9, 12e9))
         self.assertIsNone(lim.fit_note(None, 18e9))
+
+    def test_a_6th_gen_classic_uses_only_128_gb(self):
+        # iFlash: the 6th/6.5th gen classics address the disk with LBA28 (user, 2026-11-25)
+        self.assertEqual(lim.storage_cap("xB029", "sysinfo"), 2 ** 37)
+        self.assertEqual(lim.storage_cap("MB565", "manual"), 2 ** 37)
+        for model, source in (("xB029", "guess"), ("xB029", None), ("xC297", "manual"),
+                              ("xA448", "sysinfo"), (None, "sysinfo")):
+            self.assertIsNone(lim.storage_cap(model, source), (model, source))
+        usage = shutil.disk_usage(".")._replace(total=500e9, free=500e9 - 2 ** 37 + 5e9)
+        self.assertEqual(lim.usable_free(usage, 2 ** 37), 5e9)           # 5 GB left below it
+        self.assertEqual(lim.usable_free(usage._replace(free=1e9), 2 ** 37), 0)
+        self.assertEqual(lim.usable_free(usage, None), usage.free)
+        small = usage._replace(total=100e9, free=40e9)                   # under the cap
+        self.assertEqual(lim.usable_free(small, 2 ** 37), 40e9)
+
+    def test_notes_about_storage_a_6th_gen_classic_cant_use(self):
+        known = lim.player_notes(100, 100, 500e9, MP3, music_bytes=200e9,
+                                 model="xB029", model_source="manual")
+        self.assertIn("can only use 128 GB of its 500 GB", known[0])
+        self.assertIn("won't fit", known[1])                  # 200 GB in 128, not 500
+        guessed = lim.player_notes(100, 100, 500e9, MP3, music_bytes=200e9,
+                                   model="xB029", model_source="guess")
+        self.assertIn("is a guess", guessed[0])
+        self.assertEqual(len(guessed), 1)                     # 200 GB fit in 500
+        self.assertEqual(lim.player_notes(100, 100, 128e9, MP3, model="xB029"), [])
+        self.assertEqual(lim.player_notes(100, 100, 500e9, MP3, model="xC297"), [])
+        self.assertEqual(lim.player_notes(100, 100, 500e9, MP3, kind="rockbox",
+                                          model="xB029"), [])
 
     def test_written_into_mediadock_txt(self):
         import dock_setup

@@ -833,14 +833,25 @@ def plan_genres(client, cfg, songs, previous, album_info=None, genre_fetch=None)
 MAX_SINGLE_TRACKS = 12      # releases with more songs in the plan aren't looked at
 
 
-def release_shapes(client, songs, previous, album_info, minimum, playlists=()):
+MAX_TYPE_LOOKUPS = 200     # MusicBrainz release types asked per run (~1 s each)
+
+
+def release_shapes(client, songs, previous, album_info, minimum, playlists=(),
+                   type_fetch=None):
     """{album id: dock_artists.shape()} for releases that could be singles: those with
     up to MAX_SINGLE_TRACKS songs in the plan, by an artist with `minimum` such
     releases ("<Artist> Singles"), or holding a song of a #singles playlist
     ("<Playlist> Singles"; a release with one song in the plan needs no shape there).
     Kept in the manifest so each is looked up once (again when SHAPE_VERSION
-    changes); a failed lookup is retried next run."""
+    changes); a failed lookup is retried next run.
+
+    type_fetch: dock_lookup's fetch, to ask MusicBrainz for the types of a release the
+    server sends none for (Aurral); None = don't. A release asked and answered keeps
+    "asked": True. Once MusicBrainz fails, or after MAX_TYPE_LOOKUPS, the rest keep
+    last run's shape (or have none this run) and are asked next run."""
+    import dock_lookup
     known = previous.get("release_shapes", {})
+    asked = 0
     plan = {}
     for s in songs:
         if s.get("albumId"):
@@ -867,9 +878,34 @@ def release_shapes(client, songs, previous, album_info, minimum, playlists=()):
         if info and "_titles" not in info:          # read without its songs: once more
             album_info.pop(album_id)
             info = album_fields(client, album_id, album_info)
-        if info:
-            shapes[album_id] = dock_artists.shape(info, info.get("_titles", []),
-                                                  dock_genres.release_types(info))
+        if not info:
+            continue
+        types = dock_genres.release_types(info)
+        looked = False
+        if not types and type_fetch and (dock_lookup.RELEASE_GROUP_ID.search(album_id)
+                                         or info.get("musicBrainzId")):
+            if asked >= MAX_TYPE_LOOKUPS:
+                type_fetch = None
+            else:
+                try:
+                    asked += 1
+                    types = dock_lookup.release_group_types(album_id,
+                                                            info.get("musicBrainzId"),
+                                                            type_fetch)
+                    looked = True
+                except dock_lookup.LookupFailed as e:
+                    log.warning("Release types from MusicBrainz stopped (%s); the next "
+                                "check carries on", e)
+                    type_fetch = None
+            if not looked:
+                if album_id in known:
+                    shapes[album_id] = known[album_id]
+                continue
+        shapes[album_id] = dock_artists.shape(info, info.get("_titles", []), types)
+        if looked:
+            shapes[album_id]["asked"] = True
+    if asked:
+        log.info("Release types: asked MusicBrainz about %d release(s)", asked)
     return shapes
 
 
@@ -1284,6 +1320,146 @@ def add_server_cover(path, t, client, images, cache=None):
         f.save()
     shrink_cover(path, cache)       # PNG or oversized -> 600px baseline JPEG
     return "navidrome"
+
+
+# ---------------------------------------------------------- album art ----
+# An album's songs show the album's cover (user, 2026-11-25). Aurral gives every song
+# its album's coverArt, but the files it serves keep the cover of whatever release they
+# came from: RAVEPOP's songs carried five covers, most of them another single's, and the
+# iPod showed one of those. The server's album cover is also the one a person picks
+# (Aurral lets them choose a variant). A song whose coverArt is its own (Navidrome:
+# "mf-<song id>_...", the file's own art) keeps its file's cover, as before.
+COVERS_DIR = "covers"          # cache/covers/<art>.jpg, the server's album covers
+COVER_REFRESH_EACH_CHECK = 20  # album covers fetched again per check, stalest first,
+COVER_REFRESH_SHARE = 40       # or this share of them: a changed cover shows in ~a day
+COVER_NEW_PER_CHECK = 400      # covers not seen before, fetched per check
+
+
+def album_cover_id(t):
+    """The server's coverArt ID for a song when it's its album's cover, else None."""
+    cover = t.get("coverArt")
+    if not cover or not t.get("albumId") or t["id"] in cover:
+        return None
+    return cover
+
+
+def normalize_cover(data):
+    """The server's image as the dock embeds covers: a JPEG of at most COVER_MAX px
+    and COVER_MAX_BYTES, kept byte for byte when it already is one, so the same image
+    gives the same bytes every time. None if it can't be read (or is too big to
+    decode here)."""
+    import io
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(data))
+        if max(im.size) <= COVER_MAX and len(data) <= COVER_MAX_BYTES and im.format == "JPEG":
+            return data
+        im.draft("RGB", (COVER_MAX, COVER_MAX))
+        if im.size[0] * im.size[1] > max_cover_pixels():
+            return None
+        im = im.convert("RGB")
+        im.thumbnail((COVER_MAX, COVER_MAX), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=90, optimize=True, progressive=False)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+COVERS_FILE = "covers.json"    # cache/covers.json: what album_art knows (not in the plan,
+                               # whose times would change and rewrite it every check)
+
+
+def album_art(client, songs, known, cache_dir, clock=time.time, dry_run=False):
+    """({song id: art}, covers): which album cover each song shows. `art` names
+    cache/covers/<art>.jpg (a hash of the image). known / covers: {coverArt ID: {"art":
+    art or None (the server has none), "checked": epoch}}, kept in cache/covers.json. New IDs
+    are fetched (up to COVER_NEW_PER_CHECK), and the stalest few again each check, since
+    a server can't say when a cover changed. A network failure ends the fetching for
+    this check; what's known stays."""
+    import hashlib
+    covers_dir = os.path.join(cache_dir, COVERS_DIR)
+    ids = {c for c in map(album_cover_id, songs) if c}
+
+    def on_disk(e):
+        return not e.get("art") or os.path.exists(os.path.join(covers_dir, e["art"] + ".jpg"))
+    kept = {c: dict(known[c]) for c in ids if c in known and on_disk(known[c])}
+    stale = sorted(kept, key=lambda c: (kept[c].get("checked", 0), c))
+    stale = stale[:max(COVER_REFRESH_EACH_CHECK, math.ceil(len(kept) / COVER_REFRESH_SHARE))]
+    new = sorted(ids - kept.keys())
+    changed = 0
+    for cid in new[:COVER_NEW_PER_CHECK] + stale:
+        try:
+            data = client.cover_art(cid, size=COVER_MAX)
+        except SubsonicError as e:
+            if e.network:
+                log.warning("Couldn't fetch album covers (%s); the next check carries on", e)
+                break
+            data = None
+        jpeg = normalize_cover(data) if data else None
+        art = hashlib.sha1(jpeg).hexdigest()[:20] if jpeg else None
+        if art and not dry_run:
+            path = os.path.join(covers_dir, art + ".jpg")
+            if not os.path.exists(path):
+                os.makedirs(covers_dir, exist_ok=True)
+                write_bytes_atomic(path, jpeg)
+        if cid in kept and kept[cid].get("art") != art:
+            changed += 1
+        kept[cid] = {"art": art, "checked": int(clock())}
+    if changed:
+        log.info("%d album cover(s) changed on the server", changed)
+    if not dry_run and os.path.isdir(covers_dir):
+        used = {e["art"] + ".jpg" for e in kept.values() if e.get("art")}
+        for name in os.listdir(covers_dir):
+            if name not in used:
+                os.remove(os.path.join(covers_dir, name))
+    art = {}
+    for t in songs:
+        e = kept.get(album_cover_id(t))
+        if e and e.get("art"):
+            art[t["id"]] = e["art"]
+    return art, kept
+
+
+def write_bytes_atomic(path, data):
+    tmp = f"{path}.tmp-{os.getpid()}"
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def embed_cover(path, jpeg):
+    """Make `jpeg` the file's only cover (tags only; the audio is untouched)."""
+    from mutagen.flac import FLAC, Picture
+    from mutagen.id3 import APIC, ID3, ID3NoHeaderError
+    from mutagen.mp4 import MP4, MP4Cover
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".mp3":
+        try:
+            tags = ID3(path)
+        except ID3NoHeaderError:
+            tags = ID3()
+        tags.delall("APIC")
+        tags.add(APIC(encoding=3, mime="image/jpeg", type=3, desc="", data=jpeg))
+        tags.save(path, v2_version=3)
+    elif ext in (".m4a", ".mp4"):
+        f = MP4(path)
+        if f.tags is None:
+            f.add_tags()
+        f.tags["covr"] = [MP4Cover(jpeg, imageformat=MP4Cover.FORMAT_JPEG)]
+        f.save()
+    elif ext == ".flac":
+        f = FLAC(path)
+        pic = Picture()
+        pic.type, pic.mime, pic.data = 3, "image/jpeg", jpeg
+        f.clear_pictures()
+        f.add_picture(pic)
+        f.save()
+    else:
+        return False
+    return True
 
 
 # --------------------------------------------------------------- workers ----
@@ -1701,7 +1877,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     # After the genres, which go by each song's real album.
     singles_min = cfg["sync"].get("singles_album_min", 4)
     singles_max = cfg["sync"].get("singles_max_tracks", 1)
-    shapes = release_shapes(client, targets, previous, album_info, singles_min, playlists)
+    type_fetch = None
+    if cfg["sync"].get("genre_lookup", False):       # the setting for outside lookups
+        import dock_lookup
+        type_fetch = genre_fetch or dock_lookup.Fetcher()
+    shapes = release_shapes(client, targets, previous, album_info, singles_min, playlists,
+                            type_fetch)
     dock_artists.group_singles(targets, shapes, singles_min, singles_max)
     loose = dock_artists.playlist_singles(targets, playlists, shapes, singles_max)
     if loose:
@@ -1962,6 +2143,56 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                 os.remove(tmp)
     covers.update({k: v for k, v in checked.items() if k not in covers})
 
+    # Every song of an album shows the album's cover from the server (album_art): put
+    # it in cached files that don't carry it yet; new conversions get it as they're
+    # made. `carried`: the cover each cached file holds, from the last plan.
+    covers_path = os.path.join(cache_dir, COVERS_FILE)
+    try:
+        with open(covers_path) as f:
+            known_covers = json.load(f)
+    except (OSError, ValueError):
+        known_covers = {}
+    try:
+        art_of, known_covers = album_art(client, targets, known_covers, cache_dir, clock,
+                                         dry_run)
+    except Exception:
+        log.exception("Couldn't check album covers (files keep their covers)")
+        art_of = {}
+    if not dry_run and known_covers:
+        write_json_atomic(covers_path, known_covers)
+    carried = {t["id"]: t["art"] for t in previous.get("tracks", []) if t.get("art")}
+    for _, t in missing:                       # made again this run: carries what it's given
+        carried.pop(t["id"], None)
+
+    def cover_file(art):
+        with open(os.path.join(cache_dir, COVERS_DIR, art + ".jpg"), "rb") as f:
+            return f.read()
+    restyle = [(n, t) for n, t in wanted.items()
+               if n in existing and n not in missing_names and art_of.get(t["id"])
+               and carried.get(t["id"]) != art_of[t["id"]]]
+    if restyle and not dry_run:
+        log.info("Putting album covers in %d cached file(s)", len(restyle))
+        done = 0
+        for i, (name, t) in enumerate(restyle):
+            if show and i % 25 == 0:
+                show("preparing", "--done", str(i), "--total", str(len(restyle)),
+                     "--detail", f"Album covers: {label(t)}")
+            tmp = os.path.join(tmp_dir, f"art-{name}")
+            try:
+                shutil.copy2(os.path.join(tracks_dir, name), tmp)
+                if embed_cover(tmp, cover_file(art_of[t["id"]])):
+                    fsync_file(tmp)
+                    os.replace(tmp, os.path.join(tracks_dir, name))
+                    carried[t["id"]] = art_of[t["id"]]
+                    done += 1
+            except Exception:
+                log.exception("Couldn't put the album cover in %s (left as is)", label(t))
+            finally:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+        log.info("Album covers: %d of %d cached file(s) now carry their album's cover",
+                 done, len(restyle))
+
     # Ogg/Opus-sourced tracks converted before tags were read from the audio
     # stream have no title/artist: fill them in from Navidrome (cheap; only
     # these few files are checked, and each is written only if incomplete).
@@ -2084,6 +2315,14 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                             "tries again", label(t), e)
             except Exception:
                 log.exception("Couldn't shrink the cover of %s (kept as is)", label(t))
+            if art_of.get(t["id"]):
+                try:
+                    if embed_cover(out, cover_file(art_of[t["id"]])):
+                        with lock:
+                            carried[t["id"]] = art_of[t["id"]]
+                except Exception:
+                    log.exception("Couldn't put the album cover in %s (kept its own)",
+                                  label(t))
             try:
                 if fill_missing_tags(out, t):
                     log.info("Filled in missing tags from Navidrome: %s", label(t))
@@ -2153,9 +2392,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             path = os.path.join(tracks_dir, name)
             if os.path.exists(path):
                 ready.append({"file": f"tracks/{name}", "size": os.path.getsize(path),
-                              **entry(t)})
-            elif name in held:
-                uncached.append({**entry(t), **size_of_uncached(t)})  # no file needed
+                              **entry(t),
+                              **({"art": carried[t["id"]]} if carried.get(t["id"]) else {})})
+            elif name in held:                                      # no file needed
+                uncached.append({**entry(t), **size_of_uncached(t),
+                                 **({"art": art_of[t["id"]]} if art_of.get(t["id"]) else {})})
         held_ids = {t["id"] for t in uncached}
         not_ready = [s for s in skipped if s["id"] not in held_ids]
         if waiting:
@@ -2175,6 +2416,8 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                if cfg["sync"].get("favorite_rating", 4) else {}),
             **({"favorite_flow_albums": True}
                if cfg["sync"].get("favorite_flow_albums", False) else {}),
+            **({"favorite_on_the_go": True}
+               if cfg["sync"].get("favorite_on_the_go", False) else {}),
             **({"lossless_playlists": lossless_lists} if lossless_lists else {}),
             **({"unsplit_artists": sorted(unsplit_artists)} if unsplit_artists else {}),
             "tracks": ready, "on_player": uncached, "playlists": playlists,

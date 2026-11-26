@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS playlists (
 """
 
 TRACK_FIELDS = ("ipod_path", "navidrome_id", "mbid", "artist", "album", "title",
-                "track_no", "duration", "encoding", "genre")
+                "track_no", "duration", "encoding", "genre", "art")
 
 
 class Record:
@@ -143,6 +143,7 @@ class Record:
         self._add_column("players", "forgotten_at INTEGER")      # added 2026-10-23
         self._add_column("players", "name TEXT")                 # added 2026-10-23
         self._add_column("tracks", "genre TEXT")                 # Rockbox re-tags (2026-10-23)
+        self._add_column("tracks", "art TEXT")                   # album cover shown (2026-11-25)
         self._add_column("players", "kind TEXT")                 # stock / rockbox (2026-10-23)
         self._add_column("players", "capacity INTEGER")          # dock_limits (2026-10-26)
         self._add_column("players", "swaps_no_room INTEGER")     # format swaps held back (2026-10-30)
@@ -282,6 +283,12 @@ class Record:
                 + ", ".join(f"{k} = excluded.{k}" for k in cols)
                 + ", state = 'present', changed_at = excluded.changed_at, note = NULL",
                 (guid, str(dbid), *cols.values(), now, now))
+
+    def set_track_art(self, guid, shown):
+        """shown: [(dbid, art)]: the album cover (the plan's `art`) each track now shows."""
+        with self.db:
+            self.db.executemany("UPDATE tracks SET art = ? WHERE guid = ? AND dbid = ?",
+                                [(art, guid, str(dbid)) for dbid, art in shown])
 
     def log_copied(self, guid, ipod_path, navidrome_id, entry):
         """A file is on the player but not yet in a saved database."""

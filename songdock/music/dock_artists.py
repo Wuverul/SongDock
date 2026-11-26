@@ -283,7 +283,7 @@ def note(names, shown=20):
 # Checked on the user's library: Cat Mall, Blushy Remixes, Icarus, WWW (tagged
 # single), Dreamfields (untagged, one song) -> singles; Virtual Paradise, Holic,
 # Black Mamba EP (tagged ep), Forgive Me Please (untagged, three songs) -> albums.
-SHAPE_VERSION = 1          # raise when shape() changes: kept shapes are looked up again
+SHAPE_VERSION = 2          # raise when shape() changes: kept shapes are looked up again
 VERSION_WORDS = ("remix", "remixed", "mix", "edit", "instrumental", "vip", "extended",
                  "version", "rework", "bootleg", "flip", "acoustic", "live", "remaster",
                  "remastered", "radio", "club", "dub", "original", "demo", "reprise",

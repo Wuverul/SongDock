@@ -19,7 +19,7 @@ echo "== Assembling $OUT"
 rm -rf "$OUT" "$TARBALL"
 mkdir -p "$OUT"
 cp README.md INSTALL.md LICENSE CHANGELOG.md config.example.toml genres.example.toml "$OUT/"
-mkdir -p "$OUT/scripts" && cp scripts/status.sh "$OUT/scripts/"
+mkdir -p "$OUT/scripts" && cp scripts/status.sh scripts/backup_dock.sh "$OUT/scripts/"
 cp -R songdock "$OUT/songdock"            # all the code
 mkdir -p "$OUT/pi"
 [ -f pi/release_signers ] && cp pi/release_signers "$OUT/pi/"     # for dock_update.py

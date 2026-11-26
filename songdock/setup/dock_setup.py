@@ -33,6 +33,7 @@ and the list of known iPods written into its MediaDock.txt.
     FavoriteRating=5             stars on a stock iPod that favorite a song (0 = never)
     FavoriteFlowAlbums=no        a song rated from an Aurral Flow favorites only the
                                  song, not its album too
+    FavoriteOnTheGo=no           songs put in On-The-Go on a stock iPod aren't favorited
     AutoUpdate=no                new releases are announced, not installed
     PlaylistSingles=no           only #singles playlists gather lone songs in
                                  "<Playlist> Singles" (yes = every synced playlist)
@@ -80,7 +81,7 @@ SETTINGS = {"playlisttag": "PlaylistTag", "losslesstag": "LosslessTag", "singles
             "stockcompatible": "StockCompatible", "flac": "FLAC",
             "safehours": "SafeHours", "recentplaymonths": "RecentPlayMonths",
             "makeroom": "MakeRoom", "makeroomalbums": "MakeRoomAlbums", "autoupdate": "AutoUpdate", "genrelookup": "GenreLookup", "playlistsingles": "PlaylistSingles",
-            "favoriterating": "FavoriteRating", "favoriteflowalbums": "FavoriteFlowAlbums", "singlesalbum": "SinglesAlbum",
+            "favoriterating": "FavoriteRating", "favoriteflowalbums": "FavoriteFlowAlbums", "favoriteonthego": "FavoriteOnTheGo", "singlesalbum": "SinglesAlbum",
             "singlestracks": "SinglesTracks"}
 YES, NO = {"yes", "true", "on", "1"}, {"no", "false", "off", "0"}
 SAMPLE_SONGS = 5                        # songs checked to tell if a server has this library
@@ -341,6 +342,14 @@ def plan_settings(settings, cfg):
         else:
             done.append("Rating a Flow song already favorites " +
                         ("its album too" if on else "the song only"))
+    if "FavoriteOnTheGo" in settings:
+        on = yes_no("FavoriteOnTheGo", settings["FavoriteOnTheGo"])
+        if on != cfg["sync"].get("favorite_on_the_go", True):
+            changes[("sync", "favorite_on_the_go")] = on
+            done.append("Songs in On-The-Go " + ("get favorited" if on else "aren't favorited"))
+        else:
+            done.append("Songs in On-The-Go already " +
+                        ("get favorited" if on else "aren't favorited"))
     if "PlaylistSingles" in settings:
         on = yes_no("PlaylistSingles", settings["PlaylistSingles"])
         if on != cfg["sync"].get("playlist_singles", True):

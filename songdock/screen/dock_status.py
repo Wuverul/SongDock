@@ -63,6 +63,8 @@ from datetime import datetime
 
 from PIL import Image, ImageDraw, ImageFont
 
+import dock_sdcard
+
 # ---------------------------------------------------------------- config ----
 WIDTH, HEIGHT = 250, 122            # landscape
 _BUNDLED_EPD = os.path.join(dock_paths.ROOT, "vendor")
@@ -91,7 +93,7 @@ REFRESHABLE = {"idle", "safe", "nospace", "failed", "notsynced", "wifi", "wififa
                "setupfail", "usbstuck", "restoring", "safehours"}
 # Options that control drawing rather than what's drawn; not saved for --refresh.
 CONTROL_OPTIONS = {"--force": 0, "--only-over": 1, "--preview": 1, "--at": 1,
-                   "--wifi": 1, "--ip": 1}
+                   "--wifi": 1, "--ip": 1, "--sd-warning": 1}
 
 WIFI_IFACE = "wlan0"
 # Signal strength (dBm) needed for each bar: 4 bars at -55 or better, etc.
@@ -561,7 +563,15 @@ def render(screen, args):
             rows.append((f"Powered on {now}" if args.boot else f"Since {now}", small_f))
         lines(rows)
         ip = args.ip if args.ip is not None else read_ip()
-        if ip:
+        if sd_warning(args):
+            # In place of the IP (still in musicdock-status): white on black, so it
+            # stands out (user, 2026-11-26).
+            warn = "\u26a0 " if has_glyphs else ""
+            text = fit(f"{warn}SD card failing: replace", small_f, max_w=BAR_RIGHT - 10)
+            w = d.textlength(text, font=small_f)
+            d.rectangle((6, 104, 10 + w, 119), fill=0)
+            d.text((8, 106), text, font=small_f, fill=255)
+        elif ip:
             d.text((8, 106), f"IP {ip}", font=small_f, fill=0)
 
     wifi_indicator(args.wifi if args.wifi is not None else read_wifi())
@@ -570,6 +580,18 @@ def render(screen, args):
         # either colour without power, so this adds no wear.
         img = Image.eval(img, lambda p: 255 - p)
     return img
+
+
+def sd_warning(args=None):
+    """Whether to show the SD card warning (dock_sdcard). --sd-warning on|off fakes
+    it for previews."""
+    fake = getattr(args, "sd_warning", None)
+    if fake is not None:
+        return fake == "on"
+    try:
+        return dock_sdcard.warning() is not None
+    except Exception:            # never let the check stop a screen from drawing
+        return False
 
 
 _display = None
@@ -861,6 +883,8 @@ def build_parser():
     p.add_argument("--wifi", type=lambda v: "off" if v == "off" else int(v),
                    help="preview only: fake Wi-Fi reading, e.g. -56 or off")
     p.add_argument("--ip", help="preview only: fake IP address")
+    p.add_argument("--sd-warning", choices=["on", "off"],
+                   help="preview only: fake the SD card warning")
     p.add_argument("--at", type=float, metavar="EPOCH",
                    help="show this time instead of now (used by --refresh)")
     p.add_argument("--force", action="store_true", help="ignore rate limiting")
@@ -948,11 +972,12 @@ def main(argv=None):
                     "fast_count": 0 if full else count,
                     # For --refresh: what was drawn, when, and the Wi-Fi state.
                     "argv": content_args(raw), "drawn_at": args.at or now,
-                    "wifi_on": wifi_connected(args.wifi)})
+                    "wifi_on": wifi_connected(args.wifi), "sd_warning": sd_warning(args)})
 
 
 def refresh_main(argv=None, attempts=3, settle=3):
-    """Redraw the resting screen if Wi-Fi connected or dropped since it was drawn.
+    """Redraw the resting screen if Wi-Fi connected or dropped since it was drawn,
+    or the SD card warning came or went (dock_usbport asks after a new one).
 
     Started by musicdock-wifi-refresh.service, which NetworkManager's
     dispatcher triggers on wlan0 up/down. Keeps the screen's text and
@@ -970,7 +995,9 @@ def refresh_main(argv=None, attempts=3, settle=3):
             if wifi is None:
                 print("Can't read Wi-Fi here")
                 return
-            if state.get("wifi_on") == wifi_connected(wifi):
+            sd = sd_warning()
+            if (state.get("wifi_on") == wifi_connected(wifi)
+                    and bool(state.get("sd_warning")) == sd):
                 print("Wi-Fi indicator already current")
                 return
             args = build_parser().parse_args(
@@ -980,7 +1007,7 @@ def refresh_main(argv=None, attempts=3, settle=3):
             draw_on_panel(render(args.screen, args), full_refresh=full)
             save_state({**state, "last_draw": time.time(),
                         "fast_count": 0 if full else count,
-                        "wifi_on": wifi_connected(wifi)})
+                        "wifi_on": wifi_connected(wifi), "sd_warning": sd})
             print(f"Redrew {screen}: Wi-Fi {'connected' if wifi_connected(wifi) else 'off'}")
         time.sleep(settle)
 

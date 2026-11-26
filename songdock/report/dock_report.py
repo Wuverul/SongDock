@@ -315,7 +315,8 @@ def ipod_section(record_path, manifest, now=None):
     keys = p.keys()
     player = {"on_player": len(set(present)),
               "capacity": p["capacity"] if "capacity" in keys else None,
-              "kind": p["kind"] if "kind" in keys else None, "model": p["model"]}
+              "kind": p["kind"] if "kind" in keys else None, "model": p["model"],
+              "model_source": p["model_source"] if "model_source" in keys else None}
     return lines, {"plays_waiting": waiting or 0, "oldest_waiting": oldest,
                    "plays_gone": gone or 0,
                    "player": player}
@@ -413,6 +414,9 @@ def activity_section(since, now=None):
 def problems(facts, now=None):
     now = now or time.time()
     out = []
+    if facts.get("sd_card"):                    # first: everything else depends on it
+        import dock_sdcard
+        out.append(dock_sdcard.describe(facts["sd_card"]))
     if facts.get("failed_units"):
         out.append("Failed services: " + ", ".join(facts["failed_units"]))
     if facts.get("throttled") not in (None, "0x0", "?"):
@@ -514,13 +518,15 @@ def main(argv=None):
         facts["size_notes"] = dock_limits.player_notes(
             pl["on_player"], len(dock_restore.targets(manifest)), pl["capacity"], cfg,
             pl["kind"], dock_limits.plan_bytes(manifest), dock_limits.alac_bytes(manifest),
-            model=pl.get("model"))
+            model=pl.get("model"), model_source=pl.get("model_source"))
     import dock_update
     update = dock_update.load_state()
     if update.get("version"):
         print(f"\n{dock_update.note(update)}")
     facts["update_failed"] = (f"Update {update['failed']} not installed: "
                               f"{update.get('failed_why')}") if update.get("failed") else None
+    import dock_sdcard
+    facts["sd_card"] = dock_sdcard.warning()
     print("\nProblems")
     for line in problems(facts) or ["none"]:
         print(f"  {line}")

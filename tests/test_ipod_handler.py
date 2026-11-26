@@ -4,6 +4,7 @@ Run: ~/musicdock/venv/bin/python -m unittest discover -s tests -v
 """
 
 import logging
+import io
 import os
 import shutil
 import sys
@@ -1035,6 +1036,102 @@ class HandlerTests(unittest.TestCase):
         self.favorites_after(self.rate(5))
         self.assertEqual(self.favorites_after(self.rate(1)), ["n1"])
 
+    # On-The-Go (user, 2026-11-26): favorites, and lists that survive syncs.
+    def write_otg(self, nids, name="OTGPlaylistInfo"):
+        """An On-The-Go file as the iPod writes it: positions in its track list."""
+        import struct
+        order = [h.navidrome_id_from(t) for t in self.db().tracks]
+        positions = [order.index(n) for n in nids]
+        data = struct.pack("<4sIIII", b"mhpo", 0x14, 4, len(positions), 0)
+        data += b"".join(struct.pack("<I", p) for p in positions)
+        with open(os.path.join(self.mount, "iPod_Control", "iTunes", name), "wb") as f:
+            f.write(data)
+
+    def read_otg(self, name="OTGPlaylistInfo"):
+        """The songs an On-The-Go file points at, in the live database."""
+        import ipod_db
+        with open(os.path.join(self.mount, "iPod_Control", "iTunes", name), "rb") as f:
+            positions = ipod_db.parse_otg(f.read())[3]
+        tracks = self.db().tracks
+        return [h.navidrome_id_from(tracks[p]) for p in positions]
+
+    def apply_with_otg(self, manifest):
+        db = self.db()
+        db.otg = h.read_on_the_go(db, self.mount)
+        report = h.reconcile(db, self.rec, G, self.mount, manifest=manifest)
+        h.apply_plan(db, self.rec, G, self.mount, manifest, self.cache,
+                     dirty=report["dirty"], pending=report["pending"])
+        return db
+
+    def test_on_the_go_follows_its_songs_when_the_database_changes(self):
+        songs = [self.song(f"n{i}", f"Song {i}", track=i) for i in range(1, 5)]
+        self.apply(self.manifest(songs))
+        self.write_otg(["n4", "n2"])
+        self.write_otg(["n3"], name="OTGPlaylistInfo_1")       # a list saved on the iPod
+        self.apply_with_otg(self.manifest([songs[1], songs[2], songs[3]]))   # n1 goes
+        self.assertEqual(self.read_otg(), ["n4", "n2"])
+        self.assertEqual(self.read_otg("OTGPlaylistInfo_1"), ["n3"])
+        self.apply_with_otg(self.manifest([songs[2], songs[3]]))   # a song in the list goes
+        self.assertEqual(self.read_otg(), ["n4"])
+
+    def test_on_the_go_is_right_after_a_sync_cut_short_between_the_two_writes(self):
+        import ipod_db
+        songs = [self.song(f"n{i}", f"Song {i}", track=i) for i in range(1, 4)]
+        self.apply(self.manifest(songs))
+        self.write_otg(["n3"])
+        with mock.patch.object(ipod_db.OnTheGo, "after_replace",
+                               side_effect=OSError(5, "unplugged")):
+            with self.assertRaises(OSError):
+                self.apply_with_otg(self.manifest(songs[1:]))
+        # The new database is on the iPod, the list still has the old positions.
+        self.assertEqual([h.navidrome_id_from(t) for t in self.db().tracks], ["n2", "n3"])
+        db = self.db()
+        self.assertEqual(h.on_the_go_ids(h.read_on_the_go(db, self.mount), self.rec, G),
+                         {"n3"})
+        self.apply_with_otg(self.manifest(songs[1:] + [self.song("n4", "Four", track=4)]))
+        self.assertEqual(self.read_otg(), ["n3"])
+
+    def test_an_unchanged_database_leaves_on_the_go_alone(self):
+        songs = [self.song(f"n{i}", f"Song {i}", track=i) for i in range(1, 3)]
+        self.apply(self.manifest(songs))
+        self.write_otg(["n2"])
+        self.apply_with_otg(self.manifest(songs))
+        import ipod_db
+        self.assertFalse(os.path.exists(os.path.join(self.mount, *ipod_db.OTG_STATE)))
+
+    def test_a_song_in_on_the_go_is_favorited_once(self):
+        songs = [self.song("n1", "One"), self.song("n2", "Two", track=2)]
+        self.apply(self.manifest(songs))
+        self.write_otg(["n2"])
+        db = self.db()
+        ids = h.on_the_go_ids(h.read_on_the_go(db, self.mount), self.rec, G)
+        self.assertEqual(ids, {"n2"})
+        h.queue_favorites(db, self.rec, G, 0, None, ids)     # ratings off: still counts
+        self.assertEqual(self.rec.unsent_favorites(), ["n2"])
+        self.rec.mark_favorited("n2")
+        # Still in the list and unrated: not sent again, and not forgotten either.
+        h.queue_favorites(self.db(), self.rec, G, 4, None, ids)
+        h.queue_favorites(self.db(), self.rec, G, 4, None, ids)
+        self.assertEqual(self.rec.unsent_favorites(), [])
+        # Out of the list and unrated, then back in: a new favorite.
+        h.queue_favorites(self.db(), self.rec, G, 4, None, set())
+        h.queue_favorites(self.db(), self.rec, G, 4, None, ids)
+        self.assertEqual(self.rec.unsent_favorites(), ["n2"])
+
+    def test_sync_favorites_on_the_go_songs_only_when_the_plan_says_so(self):
+        songs = [self.song("n1", "One"), self.song("n2", "Two", track=2)]
+        plan = self.manifest(songs)
+        self.apply(plan)
+        self.write_otg(["n1"])
+        work = os.path.join(self.tmp, "work")
+        backups = os.path.join(self.tmp, "backups")
+        with mock.patch.object(h, "ensure_sysinfo"):
+            h.sync_player(self.mount, G, self.rec, plan, self.cache, work, backups, write=True)
+            self.assertEqual(self.rec.unsent_favorites(), [])
+            h.sync_player(self.mount, G, self.rec, dict(plan, favorite_on_the_go=True),
+                          self.cache, work, backups, write=True)
+        self.assertEqual(self.rec.unsent_favorites(), ["n1"])
+
     def test_singles_album_keeps_a_cover_per_song_even_at_the_same_size(self):
         # Two different covers of exactly the same size: the one case where sharing
         # by album name and size would show the wrong art.
@@ -1147,6 +1244,56 @@ class HandlerTests(unittest.TestCase):
             summary = self.apply(self.manifest(
                 [dict(a, file="tracks/n1.m4a", encoding="alac 16", title="Renamed")]))
         return before, summary
+
+    def test_album_cover_swapped_in_place_once(self):
+        # The plan's `art` (dock_prepare.album_art): tracks already on the player that
+        # show another cover get the album's, no re-copy; the record remembers it.
+        from PIL import Image
+        songs = [self.song("n1", "One", cover=True), self.song("n2", "Two", track=2,
+                                                               cover=True)]
+        self.apply(self.manifest(songs))
+        before = {t.dbid for t in self.db().tracks}
+        os.makedirs(os.path.join(self.cache, "covers"), exist_ok=True)
+        buf = io.BytesIO()
+        Image.new("RGB", (300, 300), (200, 20, 20)).save(buf, "JPEG")
+        with open(os.path.join(self.cache, "covers", "abc.jpg"), "wb") as f:
+            f.write(buf.getvalue())
+        summary = self.apply(self.manifest([dict(s, art="abc") for s in songs]))
+        self.assertEqual((summary["art_swapped"], summary["added"]), (2, 0))
+        db = self.db()
+        self.assertEqual({t.dbid for t in db.tracks}, before)          # not re-copied
+        links = {t.mhii_link for t in db.tracks}
+        self.assertEqual(len(links), 1)                                # one shared image
+        self.assertTrue(all(t.has_artwork for t in db.tracks))
+        self.assertEqual(len(db.images()), 1)                          # the old one went
+        self.assertEqual({r["art"] for r in self.rec.tracks(G)}, {"abc"})
+        summary = self.apply(self.manifest([dict(s, art="abc") for s in songs]))
+        self.assertEqual(summary["art_swapped"], 0)                    # once
+
+    def test_new_copies_record_the_cover_they_carry(self):
+        self.apply(self.manifest([dict(self.song("n1", "One", cover=True), art="abc")]))
+        self.assertEqual(self.rec.tracks(G)[0]["art"], "abc")
+        self.assertEqual(self.apply(self.manifest(
+            [dict(self.song("n1", "One"), art="abc")]))["art_swapped"], 0)
+
+    def test_a_6th_gen_classic_is_filled_only_to_128_gb(self):
+        # Its firmware uses only the first 128 GB (dock_limits.storage_cap). 500 GB fitted,
+        # 128 GB used: plenty free on the disk, none the iPod can use.
+        usage = shutil.disk_usage(self.tmp)._replace(total=500 * 10 ** 9,
+                                                     free=500 * 10 ** 9 - 2 ** 37)
+        self.rec.upsert_player(G, model="xB029", source="manual")
+        with mock.patch("shutil.disk_usage", return_value=usage):
+            summary = self.apply(self.manifest([self.song("n1", "One")]))
+        self.assertEqual((summary["added"], summary["not_added_full"]), (0, 1))
+
+    def test_a_guessed_6th_gen_classic_is_filled_as_before(self):
+        # A guess (every classic shares a USB ID) may be a 7th gen, which uses it all
+        usage = shutil.disk_usage(self.tmp)._replace(total=500 * 10 ** 9,
+                                                     free=500 * 10 ** 9 - 2 ** 37)
+        self.rec.upsert_player(G, model="xB029", source="guess")
+        with mock.patch("shutil.disk_usage", return_value=usage):
+            summary = self.apply(self.manifest([self.song("n1", "One")]))
+        self.assertEqual((summary["added"], summary["not_added_full"]), (1, 0))
 
     def test_swap_without_room_keeps_the_song_as_it_is(self):
         self.rec.upsert_player(G, model="xB903")

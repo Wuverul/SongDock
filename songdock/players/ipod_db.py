@@ -233,6 +233,14 @@ class TrackInfo:
         self.set_header(0x160, "<I", image_id)      # mhii_link
         self.has_artwork, self.artwork_size, self.mhii_link = True, size, image_id
 
+    def clear_art(self):
+        """The track shows no image (as pygpod writes a track without art)."""
+        self.set_header(0x7C, "<H", 0)              # artwork_count
+        self.set_header(0x80, "<I", 0)              # artwork_size
+        self.set_header(0xA4, "<B", 0)              # has_artwork (pygpod writes 0)
+        self.set_header(0x160, "<I", 0)             # mhii_link
+        self.has_artwork, self.artwork_size, self.mhii_link = False, 0, 0
+
     def __repr__(self):
         return f"<TrackInfo {self.track_id}: {self.artist} - {self.title}>"
 
@@ -293,6 +301,7 @@ class StreamDatabase:
         self._source = source
         self._removed = set()       # track ids removed since the last save
         self._play_files = False    # play counts merged: delete the files after saving
+        self.otg = None             # OnTheGo: rewritten with every save
         self._dirty = False
         self.tracks = []
         self._by_track_id = {}
@@ -620,6 +629,22 @@ class StreamDatabase:
             art = None
         if not art:
             return False
+        return self._attach_art(track, art)
+
+    def replace_artwork(self, track, art):
+        """Show `art` (image bytes) instead of the track's cover, in place (no
+        re-copy): its old image goes once no track shows it."""
+        if not self._mountpoint or not art:
+            return False
+        self.art_users()                     # counted before this track lets go
+        if track.has_artwork and track.mhii_link:
+            track.has_artwork = False        # so its image passes to another track
+            self._drop_art(track)
+            track.clear_art()
+            self._dirty = True
+        return self._attach_art(track, art)
+
+    def _attach_art(self, track, art):
         key = art_key(track.album, len(art))
         # Each song of a "<Artist> Singles" album has its own cover: never share.
         share = self.share_art and not (track.album or "").casefold().endswith(" singles")
@@ -676,8 +701,12 @@ class StreamDatabase:
                 dst.write(chunk)
             dst.flush()
             os.fsync(dst.fileno())
+        if self.otg is not None:
+            self.otg.before_replace(self.tracks)    # otg.json knows both versions
         os.replace(tmp, dest)
         _fsync_dir(os.path.dirname(dest))          # the rename itself
+        if self.otg is not None:
+            self.otg.after_replace()                # On-The-Go follows the new order
         base = os.path.join(self._work_dir, "iTunesDB.current")
         os.replace(out, base)
         self._source = base
@@ -834,6 +863,178 @@ class StreamDatabase:
         for pos, t in enumerate(final):
             out.write(_mhip(t.track_id, pos))
         _finish_playlist(out, start, len(mhods) + len(sort_mhods), len(final))
+
+
+# ============================================================= On-The-Go ====
+OTG_FILE = "OTGPlaylistInfo"
+OTG_STATE = ("iPod_Control", "musicdock", "otg.json")
+
+
+def otg_names(itunes):
+    """OTGPlaylistInfo, then _1, _2, ... until one is missing (libgpod's order and
+    stop rule). The first is the live On-The-Go list; the others are lists saved
+    from it on the iPod (Classic, nano 3G+: "New Playlist 1", ...)."""
+    names, i = [], 0
+    while True:
+        name = OTG_FILE if i == 0 else f"{OTG_FILE}_{i}"
+        if not os.path.isfile(os.path.join(itunes, name)):
+            return names
+        names.append(name)
+        i += 1
+
+
+def parse_otg(data):
+    """(byte order, header length, entry length, positions) of an OTGPlaylistInfo
+    file, or None if it isn't one. Positions are 0-based places in the iTunesDB's
+    track list (libgpod's process_OTG_file; "ophm" = every field big-endian)."""
+    if len(data) < 16 or data[:4] not in (b"mhpo", b"ophm"):
+        return None
+    order = "<" if data[:4] == b"mhpo" else ">"
+    header_length, entry_length, count = struct.unpack_from(order + "III", data, 4)
+    if header_length < 0x14 or entry_length < 4:
+        return None
+    positions = []
+    for i in range(count):
+        at = header_length + entry_length * i
+        if at + entry_length > len(data):
+            break
+        positions.append(struct.unpack_from(order + "I", data, at)[0])
+    return order, header_length, entry_length, positions
+
+
+class OnTheGo:
+    """The On-The-Go lists made on the iPod (user, 2026-11-26: songs put there
+    get favorited, and the lists carry on across syncs).
+
+    The iPod stores each list as positions in the iTunesDB's track list, like
+    Play Counts, so every database the dock writes would point them at other
+    songs. They're read once per session as songs (the track's dbid, plus its
+    comment, which holds the Navidrome ID, to follow a song whose file is
+    replaced), and each save rewrites them for the new track list. A list's
+    songs leave it only when they leave the iPod.
+
+    `iPod_Control/musicdock/otg.json` maps each file's bytes (sha256) to its
+    songs. It's written before a new database replaces the old one, so a sync
+    cut short between the two still reads every list right. Bytes it doesn't
+    know were written by the iPod, against the database it holds."""
+
+    def __init__(self, mount, tracks):
+        self.mount = mount
+        self.itunes = os.path.join(mount, "iPod_Control", "iTunes")
+        self.lists = {}          # file name -> {"data", "sha", "songs": [(dbid, comment)]}
+        self.skipped = 0         # entries past the end of the track list
+        known = self._load_state()
+        for name in otg_names(self.itunes):
+            with open(os.path.join(self.itunes, name), "rb") as f:
+                data = f.read()
+            parsed = parse_otg(data)
+            if parsed is None:
+                continue
+            sha = hashlib.sha256(data).hexdigest()
+            songs = known.get(name, {}).get(sha)
+            if songs is None:
+                songs = []
+                for p in parsed[3]:
+                    if p < len(tracks):
+                        songs.append((tracks[p].dbid, tracks[p].comment or ""))
+                    else:
+                        self.skipped += 1
+            self.lists[name] = {"data": data, "sha": sha,
+                                "songs": [(int(d), c) for d, c in songs]}
+        self._pending = {}
+
+    def songs(self):
+        """Every (dbid, comment) in any list."""
+        return {s for lst in self.lists.values() for s in lst["songs"]}
+
+    def counts(self):
+        return {name: len(lst["songs"]) for name, lst in self.lists.items()}
+
+    # ------------------------------------------------------------- saving ----
+    def before_replace(self, tracks):
+        """Work out each list for `tracks` (the database about to replace the
+        iPod's) and note its songs by the new bytes in otg.json, next to the
+        current bytes. Call before the rename."""
+        where = {t.dbid: i for i, t in enumerate(tracks)}
+        by_comment = {}
+        for i, t in enumerate(tracks):
+            c = t.comment or ""
+            if c:
+                by_comment[c] = None if c in by_comment else i   # unique only
+        self._pending = {}
+        for name, lst in self.lists.items():
+            kept, positions = [], []
+            for dbid, comment in lst["songs"]:
+                i = where.get(dbid)
+                if i is None and comment:
+                    i = by_comment.get(comment)
+                if i is not None:
+                    kept.append((tracks[i].dbid, tracks[i].comment or ""))
+                    positions.append(i)
+            data = _rebuild_otg(lst["data"], positions)
+            if data != lst["data"] or kept != lst["songs"]:
+                self._pending[name] = (data, kept)
+        if self._pending:
+            self._save_state(next_too=True)
+
+    def after_replace(self):
+        """Write the lists worked out by before_replace (after the rename)."""
+        for name, (data, songs) in self._pending.items():
+            path = os.path.join(self.itunes, name)
+            tmp = path + ".musicdock-new"
+            with open(tmp, "wb") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+            self.lists[name] = {"data": data, "sha": hashlib.sha256(data).hexdigest(),
+                                "songs": songs}
+        if self._pending:
+            _fsync_dir(self.itunes)
+            self._pending = {}
+            self._save_state()
+
+    # -------------------------------------------------------------- state ----
+    def _state_path(self):
+        return os.path.join(self.mount, *OTG_STATE)
+
+    def _load_state(self):
+        import json
+        try:
+            with open(self._state_path(), encoding="utf-8") as f:
+                state = json.load(f)
+            return state if isinstance(state, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _save_state(self, next_too=False):
+        import json
+        state = {}
+        for name, lst in self.lists.items():
+            state[name] = {lst["sha"]: [[str(d), c] for d, c in lst["songs"]]}
+            if next_too and name in self._pending:
+                data, songs = self._pending[name]
+                state[name][hashlib.sha256(data).hexdigest()] = [[str(d), c] for d, c in songs]
+        path = self._state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        _fsync_dir(os.path.dirname(path))
+
+
+def _rebuild_otg(data, positions):
+    """`data` with its entries replaced by `positions` (header, byte order and
+    each entry's length kept; any bytes after an entry's position are zeroed:
+    no iPod is known to use them)."""
+    order, header_length, entry_length, _ = parse_otg(data)
+    header = bytearray(data[:header_length])
+    struct.pack_into(order + "I", header, 12, len(positions))
+    blank = bytes(entry_length - 4)
+    return bytes(header) + b"".join(struct.pack(order + "I", p) + blank for p in positions)
 
 
 # ================================================================== files ====

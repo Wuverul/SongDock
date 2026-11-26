@@ -28,6 +28,7 @@ so they're tried again next run.
 import json
 import logging
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -91,6 +92,29 @@ class Fetcher:
             except (urllib.error.URLError, OSError, ValueError) as e:
                 raise LookupFailed(f"{url.split('?')[0]}: {e}") from None
         raise LookupFailed(f"{url.split('?')[0]}: busy (HTTP 503)")
+
+
+RELEASE_GROUP_ID = re.compile(
+    r"release-group[:/]([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})", re.I)
+
+
+def release_group_types(album_id, release_mbid, fetch):
+    """A release's types from MusicBrainz, for a server that sends none (Aurral,
+    2026-11-25: no releaseTypes on any album, so no single was ever known to be
+    one). Aurral's album IDs name the release group ("album:release-group:<id>");
+    otherwise the album's own MusicBrainz ID is a release, whose group is asked
+    for. Lower case, primary type first: ["single"], ["album", "live"]. [] when
+    MusicBrainz knows no type or there's no ID to ask with. Raises LookupFailed."""
+    found = RELEASE_GROUP_ID.search(album_id or "")
+    if found:
+        group = fetch(f"{MUSICBRAINZ}release-group/{found.group(1).lower()}?fmt=json")
+    elif release_mbid:
+        group = fetch(f"{MUSICBRAINZ}release/{urllib.parse.quote(release_mbid)}"
+                      "?inc=release-groups&fmt=json").get("release-group") or {}
+    else:
+        return []
+    types = [group.get("primary-type")] + list(group.get("secondary-types") or [])
+    return [t.lower() for t in types if t]
 
 
 def genre_names(entity):

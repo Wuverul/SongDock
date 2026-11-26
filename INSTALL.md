@@ -224,6 +224,7 @@ and album art.
   HOURS** while a player is connected, and the iPod is free to take.
 - Rate a song 4 or 5 stars on the iPod and the next sync favorites it in Navidrome, once.
   It never removes a favorite. To change the stars, set `favorite_rating`; 0 turns it off.
+  Adding a song to On-The-Go does the same (`favorite_on_the_go = false` turns that off).
 - If the iPod fills up, new songs wait and the screen shows **PLAYER FULL**. Nothing is
   removed unless you turn on `make_room` (below).
 - Songs removed from your lists stay cached on the dock for 7 days, so
@@ -392,6 +393,7 @@ to sync new music. On a dock with stock-iPod compatibility off, set
 | Screen stays blank after install | Reboot (`sudo reboot`); check the HAT is pressed fully onto the pins |
 | **NOT SYNCED · No MediaDock.txt** | Add `MediaDock.txt` to the player's top folder (step 1) |
 | **PLAYER FULL** | New songs didn't fit. Remove lossless tags or some music from your lists, or turn on `make_room`. The sync itself finished, so it's safe to unplug |
+| **SD card failing: replace** on DOCK READY | The dock saw read/write or filesystem errors on its SD card (`musicdock-status` says which). Make a backup now (see "Backups") and move to a new card soon. A new card clears the warning by itself; to clear it after checking the card, run `sudo python3 /opt/songdock/app/songdock/core/dock_sdcard.py --ok` |
 | **UPDATING** | A new version is installing. Leave the power connected. It shouldn't take long, and the previous version comes back if it fails |
 | **SYNC FAILED · Unknown iPod model** | Look up the model on the iPod (Settings > About > Model, e.g. `MB029`). On the iPod (disk mode on your computer), open `iPod_Control/Device/SysInfo` in a text editor and add a line `ModelNumStr: xB029` (an `x` plus the model without its first letter). Dock again |
 | **SYNC FAILED · iPod ... isn't supported** | That iPod's music database can't be written by the dock (see "Which iPods work" in the README). Nothing on it was changed |
@@ -452,6 +454,28 @@ journalctl -u musicdock-prepare -e               # downloads and conversions
 journalctl -u 'musicdock-sync@*' -e              # docking sessions
 /opt/songdock/venv/bin/python /opt/songdock/app/songdock/jobs/dock_prepare.py --show-plan
 ```
+
+## Backups
+
+The dock keeps everything on its SD card, and SD cards wear out. Your music is safe on
+your server either way, but the dock's settings and its record of what's on each iPod
+are worth a copy. `scripts/backup_dock.sh` (in the download) copies them to a Mac or
+Linux computer over SSH: a few MB, no music.
+
+```sh
+scripts/backup_dock.sh pi@songdock.local              # one backup now
+scripts/backup_dock.sh --install pi@songdock.local    # every day at noon (macOS)
+```
+
+Backups go to `~/SongDock-backups`, newest 30 kept. They include your server password,
+so the folder is readable by you only. A Mac that's asleep at noon catches up when it
+wakes.
+
+**To restore** onto a fresh install (steps 2-5): unpack the newest backup, then on the
+Pi put `config/*.toml` in `~/.config/musicdock/` (mode 600), and with the dock idle
+(`sudo systemctl stop musicdock-prepare.timer`) put `var-lib-musicdock/*` in
+`/var/lib/musicdock/` and `cache/*.json` in `~/musicdock/cache/`, then restart the Pi.
+The dock re-downloads the music for its cache by itself.
 
 ## Updating
 

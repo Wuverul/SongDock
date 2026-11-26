@@ -27,7 +27,7 @@ SHARED_SETTINGS = {
     "sync": ("max_cache_gb", "workers", "sync_batch_size", "check_interval_minutes",
              "removal_grace_days", "recent_play_months", "make_room", "make_room_albums", "favorite_rating", "singles_album_min", "singles_max_tracks", "auto_update",
              "safe_hours", "primary_artist", "genre_lookup", "playlist_singles",
-             "favorite_flow_albums"),
+             "favorite_flow_albums", "favorite_on_the_go"),
     "display": ("model", "theme", "invert"),
 }
 CONVERSION = re.compile(r"Conversion: ([\d.]+) s for ([\d.]+) min of audio \((.+)\)")

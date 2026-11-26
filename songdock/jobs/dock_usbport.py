@@ -27,6 +27,9 @@ are still coming, and no sync or update is running, it restarts the dock - at mo
 once an hour (the time is kept on the SD card, so a restart can't loop). A short
 glitch that recovers by itself (00:12 the same night) never gets that far.
 
+And it watches the SD card (user, 2026-11-26): read/write errors, filesystem errors or
+a switch to read-only put "SD card failing" on DOCK READY (dock_sdcard).
+
 Uses the standard library only (runs under the system python3).
 """
 
@@ -45,6 +48,7 @@ import sys
 import time
 
 import dock_log
+import dock_sdcard
 
 log = logging.getLogger("dock_usbport")
 
@@ -98,6 +102,14 @@ def show_screen():
         log.warning("Couldn't draw USB NOT WORKING (dock_status.py exit %d)", r.returncode)
 
 
+def redraw_screen():
+    """Redraw the resting screen so it shows (or stops showing) the SD card warning."""
+    r = subprocess.run([sys.executable, DOCK_STATUS, "--refresh"], capture_output=True,
+                       text=True)
+    if r.returncode != 0:
+        log.warning("Couldn't redraw the screen (dock_status.py exit %d)", r.returncode)
+
+
 def sync_running():
     out = subprocess.run(["systemctl", "list-units", "--state=active,activating",
                           "--no-legend", "--plain", "musicdock-sync@*"],
@@ -117,7 +129,7 @@ def reboot_now():
 
 def check(state_path=STATE, now=None, read_log=read_kernel_log, show=show_screen,
           busy=sync_running, reboot=reboot_now, reboot_state=REBOOT_STATE,
-          updating=update_running):
+          updating=update_running, sd_check=dock_sdcard.check, redraw=redraw_screen):
     """One run. Returns the bus reported this time, or None."""
     now = time.time() if now is None else now
     try:
@@ -126,6 +138,11 @@ def check(state_path=STATE, now=None, read_log=read_kernel_log, show=show_screen
     except (OSError, ValueError):
         state = {}
     lines, state["cursor"] = read_log(state.get("cursor"))
+    problem = sd_check(lines, now)
+    if problem:
+        log.warning("The SD card may be failing: %s (showing it on DOCK READY; back up "
+                    "and replace the card)", problem)
+        redraw()
     trouble = state.setdefault("trouble", {})        # bus -> {"since", "shown"}
     for stamp, text in lines:
         m = GAVE_UP.search(text)

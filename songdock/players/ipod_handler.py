@@ -37,6 +37,7 @@ import types
 import warnings
 from datetime import datetime, timedelta
 
+import dock_limits
 import dock_room
 
 # pygpod warns at import that pyusb (its USB auto-detection) is missing; the
@@ -101,23 +102,63 @@ def flow_songs(manifest):
             if flows & set(t.get("sources", ()))}
 
 
-def queue_favorites(db, record, guid, stars, manifest=None):
-    """Songs newly rated `stars` or more on the iPod get favorited on the server,
-    once each: after that a favorite removed in Navidrome stays removed, unless
-    the rating drops and rises again. This only ever adds a favorite: no rating
-    can remove one (user, 2026-10-31). Songs already favorites, directly or by
-    album (the plan's "starred" source), get nothing sent."""
+def queue_favorites(db, record, guid, stars, manifest=None, on_the_go=()):
+    """Songs newly rated `stars` or more on the iPod (0 = ratings don't count),
+    or newly in an On-The-Go list (`on_the_go`: their Navidrome IDs; user,
+    2026-11-26), get favorited on the server, once each: after that a favorite
+    removed in Navidrome stays removed, unless the song drops out (rated lower
+    and in no On-The-Go list) and comes back. This only ever adds a favorite:
+    nothing on the iPod can remove one (user, 2026-10-31). Songs already
+    favorites, directly or by album (the plan's "starred" source), get nothing
+    sent."""
     ids = {int(r["dbid"]): r["navidrome_id"] for r in record.tracks(guid)}
-    high, low = [], []
-    for t in db.tracks:
-        nid = ids.get(t.dbid) or navidrome_id_from(t)
-        if nid:
-            (high if t.rating >= stars * 20 else low).append(nid)
-    queued = record.note_ratings(guid, high, low, already_favorites(manifest),
-                                 flow_songs(manifest))
+    on_the_go = set(on_the_go)
+    high, low = set(on_the_go), set()
+    if stars:
+        for t in db.tracks:
+            nid = ids.get(t.dbid) or navidrome_id_from(t)
+            if nid:
+                (high if t.rating >= stars * 20 else low).add(nid)
+    queued = record.note_ratings(guid, sorted(high), sorted(low - high),
+                                 already_favorites(manifest), flow_songs(manifest))
     if queued:
-        log_info(f"Rated {stars}+ stars on the iPod: favoriting {queued} song(s)")
+        why = " or ".join(w for w, on in ((f"rated {stars}+ stars", stars),
+                                          ("in On-The-Go", on_the_go)) if on)
+        log_info(f"Songs {why} on the iPod: favoriting {queued} song(s)")
     return queued
+
+
+def read_on_the_go(db, mount):
+    """The iPod's On-The-Go lists (ipod_db.OnTheGo), read as songs from the
+    database as it is on the iPod: call right after opening it, before anything
+    changes its track list. Every later save rewrites them for the new list.
+    None if they can't be read (they're then left as they are)."""
+    import ipod_db
+    try:
+        otg = ipod_db.OnTheGo(mount, db.tracks)
+    except OSError as e:
+        log_info(f"Couldn't read the iPod's On-The-Go lists: {e}")
+        return None
+    if otg.lists:
+        counts = otg.counts()
+        log_info(f"On-The-Go: {sum(counts.values())} song(s) in {len(counts)} list(s)"
+                 + (f" ({otg.skipped} entries past the end of the track list left out)"
+                    if otg.skipped else ""))
+    return otg
+
+
+def on_the_go_ids(otg, record, guid):
+    """Navidrome IDs of the songs in the On-The-Go lists."""
+    if otg is None:
+        return set()
+    ids = {int(r["dbid"]): r["navidrome_id"] for r in record.tracks(guid)}
+    out = set()
+    for dbid, comment in otg.songs():
+        nid = ids.get(dbid) or (comment[len(NAVIDROME_TAG):]
+                                if comment.startswith(NAVIDROME_TAG) else None)
+        if nid:
+            out.add(nid)
+    return out
 
 
 def read_play_entries(folder):
@@ -322,7 +363,6 @@ def model_change(mount, record, guid, wanted):
     way is accepted (a Classic for another Classic, a nano 4G for a nano 4G)."""
     if not os.path.isdir(os.path.join(mount, "iPod_Control")):
         return None, "Model= is for stock iPods"
-    import dock_limits
     number = dock_limits.model_number(wanted)
     if not number or not re.fullmatch(r"[A-Z]\d{3}", number):
         return None, f"Model={wanted} isn't a model number like MC297 (Settings > About)"
@@ -1032,7 +1072,7 @@ def new_session(pending=(), clock=time.monotonic):
     but not yet saved, when the database was last saved, and how many
     tracks were copied so far (for progress)."""
     return {"pending": list(pending), "swapped": [], "last_save": clock(), "dirty": False,
-            "copied": 0}
+            "copied": 0, "art": []}
 
 
 def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
@@ -1069,6 +1109,9 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     session["dirty"] = session["dirty"] or dirty
     saved = False
     pending = session["pending"]
+    player = record.player(guid) or {}
+    # A Classic 6th gen's firmware uses only the first 128 GB (dock_limits.storage_cap).
+    cap = dock_limits.storage_cap(player.get("model"), player.get("model_source"))
     on_player = {t.dbid: t for t in db.tracks}
     present = {}
     for r in record.tracks(guid):
@@ -1077,7 +1120,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     for track, t in pending:
         present.setdefault(t["id"], {"dbid": track.dbid, "navidrome_id": t["id"],
                                      "artist": t.get("artist"), "title": t.get("title"),
-                                     "encoding": t.get("encoding")})
+                                     "encoding": t.get("encoding"), "art": t.get("art")})
 
     def commit():
         """Save the DB, then record what it now holds."""
@@ -1092,7 +1135,9 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
                                  navidrome_id=t["id"], artist=t.get("artist"),
                                  album=t.get("album"), title=t.get("title"),
                                  track_no=t.get("track"), duration=t.get("duration"),
-                                 encoding=t.get("encoding"))
+                                 encoding=t.get("encoding"), art=t.get("art"))
+            record.set_track_art(guid, session.setdefault("art", []))
+            session["art"] = []
             for r, _, new in session["swapped"]:
                 record.mark_removed(guid, r["dbid"], "re-encoded")
                 if r.get("added_at"):
@@ -1137,7 +1182,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     new_songs = [t for nid, t in wanted.items() if nid not in present and nid not in returning]
     new_bytes = sum(file_size(cached(t)) for t in new_songs)
     freed = sum(size_on_player(r) for nid, r in present.items() if nid not in keep)
-    free = shutil.disk_usage(mount).free
+    free = dock_limits.usable_free(shutil.disk_usage(mount), cap)
     victims = []
     if rules and not (deadline and wall() >= deadline):
         candidates = [(rules.date(nid, r.get("added_at")), nid, size_on_player(r))
@@ -1229,8 +1274,32 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
     if art_added:
         log_info(f"Added album art to {art_added} track(s) already on the player")
         session["dirty"] = True
-    import dock_limits
-    song_limit = dock_limits.song_limits((record.player(guid) or {}).get("model"))[1]
+    # The album's cover from the server (the plan's `art`, dock_prepare.album_art), on
+    # tracks already here that show another: their image is swapped in place, no
+    # re-copy. The record learns it at the next save (commit), so a sync cut short
+    # does it again.
+    art_swapped, covers_dir = 0, os.path.join(cache_dir, "covers")
+    for nid, r in present.items():
+        t = wanted.get(nid)
+        want = t.get("art") if t else None
+        if not want or r.get("art") == want or nid in changed:
+            continue
+        if deadline and wall() >= deadline:
+            break
+        track = on_player.get(int(r["dbid"]))
+        path = os.path.join(covers_dir, want + ".jpg")
+        if track is None or not os.path.exists(path):
+            continue
+        with open(path, "rb") as f:
+            image = f.read()
+        if db.replace_artwork(track, image):
+            r["art"] = want
+            session.setdefault("art", []).append((r["dbid"], want))
+            art_swapped += 1
+    if art_swapped:
+        log_info(f"Album covers: {art_swapped} track(s) now show their album's cover")
+        session["dirty"] = True
+    song_limit = dock_limits.song_limits(player.get("model"))[1]
     added, skipped_full, over_limit, replaced = 0, 0, 0, 0
     copy_began, copy_bytes = time.monotonic(), 0
     for n, t in enumerate(additions):
@@ -1251,9 +1320,9 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
             continue
         size = os.path.getsize(path)
         if swap and session["swapped"] and \
-                shutil.disk_usage(mount).free - size < FREE_SPACE_MARGIN:
+                dock_limits.usable_free(shutil.disk_usage(mount), cap) - size < FREE_SPACE_MARGIN:
             commit()                               # the old files replaced so far can go
-        if shutil.disk_usage(mount).free - size < FREE_SPACE_MARGIN:
+        if dock_limits.usable_free(shutil.disk_usage(mount), cap) - size < FREE_SPACE_MARGIN:
             if swap:
                 no_room.add(t["id"])
             elif t["id"] not in returning:
@@ -1308,7 +1377,7 @@ def apply_plan(db, record, guid, mount, manifest, cache_dir, progress=None,
         if pending or playlists_changed or session["dirty"]:
             commit()
     return {"added": added, "removed": removed, "replaced": replaced, "renamed": renamed,
-            "swaps_no_room": len(no_room), "art_added": art_added, "not_added_full": skipped_full,
+            "swaps_no_room": len(no_room), "art_added": art_added, "art_swapped": art_swapped, "not_added_full": skipped_full,
             "no_space": skipped_full if final else 0,
             "not_added_limit": over_limit, "playlists_changed": playlists_changed}
 
@@ -1500,12 +1569,16 @@ def sync_player(mount, guid, record, manifest, cache_dir, work_dir, backup_root,
         try:
             snapshot = os.path.join(work_dir, "iTunesDB")
             db = open_database(mount, work_dir, snapshot if "iTunesDB" in copied else None)
+            db.otg = read_on_the_go(db, mount)
             entries = read_play_entries(work_dir)
             if entries:
                 db.merge_play_counts(entries)   # files deleted once a save has these
             log_ratings(db, entries)
-            if manifest.get("favorite_rating"):
-                queue_favorites(db, record, guid, manifest["favorite_rating"], manifest)
+            on_the_go = (on_the_go_ids(db.otg, record, guid)
+                         if manifest.get("favorite_on_the_go") else set())
+            if manifest.get("favorite_rating") or on_the_go:
+                queue_favorites(db, record, guid, manifest.get("favorite_rating") or 0,
+                                manifest, on_the_go)
                 if client:
                     import dock_plays
                     summary["favorited"] = dock_plays.upload_favorites(client, record)

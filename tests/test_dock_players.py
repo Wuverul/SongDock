@@ -323,6 +323,15 @@ class SettingsTests(PlayersBase):
                          ["Rating a Flow song favorites its album too"])
         self.assertIs(self.settings()["sync"]["favorite_flow_albums"], True)
 
+    def test_favorite_on_the_go_from_the_ipod(self):
+        self.assertEqual(self.apply("FavoriteOnTheGo=no\n")["done"],
+                         ["Songs in On-The-Go aren't favorited"])
+        self.assertIs(self.settings()["sync"]["favorite_on_the_go"], False)
+        self.assertEqual(self.apply("FavoriteOnTheGo=yes\n")["done"],
+                         ["Songs in On-The-Go get favorited"])
+        self.assertIs(self.settings()["sync"]["favorite_on_the_go"], True)
+        self.assertIn("FavoriteOnTheGo", self.apply("FavoriteOnTheGo=maybe\n")["reason"])
+
     def test_playlist_singles_from_the_ipod(self):
         self.assertEqual(self.apply("PlaylistSingles=no\n")["done"],
                          ["Playlist singles albums for tagged playlists only"])

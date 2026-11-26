@@ -31,6 +31,9 @@ DEFAULTS = {
              # A rated song from an Aurral Flow (playlist ID "flow:...") also gets its
              # album favorited (user, 2026-11-25).
              "favorite_flow_albums": True,
+             # A song put in On-The-Go on a stock iPod gets favorited, like a rated
+             # one (user, 2026-11-26).
+             "favorite_on_the_go": True,
              "cache_dir": "~/musicdock/cache", "max_cache_gb": 20,
              "check_interval_minutes": 5,
              # Concurrent batches: on (2026-10-23) after the memory fixes -
@@ -220,6 +223,8 @@ def load(path=None):
         raise ConfigError(f"{path}: playlist_singles must be true or false")
     if not isinstance(cfg["sync"]["favorite_flow_albums"], bool):
         raise ConfigError(f"{path}: favorite_flow_albums must be true or false")
+    if not isinstance(cfg["sync"]["favorite_on_the_go"], bool):
+        raise ConfigError(f"{path}: favorite_on_the_go must be true or false")
     if not isinstance(cfg["sync"]["auto_update"], bool):
         raise ConfigError(f"{path}: auto_update must be true or false")
     w = cfg["sync"]["workers"]
