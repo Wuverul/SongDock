@@ -60,7 +60,7 @@ if grep -rlI -e "-----BEGIN [A-Z ]*PRIVATE KEY-----" "$OUT"; then
   echo "Refusing to build: private key found." >&2
   exit 1
 fi
-grep -q 'password = "your-navidrome-password"' "$OUT/config.example.toml" \
+grep -q 'password = "your-password"' "$OUT/config.example.toml" \
   || { echo "Refusing to build: config.example.toml has a real password" >&2; exit 1; }
 
 echo "== Packing $TARBALL"

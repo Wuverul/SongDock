@@ -32,6 +32,14 @@ class ExampleConfigTests(unittest.TestCase):
         self.everything = tomllib.loads(re.sub(r"^# ([a-z0-9_]+\.[a-z0-9_]+ = )", r"\1",
                                                self.text, flags=re.M))
 
+    def test_deploy_and_release_check_the_placeholder_the_example_has(self):
+        # 2026-11-26: the placeholder changed and deploy.sh refused every deploy.
+        want = f'password = "{dock_config.PLACEHOLDER_PASSWORD}"'
+        self.assertIn(want, self.text)
+        for script in ("deploy.sh", "make_release.sh"):
+            with open(os.path.join(ROOT, "scripts", script)) as f:
+                self.assertIn(want, f.read(), script)
+
     def test_every_setting_is_there_and_shows_its_default(self):
         for section in ("sync", "device", "display"):
             for key, default in dock_config.DEFAULTS[section].items():
