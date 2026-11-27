@@ -1,19 +1,63 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
-- **Album covers go into each cached song once.** Adding a cover rewrites the whole file, so the dock now skips a file that already holds its album's cover (even after a check was cut off) and doesn't retry, every check, a file that can't take one; it tries again only if that album's cover changes on the server.
+Aurral and other Subsonic servers alongside Navidrome, On-The-Go favorites, album covers from your server, a dock that looks after its own SD card, and a lot of tidying of names, singles and genres on the iPod.
+
+**To update:** docks on 0.7.2 or later install this by themselves; from an older version, install it by hand as in the README ("Updating"). Your settings, cache and the record of what's on your players are kept.
+- **On a server other than Navidrome** (Aurral and others), add `server.type = "subsonic"` to the settings (or `ServerType=subsonic` in a DockSetup.txt). Without the line the dock assumes Navidrome, as before, and warns that the server says otherwise.
+- **The first checks after updating take longer, once:** each cached song gets its album's cover from the server (a few hundred songs a check until all are done), and the dock looks up release types on MusicBrainz for singles. The next syncs swap covers and rename songs on the iPod in place; nothing is copied again for this.
+
+**Navidrome, Aurral or another Subsonic server**
+- **Say which kind in one line.** `server.type = "navidrome"` (the default, so existing settings files mean Navidrome as before) or `"subsonic"` for Aurral and other Subsonic servers; `ServerType=` in DockSetup.txt changes it. Each check compares it with what the server says it is and warns in the log and `musicdock-status` if they differ; the iPod's guide explains playlist tags to suit the server. Logs, screens and guides now say "the server" rather than "Navidrome".
+- **Moving to another server keeps your iPod's songs.** Every song gets a new ID on another server; the dock follows them (by MusicBrainz recording, else names and length, allowing for a server that rounds lengths differently) instead of removing and copying everything again, and the plan follows at once, so a sync in between can't remove them.
+- **Playlist tags work in a playlist's name.** `#ipod`, `#lossless` and `#singles` count in the name as in the comment (Aurral's web page can't edit comments). The tag comes off the name on the iPod, so moving it from comment to name changes nothing there.
+- **Album covers from your server.** Every song shows its album's cover as chosen on the server, even when its file carries another release's art (on Aurral, one album's songs carried five different covers). A cover changed on the server reaches the iPod within about a day, swapped in place. Each cached song gets the cover once; a file that can't take one isn't retried until that album's cover changes.
+- **Favorite albums are kept between checks**, and only albums that changed are read again: 765 albums took 9 minutes a check on Aurral, now 13 seconds.
+- **Aurral fixes:** songs whose server ID was too long for a file name were never prepared; a song the server lists as MP3 but sends as FLAC (or the other way round) is noticed and prepared right on the next check; songs Aurral renames when it matches them to MusicBrainz keep their place on the iPod, and its play counts, instead of being copied again; WebP covers go in as JPEG; a lossless song's sample rate is read from the file when the server doesn't give it; songs with no album ID no longer stop a check.
 - **A server rescanning its library can't empty the iPod.** Seen with Navidrome after its music folders changed: for a while it listed every playlist with its song count but returned no songs, and no favorites, and the dock would have taken everything off a docked iPod. Now, when a playlist says it has songs but returns none, or more than half of the planned songs vanish at once, the dock changes nothing and says so in its log and in `musicdock-status`. A rescan ends within hours; if the same answer is still there a day later, the dock takes it as a real change and carries on by itself.
-- **Navidrome or another Subsonic server, said in one line.** `server.type = "navidrome"` (the default, so existing settings files mean Navidrome as before) or `"subsonic"` for Aurral and other Subsonic servers; `ServerType=` in DockSetup.txt changes it. Each check compares it with what the server says it is and warns in the log and `musicdock-status` if they differ; the iPod's guide explains playlist tags to suit the server. Logs, screens and guides now say "the server" rather than "Navidrome".
-- **Aurral fixes:** songs whose server ID is too long for a file name were never prepared; a song the server lists as MP3 but sends as FLAC is now noticed and converted on the next check; songs Aurral renames when it re-matches them to MusicBrainz keep their place on the iPod (and its play counts) instead of being copied again; WebP covers go in as JPEG; and a lossless song's sample rate is read from the file when the server doesn't give it.
-- **Making room on a full player (`make_room`) is now marked experimental:** it's off by default and hasn't been tried on a real full iPod.
+- **Plays and favorites check their song exists first.** A server answers "ok" for a song it doesn't have and drops the play. Now a song that's gone is looked for by its names (a moved file); if it can't be found, its plays wait and `musicdock-status` lists them, rather than being lost.
+
+**Favorites from the iPod**
+- **On-The-Go favorites songs.** Adding a song to On-The-Go on a stock iPod (or to a playlist saved from it on the iPod) favorites it at the next sync, like rating it 4 or 5 stars: once, never removing a favorite. Turn it off with `favorite_on_the_go = false`, or `FavoriteOnTheGo=no` in DockSetup.txt.
+- **On-The-Go lists keep their songs across syncs.** The iPod stores them by position in its database, so after a sync that added or removed songs they could point at other songs. The dock now moves them along with the database; a song leaves a list only when it leaves the iPod.
+- **A song you rate from an Aurral Flow brings its whole album:** its album is favorited too, so the album comes to the iPod (`favorite_flow_albums`, `FavoriteFlowAlbums=`).
+
+**Names, singles and genres on the iPod**
+- **Singles are recognized properly.** A release tagged as a single (its release type, from MusicBrainz when the server sends none), or one song in several versions (a single with its remixes or instrumental), counts as a single at any length: it joins "<Artist> Singles", all its songs together. EPs, albums and remix albums stay albums. `singles_max_tracks` (`SinglesTracks=`) can also count untagged short releases of different songs.
+- **"<Playlist> Singles".** A synced playlist's songs that are alone from their album gather in one album named after the playlist, instead of filling the Albums menu one song each. On for every synced playlist (`playlist_singles`, `PlaylistSingles=`), or only playlists tagged `#singles`. "<Artist> Singles" wins when both apply. `playlist_prefixes` trims a sync tool's prefix (e.g. "MixSync:") off playlist names on the iPod.
+- **Two playlists with the same name** both reach the iPod; one used to overwrite the other at every sync.
+- **"Prodigy" and "The Prodigy" are one artist:** a leading "The" is ignored, like case and punctuation.
+- **An album credited "X feat. Y"** lists under X, with the guests in its songs' titles.
+- **Compilations by record label:** `"label:Chillhop = Chillhop Releases"` in `compilation_albums` lists a label's compilations as one artist, while its single-artist albums keep theirs.
+- **Albums with no genre get one from MusicBrainz or Deezer.** An album whose files carry no genre, and whose artist has no other songs to go by, used to show under "Other". Only song IDs are sent (MusicBrainz IDs and ISRCs). In the developer's library this placed about two thirds of the "Other" albums. Turn it off with `genre_lookup = false`, or `GenreLookup=no` in DockSetup.txt.
+- **More genre rules:** `artist:<name>` puts an artist in a group whatever their tags say, and `not:<words>` keeps songs with such a tag out of one. Albums with no tags at all take the genre most of their artist's songs got, and a bare "lo-fi" (a sound on many records) no longer files an album under Lofi / Chill.
+- Only names change on the iPod for all of these; nothing is copied again.
+
+**Sound**
+- **Loud AAC files no longer clip.** The clipping fix in 0.7.5 only lowered MP3s, so a loud AAC (.m4a) copied as is still crackled on the iPod. Each AAC is now measured once; one that would clip is converted to MP3 and lowered like the others, a small loss next to clipping. Play counts are kept when the iPod's copy is replaced.
+- Songs whose tags aren't in UTF-8 no longer fail the loudness check at every run.
+
+**The iPod**
+- **Song limits by model.** The dock knows how many songs each iPod handles (about 50,000 for every classic and the bigger iPod videos, about 20,000 for the 30 GB videos), warns near the limit and stops adding just short of it. `MediaDock.txt` shows the model and says when it's only a guess; `Model=` in a DockSetup.txt corrects it.
+- **6th-generation iPod classics fill only to 128 GB,** the most their firmware can use, even flash-modded with more, and say so.
+- **SYNCING counts the whole iPod while it's being rebuilt** ("On iPod 1,234/7,900"); the separate RESTORING screen is gone.
+- **PREPARING with a single song** shows its name, without "0/1" and an empty bar.
+
+**A dock that looks after itself**
 - **A warning when the dock's SD card shows signs of failing.** Read/write errors, filesystem errors or the card switching to read-only put "SD card failing: replace" on DOCK READY (in place of the IP address), and `musicdock-status` lists what was seen. Many cards die without warning, but this catches the ones that don't. A new card clears it by itself.
 - **Backups of the dock's settings and records** to your computer: `scripts/backup_dock.sh` (one now, or `--install` for every day at noon on a Mac). A few MB each, no music; see "Backups" in INSTALL.md for restoring.
-- **On-The-Go favorites songs.** Adding a song to On-The-Go on a stock iPod (or to a playlist saved from it on the iPod) now favorites it at the next sync, like rating it 4 or 5 stars: once, never removing a favorite, and with its album too when it came from an Aurral Flow. Turn it off with `favorite_on_the_go = false`, or `FavoriteOnTheGo=no` in DockSetup.txt.
-- **On-The-Go lists keep their songs across syncs.** The iPod stores them by position in its database, so after a sync that added or removed songs they could point at other songs. The dock now moves them along with the database; a song leaves a list only when it leaves the iPod.
-- **Singles with remixes count as singles.** A release tagged as a single (its MusicBrainz release type), or one song in several versions (a single with its remixes or instrumental), now counts as a single at any length: it joins "<Artist> Singles", and in a #singles playlist it goes into "<Playlist> Singles", all its songs together. Before, only one-track releases did. EPs, albums and remix albums stay albums. `singles_max_tracks` (or `SinglesTracks=` in DockSetup.txt) can also count untagged short releases of different songs. Only names change on the iPod; nothing is copied again.
-- **Albums with no genre get one from MusicBrainz or Deezer.** An album whose files carry no genre, and whose artist has no other songs to go by, used to show under "Other" on the iPod. The dock now asks MusicBrainz, then Deezer, and files it through your genre list like any other. Only song IDs are sent (MusicBrainz IDs and ISRCs). In the developer's library this placed about two thirds of the "Other" albums. Turn it off with `genre_lookup = false`, or `GenreLookup=no` in DockSetup.txt.
-- **Loud AAC files no longer clip.** The dock copies AAC files (.m4a) as they are, and the clipping fix in 0.7.5 only lowered MP3s, so a loud AAC still crackled on the iPod (Vulpey's "Sever" peaks at +4.2 dB over the highest level a player can output). Each AAC is now measured once; one that would clip is converted to MP3 and lowered like the others. That's a lossy-to-lossy conversion, a small loss next to clipping, and it happens only to AAC files that clip. Play counts are kept when the iPod's copy is replaced.
+- **Wi-Fi that locks up gets a restart.** Wi-Fi power saving is now off (a known cause on the Pi's chip), and if the Wi-Fi chip stops answering for three minutes the dock restarts itself, at most once an hour and never during a sync. Seen once: the dock sat offline for half an hour until its power was cut.
+- `recent_play_months` takes fractions (0.25 is about a week).
+- Units that log only warnings show them again in the journal; an update about to install says "installing soon".
+
+**Changed**
+- **Making room on a full player (`make_room`) is marked experimental:** it's off by default and hasn't been tried on a real full iPod.
+- Rockbox and other music players are provided as is: kept working, but not tested on real players.
+
+**Tested**
+- On an iPod classic 7th generation (flash-modded, about 460 GB) with Aurral: the move from Navidrome (6,967 songs followed, no re-copy), syncs adding and removing songs, plays reaching Aurral, On-The-Go read across syncs, album covers swapped in place, Singles albums and genres, the server type check.
+- Not yet tried on hardware: unplugging an iPod mid-write (mid-copy, mid-swap) or cutting the dock's power mid-sync; a favorite sent to Aurral; a saved On-The-Go list; the SD card warning on a failing card; the rescan guard on a real rescan; `make_room`.
 
 ## 0.7.6
 

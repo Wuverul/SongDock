@@ -345,10 +345,10 @@ waiting to be sent stay queued.
 2. Find the newest version on the
    [releases page](https://github.com/Wuverul/SongDock/releases). Read its notes
    in `CHANGELOG.md`: they say if the next sync will change anything on your iPod.
-3. On the Pi, download and install it, putting that version in place of `0.7.6`:
+3. On the Pi, download and install it, putting that version in place of `0.8.0`:
 
    ```sh
-   VERSION=0.7.6
+   VERSION=0.8.0
    curl -LO "https://github.com/Wuverul/SongDock/releases/download/v$VERSION/songdock-$VERSION.tar.gz"
    tar -xzf "songdock-$VERSION.tar.gz" -C ~/musicdock
    cd ~/musicdock/songdock && sudo ./pi/install.sh
@@ -457,14 +457,18 @@ below is either untested on hardware or not built.
 - **Hardware is specific:** the Waveshare 2.13" e-Paper HAT (V4 tested;
   V3 and V2 supported but untested on real screens),
   2.4 GHz Wi-Fi only (both Pi Zero models), and FAT32-formatted iPods.
-- **An iPod unplugged mid-sync needed a computer to fix it** (tried once: its
-  files were left damaged, and the dock couldn't write to it until it was
-  restored). The dock now repairs that by itself before syncing, but the repair
-  hasn't run on a real unplugged iPod yet.
+- **Unplugging an iPod while it's being written to isn't proven safe yet.** The
+  dock is built for it: it saves the iPod's database by writing a new one and
+  swapping it in, keeps a log of copied files and a backup, and repairs an iPod
+  that was pulled before writing to it again. An iPod nano pulled mid-copy was
+  repaired and carried on, but pulling one mid-swap and cutting the dock's power
+  mid-sync haven't been tried. Wait for SAFE TO REMOVE.
 - **Written but not yet tried on real hardware:** `make_room` on
-  a full player; a sync stopped by safe hours; plays waiting while the server is
-  down; `Keep.m3u8` on a real Rockbox player. (PLAYER FULL and an automatic update
-  have now run on a real dock.)
+  a full player; a sync stopped by safe hours; `Keep.m3u8` on a real Rockbox
+  player; a favorite from On-The-Go or a rating sent to Aurral; a playlist saved
+  from On-The-Go; the SD card warning on a failing card; the rescan guard on a
+  real rescan. (PLAYER FULL, an automatic update and plays waiting while the
+  server was down have now run on a real dock.)
 - **Restart the iPod once after its album art is converted.** The dock
   stores one cover per album rather than one per song (about 12 times
   less space). The first sync after updating converts the art already on
