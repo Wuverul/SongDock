@@ -1643,8 +1643,34 @@ def write_bytes_atomic(path, data):
     os.replace(tmp, path)
 
 
+COVER_EXTENSIONS = (".mp3", ".m4a", ".mp4", ".flac")    # what embed_cover can tag
+
+
+def carries_cover(path, art):
+    """Whether the file's only cover is already the image named `art` (album_art names
+    a cover by the start of its SHA-1). Reads the tags only. A check stopped half-way
+    records nothing, so the next one would otherwise rewrite the files it had done."""
+    try:
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".mp3":
+            from mutagen.id3 import ID3
+            images = [p.data for p in ID3(path).getall("APIC")]
+        elif ext in (".m4a", ".mp4"):
+            from mutagen.mp4 import MP4
+            images = [bytes(c) for c in (MP4(path).tags or {}).get("covr", [])]
+        elif ext == ".flac":
+            from mutagen.flac import FLAC
+            images = [p.data for p in FLAC(path).pictures]
+        else:
+            return False
+    except Exception:
+        return False
+    return len(images) == 1 and hashlib.sha1(images[0]).hexdigest()[:20] == art
+
+
 def embed_cover(path, jpeg):
-    """Make `jpeg` the file's only cover (tags only; the audio is untouched)."""
+    """Make `jpeg` the file's only cover (tags only; the audio is untouched).
+    False for a format it can't tag (COVER_EXTENSIONS)."""
     from mutagen.flac import FLAC, Picture
     from mutagen.id3 import APIC, ID3, ID3NoHeaderError
     from mutagen.mp4 import MP4, MP4Cover
@@ -2394,15 +2420,24 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     if not dry_run and known_covers:
         write_json_atomic(covers_path, known_covers)
     carried = {t["id"]: t["art"] for t in previous.get("tracks", []) if t.get("art")}
+    # Files that couldn't take a cover, by the cover tried: not tried again (each try
+    # copies the whole file) until that album's cover changes (user, 2026-11-26).
+    no_art = {t["id"]: t["art_skipped"] for t in previous.get("tracks", [])
+              if t.get("art_skipped")}
     for _, t in missing:                       # made again this run: carries what it's given
         carried.pop(t["id"], None)
+        no_art.pop(t["id"], None)
 
     def cover_file(art):
         with open(os.path.join(cache_dir, COVERS_DIR, art + ".jpg"), "rb") as f:
             return f.read()
     restyle = [(n, t) for n, t in wanted.items()
                if n in existing and n not in missing_names and art_of.get(t["id"])
-               and carried.get(t["id"]) != art_of[t["id"]]]
+               and carried.get(t["id"]) != art_of[t["id"]]
+               and no_art.get(t["id"]) != art_of[t["id"]]]
+    for name, t in [r for r in restyle if not r[0].lower().endswith(COVER_EXTENSIONS)]:
+        no_art[t["id"]] = art_of[t["id"]]        # a format with no cover tag: never copied
+    restyle = [r for r in restyle if r[0].lower().endswith(COVER_EXTENSIONS)]
     if restyle and not dry_run:
         log.info("Putting album covers in %d cached file(s)", len(restyle))
         done = 0
@@ -2410,6 +2445,10 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             if show and i % 25 == 0:
                 show("preparing", "--done", str(i), "--total", str(len(restyle)),
                      "--detail", f"Album covers: {label(t)}")
+            if carries_cover(os.path.join(tracks_dir, name), art_of[t["id"]]):
+                carried[t["id"]] = art_of[t["id"]]       # done by a check that was cut off
+                done += 1
+                continue
             tmp = os.path.join(tmp_dir, f"art-{name}")
             try:
                 shutil.copy2(os.path.join(tracks_dir, name), tmp)
@@ -2418,8 +2457,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                     os.replace(tmp, os.path.join(tracks_dir, name))
                     carried[t["id"]] = art_of[t["id"]]
                     done += 1
+                else:
+                    no_art[t["id"]] = art_of[t["id"]]
             except Exception:
-                log.exception("Couldn't put the album cover in %s (left as is)", label(t))
+                no_art[t["id"]] = art_of[t["id"]]
+                log.exception("Couldn't put the album cover in %s (left as is; tried again "
+                              "only if the album's cover changes)", label(t))
             finally:
                 if os.path.exists(tmp):
                     os.remove(tmp)
@@ -2569,7 +2612,12 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
                     if embed_cover(out, cover_file(art_of[t["id"]])):
                         with lock:
                             carried[t["id"]] = art_of[t["id"]]
+                    else:
+                        with lock:
+                            no_art[t["id"]] = art_of[t["id"]]
                 except Exception:
+                    with lock:
+                        no_art[t["id"]] = art_of[t["id"]]
                     log.exception("Couldn't put the album cover in %s (kept its own)",
                                   label(t))
             try:
@@ -2647,7 +2695,9 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
             if os.path.exists(path):
                 ready.append({"file": f"tracks/{name}", "size": os.path.getsize(path),
                               **entry(t),
-                              **({"art": carried[t["id"]]} if carried.get(t["id"]) else {})})
+                              **({"art": carried[t["id"]]} if carried.get(t["id"]) else
+                                 {"art_skipped": no_art[t["id"]]} if no_art.get(t["id"])
+                                 else {})})
             elif name in held:                                      # no file needed
                 uncached.append({**entry(t), **size_of_uncached(t),
                                  **({"art": art_of[t["id"]]} if art_of.get(t["id"]) else {})})

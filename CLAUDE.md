@@ -912,6 +912,16 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   an Aurral-like fake. Wording is "the server" in logs/screens/guides; Navidrome is
   named only where it's about Navidrome. Placeholder password now "your-password"
   (the old "your-navidrome-password" still refused).
+- **Covers go into cached files once (user, 2026-11-26: "make sure this doesn't happen
+  repeatedly"):** putting a cover in copies the whole file (the first pass, 759 + 952 + ...
+  files over 3+ checks at 400 new covers a check, is ~40 GB of SD writes; one-off).
+  Repeats are blocked three ways: Aurral's covers are byte-identical on every fetch
+  (checked: 12 of 12 WebP, same hash as saved hours before), so the stale re-reads change
+  nothing; `carries_cover` reads a file's tags and skips one that already holds the
+  cover (a check cut off records nothing in the plan); a file that can't take a cover
+  (not `COVER_EXTENSIONS`, or an error) gets `art_skipped` in the plan and is tried again
+  only when its album's cover changes. Tests: `test_covers_go_in_once_and_never_again`
+  and the three after it.
 - **Rescan guard (user, 2026-11-26; `dock_prepare.check_shrink`):** found on the real
   Navidrome mid-rescan (music folders changed): getPlaylists/getPlaylist kept each
   playlist's `songCount` (e.g. 1605) but returned 0 entries, and getStarred2 nothing; a run

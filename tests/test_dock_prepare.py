@@ -1856,6 +1856,90 @@ class ShrinkCoverTests(unittest.TestCase):
                              [tracks["a1"]["art"] + ".jpg"])  # the old one is gone
 
 
+    # Putting covers in rewrites a whole file (SD card wear): once per file and cover,
+    # never again on later checks (user, 2026-11-26).
+    def cover_server(self):
+        server = FakeServer(songs=[song(f"a{i}", suffix="mp3", albumId="alb", coverArt="alb")
+                                   for i in range(3)])
+        server.covers = {"alb": self.png(400)}
+        return server
+
+    def cover_runs(self, cache, server, n):
+        for _ in range(n):
+            prepare(server, config(), cache, convert_fn=fake_convert, disk_usage=ROOMY,
+                    lower_fn=None)
+
+    def test_covers_go_in_once_and_never_again(self):
+        with tempfile.TemporaryDirectory() as cache:
+            server = self.cover_server()
+            self.cover_runs(cache, server, 1)
+            path = os.path.join(cache, "tracks", "a0.mp3")
+            first = (os.stat(path).st_ino, os.stat(path).st_mtime_ns)
+            server.cover_fetches = []
+            with mock.patch.object(dock_prepare, "embed_cover",
+                                   side_effect=AssertionError("rewritten again")):
+                self.cover_runs(cache, server, 5)
+            self.assertIn("alb", server.cover_fetches)         # re-checked: same picture
+            self.assertEqual((os.stat(path).st_ino, os.stat(path).st_mtime_ns), first)
+
+    def test_a_check_cut_off_after_covers_went_in_doesnt_redo_them(self):
+        with tempfile.TemporaryDirectory() as cache:
+            server = self.cover_server()
+            self.cover_runs(cache, server, 1)
+            path = os.path.join(cache, "manifest.json")
+            with open(path) as f:
+                plan = json.load(f)
+            for t in plan["tracks"]:                   # as if the check was killed
+                t.pop("art", None)
+            with open(path, "w") as f:
+                json.dump(plan, f)
+            with mock.patch.object(dock_prepare, "embed_cover",
+                                   side_effect=AssertionError("rewritten again")):
+                self.cover_runs(cache, server, 1)
+            with open(path) as f:
+                self.assertTrue(all(t.get("art") for t in json.load(f)["tracks"]))
+
+    def test_a_file_that_fails_is_tried_once_per_cover(self):
+        with tempfile.TemporaryDirectory() as cache:
+            server = self.cover_server()
+            server.covers = {}                                  # no cover yet
+            self.cover_runs(cache, server, 1)
+            server.covers = {"alb": self.png(400)}
+            tries = []
+
+            def fails(path, jpeg):
+                tries.append(os.path.basename(path))
+                raise OSError("bad file")
+            with mock.patch.object(dock_prepare, "embed_cover", side_effect=fails):
+                self.cover_runs(cache, server, 4)
+            self.assertEqual(sorted(tries), ["art-a0.mp3", "art-a1.mp3", "art-a2.mp3"])
+            with open(os.path.join(cache, "manifest.json")) as f:
+                skipped = {t.get("art_skipped") for t in json.load(f)["tracks"]}
+            self.assertEqual(len(skipped), 1)
+            self.assertNotIn(None, skipped)
+            server.covers = {"alb": self.png(300)}              # the album's cover changes
+            self.cover_runs(cache, server, 1)
+            with open(os.path.join(cache, "manifest.json")) as f:
+                self.assertTrue(all(t.get("art") for t in json.load(f)["tracks"]))
+
+    def test_a_format_with_no_cover_tag_is_never_copied(self):
+        with tempfile.TemporaryDirectory() as cache:
+            server = self.cover_server()
+            server.covers = {}
+            self.cover_runs(cache, server, 1)
+            server.covers = {"alb": self.png(400)}
+            copies = []
+            real_copy = dock_prepare.shutil.copy2
+
+            def counting_copy(src, dst, *a, **kw):
+                copies.append(os.path.basename(dst))
+                return real_copy(src, dst, *a, **kw)
+            with mock.patch.object(dock_prepare, "COVER_EXTENSIONS", (".flac",)), \
+                    mock.patch.object(dock_prepare.shutil, "copy2", counting_copy):
+                self.cover_runs(cache, server, 3)
+            self.assertEqual([c for c in copies if c.startswith("art-")], [])
+
+
 class WorkerTests(unittest.TestCase):
     def test_worker_count(self):
         rw = dock_prepare.resolve_workers
