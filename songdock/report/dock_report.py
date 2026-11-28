@@ -338,6 +338,9 @@ def music_section(manifest, cfg, cache_dir):
         found["server_type"] = dock_config.type_mismatch(
             setting, "" if server["type"] == "subsonic" else server["type"])
     lines.append("Syncing: " + (", ".join(names) or "nothing"))
+    unreadable = [pl["name"] for pl in manifest.get("playlists", []) if pl.get("unreadable")]
+    if unreadable:
+        found["unreadable"] = unreadable
     ready = len(manifest.get("tracks", []))
     skipped = manifest.get("skipped", [])
     kept = manifest.get("kept_after_removal", 0)
@@ -428,6 +431,11 @@ def problems(facts, now=None):
         out.append(dock_sdcard.describe(facts["sd_card"]))
     if facts.get("server_type"):
         out.append(facts["server_type"])
+    if facts.get("unreadable"):
+        names = facts["unreadable"]
+        out.append(f"The server says {len(names)} playlist(s) have songs but won't return them "
+                   f"({', '.join(names[:3])}{', ...' if len(names) > 3 else ''}): kept on the "
+                   f"iPod as they were until they can be read again")
     held = facts.get("held_back")
     if held and held.get("until", 0) > now:
         out.append(f"Music changes held back since {when(held['since'])}: "

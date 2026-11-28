@@ -922,6 +922,17 @@ user from the prepare unit's `User=`. `tests/test_layout.py` checks no service r
   (not `COVER_EXTENSIONS`, or an error) gets `art_skipped` in the plan and is tried again
   only when its album's cover changes. Tests: `test_covers_go_in_once_and_never_again`
   and the three after it.
+- **Unreadable playlists (user, 2026-11-28: "treat it as unreadable"; `keep_unreadable_
+  playlists`):** Aurral after a permissions change let clients browse but not play or
+  download (download = HTTP 500, which the dock already treats as "unreachable": batch
+  stopped, songs kept); New to You listed 30 songs and returned none, and the rescan
+  guard's playlist rule held every change for 18 h, set to give up (and take its songs
+  off the iPod) at 24 h. Now a playlist with `listed` but no songs keeps its last
+  plan's `song_ids` (marked `"unreadable"`), its songs not otherwise targeted go into
+  the plan's `skipped` (kept on players, cache files kept by song ID, never retired),
+  they're excluded from `follow_new_ids` (`still=`: a same-named new song would
+  otherwise take their place), and the run carries on. No time limit. The guard keeps
+  only the "over half the plan gone" rule (kept songs count as there).
 - **Rescan guard (user, 2026-11-26; `dock_prepare.check_shrink`):** found on the real
   Navidrome mid-rescan (music folders changed): getPlaylists/getPlaylist kept each
   playlist's `songCount` (e.g. 1605) but returned 0 entries, and getStarred2 nothing; a run

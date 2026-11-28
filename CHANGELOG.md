@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **A playlist the server can't read is kept as it was, not emptied.** Seen on Aurral after a permissions change: the library could be browsed but no music played or downloaded, and one playlist listed 30 songs while returning none. The dock held back every change for a day because of it and would then have taken the playlist's songs off the iPod. Now such a playlist keeps its last known songs, on the iPod and in the dock's cache, until it can be read again, and every other change goes ahead. `musicdock-status` names it. A whole library that seems to vanish (a server rescanning) is still held back as before.
+
 ## 0.8.0
 
 Aurral and other Subsonic servers alongside Navidrome, On-The-Go favorites, album covers from your server, a dock that looks after its own SD card, and a lot of tidying of names, singles and genres on the iPod.

@@ -49,20 +49,57 @@ class RescanGuardTests(unittest.TestCase):
             m = json.load(f)
         return {t["id"] for k in ("tracks", "on_player", "skipped") for t in m.get(k, [])}
 
-    def test_playlists_that_list_songs_but_return_none_hold_everything(self):
+    def manifest(self):
+        with open(os.path.join(self.cache, "manifest.json")) as f:
+            return json.load(f)
+
+    def test_a_playlist_that_lists_songs_but_returns_none_is_kept_as_it_was(self):
+        # Aurral, 2026-11-27, after a permissions change: the library could be browsed,
+        # not played; New to You listed 30 songs and returned none.
         server = FakeServer(songs=songs(3),
                             playlists={"p1": ("Road Trip #ipod", songs(5, "r"))})
         self.run_prepare(server)
-        before = self.planned()
+        cached = set(os.listdir(os.path.join(self.cache, "tracks")))
         server.playlists["p1"] = ("Road Trip #ipod", [])
         server.listed = {"p1": 5}                         # "5 songs", none returned
+        server.songs = songs(4)                           # a new favorite meanwhile
+        for later in (0, 25 * HOUR, 72 * HOUR, 10 * 24 * HOUR):   # no giving up, ever
+            self.now += later
+            self.run_prepare(server)                      # not held: the rest goes on
+            m = self.manifest()
+            self.assertIn("s3", {t["id"] for t in m["tracks"]})
+            road = [p for p in m["playlists"] if p["name"] == "Road Trip"][0]
+            self.assertTrue(road["unreadable"])
+            self.assertEqual(road["song_ids"], [f"r{i}" for i in range(5)])
+            kept = {s["id"] for s in m["skipped"]}
+            self.assertEqual(kept, {f"r{i}" for i in range(5)})   # never removed
+            self.assertTrue(cached <= set(os.listdir(os.path.join(self.cache, "tracks"))))
+            retired = os.path.join(self.cache, "retired.json")
+            if os.path.exists(retired):                   # set aside for deletion: none
+                with open(retired) as f:
+                    self.assertFalse([n for n in json.load(f) if n.startswith("r")])
+        problems = dock_report.problems(
+            {"unreadable": ["Road Trip"]}, now=self.now)
+        self.assertIn("won't return them (Road Trip)", problems[0])
+        server.playlists["p1"] = ("Road Trip #ipod", songs(2, "r"))   # readable again
+        server.listed = {"p1": 2}
+        self.run_prepare(server)
+        road = [p for p in self.manifest()["playlists"] if p["name"] == "Road Trip"][0]
+        self.assertNotIn("unreadable", road)
+        self.assertEqual(road["song_ids"], ["r0", "r1"])
+        self.assertEqual(self.manifest()["skipped"], [])
+
+    def test_a_whole_library_rescan_is_still_held(self):
+        # Navidrome, 2026-11-26: every playlist empty and no favorites.
+        server = FakeServer(songs=songs(120),
+                            playlists={"p1": ("Road Trip #ipod", songs(5, "r"))})
+        self.run_prepare(server)
+        server.songs = []
+        server.playlists["p1"] = ("Road Trip #ipod", [])
+        server.listed = {"p1": 5}
         with self.assertRaises(dock_prepare.HeldBack) as e:
             self.run_prepare(server)
-        self.assertIn("say they have songs but return none (Road Trip)", str(e.exception))
-        self.assertEqual(self.planned(), before)          # nothing changed
-        self.now += 25 * HOUR                             # still so a day later: meant
-        self.run_prepare(server)
-        self.assertEqual(self.planned(), {f"s{i}" for i in range(3)})
+        self.assertIn("120 of the 125 songs planned last time are gone", str(e.exception))
 
     def test_most_of_the_plan_vanishing_at_once_holds(self):
         server = FakeServer(songs=songs(120))

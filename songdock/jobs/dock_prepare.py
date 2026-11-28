@@ -1077,24 +1077,53 @@ SHRINK_HOLD = 24 * 3600    # still so after this long: taken as a real change
 SHRINK_FILE = "shrink.json"   # cache/: since when, and why (musicdock-status shows it)
 
 
-def check_shrink(previous, targets, playlists, cache_dir, clock=time.time, dry_run=False):
+def keep_unreadable_playlists(previous, targets, playlists):
+    """A playlist that says it has songs but returns none can't be read on the server
+    right now, rather than being empty (2026-11-27: Aurral after a permissions change:
+    New to You listed 30 songs and returned none, while the library could be browsed
+    but not played). It keeps its last known songs (`song_ids`, marked "unreadable"),
+    and those not otherwise targeted stay in the plan as skipped, so no player loses
+    them and their cached files stay. Everything else in the run carries on. Returns
+    the last plan's entries for the songs kept this way."""
+    unreadable = [p for p in playlists if p.get("listed") and not p.get("song_ids")]
+    if not unreadable:
+        return []
+    by_id = {p.get("id"): p for p in previous.get("playlists", []) if p.get("id")}
+    by_target = {p["target"]: p for p in previous.get("playlists", [])}
+    entries = {e["id"]: e for key in ("tracks", "on_player", "skipped")
+               for e in previous.get(key, [])}
+    targeted = {t["id"] for t in targets}
+    held, seen = [], set()
+    for p in unreadable:
+        p["unreadable"] = True
+        before = by_id.get(p.get("id")) or by_target.get(p["target"]) or {}
+        p["song_ids"] = list(before.get("song_ids") or [])
+        for song_id in p["song_ids"]:
+            if song_id not in targeted and song_id not in seen and song_id in entries:
+                seen.add(song_id)
+                held.append(entries[song_id])
+    log.warning("%d playlist(s) say they have songs but the server returns none (%s): "
+                "kept as they were (%d song(s)) until it can be read again", len(unreadable),
+                ", ".join(p["name"] for p in unreadable[:3]) + (", ..." if len(unreadable) > 3
+                                                                else ""), len(held))
+    return held
+
+
+def check_shrink(previous, targets, playlists, cache_dir, clock=time.time, dry_run=False,
+                 kept=()):
     """Stop (HeldBack) when the server's answer looks like a library half-way through a
     rescan rather than a change of mind (2026-11-26: Navidrome rescanning after its music
     folders changed listed every playlist with its song count but returned no songs, and
-    no favorites; the plan would have taken everything off a docked iPod):
-      * a playlist says it has songs but returns none, or
-      * more than SHRINK_SHARE of the songs planned last time are gone at once.
+    no favorites; the plan would have taken everything off a docked iPod): more than
+    SHRINK_SHARE of the songs planned last time are gone at once. `kept`: songs kept for
+    playlists that can't be read (keep_unreadable_playlists), which count as there.
     Nothing changes while it holds. A rescan ends within hours; the same answer still
     there after SHRINK_HOLD is taken as meant, and the run carries on. Called after new
     IDs are followed, so a move to another server, which keeps the songs, passes."""
     reasons = []
-    empty = [p["name"] for p in playlists if p.get("listed") and not p.get("song_ids")]
-    if empty:
-        reasons.append(f"{len(empty)} playlist(s) say they have songs but return none "
-                       f"({', '.join(empty[:3])}{', ...' if len(empty) > 3 else ''})")
     before = {t["id"] for key in ("tracks", "on_player", "skipped")
               for t in previous.get(key, [])}
-    gone = len(before - {t["id"] for t in targets})
+    gone = len(before - {t["id"] for t in targets} - set(kept))
     if len(before) >= SHRINK_MIN and gone > SHRINK_SHARE * len(before):
         reasons.append(f"{gone} of the {len(before)} songs planned last time are gone")
     path = os.path.join(cache_dir, SHRINK_FILE)
@@ -1256,12 +1285,14 @@ def match_renamed(gone, new, mapping, sources=None):
 
 
 def follow_new_ids(previous, targets, cache_dir, rename_fn=None, dry_run=False,
-                   sources=None):
+                   sources=None, still=()):
     """Songs Navidrome re-numbered keep their cache files (converted, lowered)
     and, through rename_fn(mapping) (Record.rename_songs), everything
     the record knows, so nothing is fetched or copied to a player again and no
     play count is lost. Changes `previous` (the last plan) to the new IDs too.
-    Returns the mapping."""
+    `still`: songs kept as they were (a playlist the server can't read): not gone,
+    so never matched to another song. Returns the mapping."""
+    still = set(still)
     retired_path = os.path.join(cache_dir, "retired.json")
     try:
         with open(retired_path) as f:
@@ -1277,9 +1308,11 @@ def follow_new_ids(previous, targets, cache_dir, rename_fn=None, dry_run=False,
         earlier[e["id"]] = e
         if e.get("file"):
             files[e["id"]] = e["file"].split("/", 1)[-1]
-    mapping = match_new_ids(list(earlier.values()), targets, sources)
+    mapping = match_new_ids([e for i, e in earlier.items() if i not in still], targets,
+                            sources)
     now = {t["id"] for t in targets}
-    lost = [e for i, e in earlier.items() if i not in now and i not in mapping]
+    lost = [e for i, e in earlier.items()
+            if i not in now and i not in mapping and i not in still]
     if mapping and lost:
         # Gone without a match: really left the library, or changed beyond recognition.
         log.info("%d song(s) gone from the server without a match under a new ID, e.g. %s",
@@ -2146,11 +2179,15 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
     separate_album_names(targets)        # after every other name change
     # Songs Navidrome re-numbered are followed, not fetched again (needs the final
     # names, which the plan's entries have).
-    renamed = follow_new_ids(previous, targets, cache_dir, rename_fn, dry_run, sources)
+    # A playlist the server can't read keeps its songs first: they aren't gone.
+    unreadable_kept = keep_unreadable_playlists(previous, targets, playlists)
+    renamed = follow_new_ids(previous, targets, cache_dir, rename_fn, dry_run, sources,
+                             still={e["id"] for e in unreadable_kept})
     if renamed:
         on_player = {renamed.get(k, k): v for k, v in (on_player or {}).items()}
         plays = {renamed.get(k, k): v for k, v in (plays or {}).items()}
-    check_shrink(previous, targets, playlists, cache_dir, clock, dry_run)
+    check_shrink(previous, targets, playlists, cache_dir, clock, dry_run,
+                 kept={e["id"] for e in unreadable_kept})
     if not dry_run and album_cache:      # after the check: a rescan's empty answer isn't kept
         write_json_atomic(album_cache_path, album_cache)
     correct_formats(targets, cache_dir, dry_run)
@@ -2171,7 +2208,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         return encoding(cfg["device"], target) if target else "original"
     wanted = {output_name(t, format_of(t)): t for t in targets}
     existing = set(os.listdir(tracks_dir)) if os.path.isdir(tracks_dir) else set()
-    to_remove = sorted(existing - wanted.keys())     # includes tracks kept earlier
+    # Their cache files stay too (found by song ID: kept entries after the first run
+    # come from the plan's skipped list, which names no file).
+    kept_stems = {os.path.splitext(safe_name(e["id"], "x"))[0] for e in unreadable_kept}
+    held_files = {n for n in existing if os.path.splitext(n)[0] in kept_stems}
+    to_remove = sorted(existing - wanted.keys() - held_files)   # incl. tracks kept earlier
 
     # A dropped file's real size stays in the plan, so the plan's total stays
     # right when the largest (usually lossless) files leave the cache.
@@ -2710,6 +2751,11 @@ def prepare(client, cfg, cache_dir, show=None, convert_fn=convert,
         not_ready = [{**s, "encoding": made_as(by_id[s["id"]]),
                       "source_suffix": by_id[s["id"]].get("suffix"),
                       **size_of_uncached(by_id[s["id"]])} for s in not_ready]
+        # Songs of a playlist the server can't read right now: kept on the players as
+        # they were (their last plan entries), never removed for it.
+        not_ready += [{**{k: v for k, v in e.items() if k != "file"},
+                       "reason": "its playlist can't be read on the server right now",
+                       "error": False} for e in unreadable_kept]
         return {
             "targets": cfg["sync"]["targets"], "device": device,
             "playlist_tag": cfg["sync"].get("playlist_tag", ""),
